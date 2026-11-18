@@ -82,9 +82,16 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
-          find build -type f \( -name rk_tests -o -name rk_tests.exe \) -not -path "*CMakeFiles*" | head -1 | xargs -I{} $RUN {}
-          find build -type f \( -name rk_shared_tests -o -name rk_shared_tests.exe \) -path "*artefacts*" | head -1 | xargs -I{} $RUN {}
-          find build -type f \( -name rk_plugin_tests -o -name rk_plugin_tests.exe \) -path "*artefacts*" | head -1 | xargs -I{} $RUN {}
+          # Finds each test binary (paths differ between generators) and fails if one is missing.
+          run_test() {
+            f=$(find build -type f \( -name "$1" -o -name "$1.exe" \) -not -path "*CMakeFiles*" | head -1)
+            if [ -z "$f" ]; then echo "::error::$1 not found"; exit 1; fi
+            echo "Running $f"
+            $RUN "$f"
+          }
+          run_test rk_tests
+          run_test rk_shared_tests
+          run_test rk_plugin_tests
       - name: pluginval (strictness 10)
         shell: bash
         run: |
