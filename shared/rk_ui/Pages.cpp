@@ -186,25 +186,42 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         di->onChange = [setPolar](double v) { setPolar(2, v); };
         di->onCommit = ctx.commit;
 
-        auto* aim = page.add(std::make_unique<ChoiceRow>(tr("Ausrichtung"), juce::StringArray{tr("Zur Mitte"), tr("Nach außen"), tr("Nach innen")}), 36);
+        // Direction: "Drehung" 0 deg = towards the centre, 180 deg = outwards (inner donut ring);
+        // "Neigung" tilts up or down. Presets set both.
+        const auto angles = aimAngles(s.layout.speakers[(size_t)sel]);
+        auto* aim = page.add(std::make_unique<ChoiceRow>(tr("Ausrichtung"), juce::StringArray{tr("Zur Mitte"), tr("Nach außen"), tr("Eigener Winkel")}), 36);
         {
             const auto& sp = s.layout.speakers[(size_t)sel];
-            int idx = 0;
-            if (rk::length(sp.aim) > 1e-6f) {
-                const rk::Vec3 radial = rk::normalized({sp.position.x, sp.position.y, 0.0f});
-                idx = rk::dot(sp.aimDirection(), radial) > 0 ? 1 : 2;
-            }
+            const int idx = rk::length(sp.aim) < 1e-6f ? 0 : (std::abs(std::abs(angles.first) - 180.0f) < 0.5f && std::abs(angles.second) < 0.5f ? 1 : 2);
             aim->box().setSelectedItemIndex(idx, juce::dontSendNotification);
         }
         aim->onChange = [ctx, sel, toCustom](int i) {
-            if (sel >= (int)ctx.scene->layout.speakers.size()) return;
+            if (sel >= (int)ctx.scene->layout.speakers.size() || i == 2) return;
             auto& sp = ctx.scene->layout.speakers[(size_t)sel];
-            const rk::Vec3 radial = rk::normalized({sp.position.x, sp.position.y, 0.0f});
-            sp.aim = i == 0 ? rk::Vec3{} : (i == 1 ? radial : -radial);
+            if (i == 0) sp.aim = {};
+            else setAimAngles(sp, 180.0f, 0.0f);
             toCustom();
             ctx.changed(true);
             ctx.commit();
+            ctx.rebuild();
         };
+        const juce::String deg = juce::String(juce::CharPointer_UTF8("\xc2\xb0"));
+        auto* rot = page.add(std::make_unique<ParamSlider>(tr("Drehung"), -180, 180, 0.5, deg, 1, 0), 32);
+        rot->setTooltip(tr("0° zeigt zur Mitte, 180° nach außen. Positive Werte drehen nach links."));
+        rot->setValue(angles.first);
+        auto* tilt = page.add(std::make_unique<ParamSlider>(tr("Neigung"), -90, 90, 0.5, deg, 1, 0), 32);
+        tilt->setTooltip(tr("Positive Werte neigen den Lautsprecher nach oben."));
+        tilt->setValue(angles.second);
+        auto applyAim = [ctx, sel, rot, tilt, aim] {
+            if (sel >= (int)ctx.scene->layout.speakers.size()) return;
+            setAimAngles(ctx.scene->layout.speakers[(size_t)sel], (float)rot->getValue(), (float)tilt->getValue());
+            aim->box().setSelectedItemIndex(2, juce::dontSendNotification);
+            ctx.changed(true);
+        };
+        rot->onChange = [applyAim](double) { applyAim(); };
+        tilt->onChange = [applyAim](double) { applyAim(); };
+        rot->onCommit = [ctx, toCustom] { toCustom(); ctx.commit(); };
+        tilt->onCommit = [ctx, toCustom] { toCustom(); ctx.commit(); };
         auto* gain = page.add(std::make_unique<ParamSlider>(tr("Pegel"), -40, 12, 0.1, "dB", 1, 0), 32);
         gain->setValue(s.layout.speakers[(size_t)sel].gainDb);
         gain->onChange = [ctx, sel](double v) {
@@ -335,6 +352,25 @@ void buildRoomPage(FormPage& page, PageContext ctx) {
     page.addDetails(tr("Nachhallzeit: wie lange der Hall braucht, um um 60 dB abzuklingen.\n\n"
                        "Höhendämpfung: oberhalb dieser Frequenz klingt der Hall schneller ab, wie in einem Raum mit Vorhängen und Publikum.\n\n"
                        "Vorverzögerung: Zeit zwischen dem direkten Klang und dem Einsetzen des Halls. Größere Werte lassen den Raum größer wirken."));
+}
+
+/// Speaker direction as (rotation from "towards the centre", tilt), in degrees.
+std::pair<float, float> aimAngles(const rk::Speaker& sp) {
+    const rk::Vec3 d = sp.aimDirection();
+    const rk::Vec3 ref = rk::normalized({-sp.position.x, -sp.position.y, 0.0f}, {0.0f, 1.0f, 0.0f});
+    const float tilt = juce::radiansToDegrees(std::asin(juce::jlimit(-1.0f, 1.0f, d.z)));
+    const float hx = d.x, hy = d.y;
+    if (std::hypot(hx, hy) < 1e-5f) return {0.0f, tilt};
+    // Positive rotation = counter-clockwise seen from above (to the left).
+    const float rot = juce::radiansToDegrees(std::atan2(ref.x * hy - ref.y * hx, ref.x * hx + ref.y * hy));
+    return {rot, tilt};
+}
+
+void setAimAngles(rk::Speaker& sp, float rotDeg, float tiltDeg) {
+    const rk::Vec3 ref = rk::normalized({-sp.position.x, -sp.position.y, 0.0f}, {0.0f, 1.0f, 0.0f});
+    const float a = juce::degreesToRadians(rotDeg), t = juce::degreesToRadians(juce::jlimit(-90.0f, 90.0f, tiltDeg));
+    const float hx = ref.x * std::cos(a) - ref.y * std::sin(a), hy = ref.x * std::sin(a) + ref.y * std::cos(a);
+    sp.aim = {hx * std::cos(t), hy * std::cos(t), std::sin(t)};
 }
 
 } // namespace rkui

@@ -143,7 +143,7 @@ private:
     std::vector<SourceState> state_;
 
     // Scratch buffers (allocated in prepare).
-    std::vector<float> inputCopy_;   // kMaxSources x maxBlock
+    std::vector<float> inputCopy_;   // kMaxInputs x maxBlock
     std::vector<float> mix_;         // kMaxSpeakers x maxBlock
     std::vector<float> reverbBus_;   // maxBlock
     std::vector<float> subBus_;      // maxBlock

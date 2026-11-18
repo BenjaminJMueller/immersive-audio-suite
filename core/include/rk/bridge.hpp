@@ -64,6 +64,16 @@ void applyTrack(Engine& engine, int first, int inputBase, int channels, const Tr
 
 struct Slot;
 struct Shared;
+struct ReturnShared;
+
+/// Read position of one drift-corrected ring reader (audio thread state).
+struct DriftState {
+    bool running = false;
+    double readPos = 0.0;
+    double smoothedError = 0.0;
+    uint64_t lastWrite = 0;
+    float fade = 0.0f;
+};
 
 /// A named block of memory shared between processes (POSIX shm or a Windows file mapping).
 class SharedMemory {
@@ -153,19 +163,68 @@ public:
     uint32_t takeDropouts() noexcept { return dropouts_.exchange(0); }
 
 private:
-    struct ReadState {
-        bool running = false;
+    struct ReadState : DriftState {
         uint64_t owner = 0;
-        double readPos = 0.0;
-        double smoothedError = 0.0;
-        uint64_t lastWrite = 0;
-        int silentBlocks = 0;
-        float fade = 0.0f;
     };
     SharedMemory mem_;
     Shared* shared_ = nullptr;
     double sampleRate_ = 48000.0;
     std::array<ReadState, kSlots> state_{};
+    std::atomic<uint32_t> dropouts_{0};
+};
+
+// ---- return path: app -> DAW ("Raumklang Rückweg") ---------------------------------
+// The app writes its rendered speaker signals into a second block; any number of
+// return plugins read from it (each from its own first channel), for recording and
+// real-time bounces in the DAW.
+
+inline constexpr uint32_t kReturnMagic = 0x31524b52u; // "RKR1"
+inline constexpr int kReturnChannels = 64;
+const char* defaultReturnName();
+size_t returnSize();
+
+/// App side.
+class ReturnSender {
+public:
+    ReturnSender();
+    ~ReturnSender();
+    bool open(const std::string& name = defaultReturnName());
+    bool isOpen() const noexcept { return shared_ != nullptr; }
+    /// Normal thread, regularly.
+    void heartbeat(double sampleRate);
+    /// True if a return plugin asked for audio recently (the app writes only then).
+    bool listening() const noexcept;
+    /// Audio thread: the rendered output, `numChannels` (clamped to kReturnChannels).
+    void write(const float* const* channels, int numChannels, int numFrames) noexcept;
+
+private:
+    SharedMemory mem_;
+    ReturnShared* shared_ = nullptr;
+};
+
+/// Plugin side.
+class ReturnReceiver {
+public:
+    ReturnReceiver();
+    ~ReturnReceiver();
+    bool open(const std::string& name = defaultReturnName());
+    bool isOpen() const noexcept { return shared_ != nullptr; }
+    /// Normal thread, about once per second: tells the app that someone listens.
+    void heartbeat();
+    bool appRunning() const noexcept;
+    double appSampleRate() const noexcept;
+    /// Number of channels the app currently renders.
+    int appChannels() const noexcept;
+    /// Audio thread. Reads app channels [firstChannel, firstChannel + numOut) into `out`
+    /// (all outputs are always written). Returns the number of channels with audio.
+    int read(int firstChannel, float* const* out, int numOut, int numFrames, double sampleRate) noexcept;
+    uint32_t takeDropouts() noexcept { return dropouts_.exchange(0); }
+
+private:
+    SharedMemory mem_;
+    ReturnShared* shared_ = nullptr;
+    DriftState state_;
+    double rate_ = 0.0;
     std::atomic<uint32_t> dropouts_{0};
 };
 

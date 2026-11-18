@@ -1,0 +1,48 @@
+#pragma once
+
+#include "../common/ParamBinding.h"
+#include "ReturnProcessor.h"
+
+#include <rk/math.hpp>
+#include <rk_ui/Strings.h>
+#include <rk_ui/Theme.h>
+#include <rk_ui/Widgets.h>
+
+namespace rkplug {
+
+/// One vertical meter per returned channel, labelled with the speaker number.
+class ReturnMeters : public juce::Component {
+public:
+    void set(int first, int channels, int appChannels, const std::vector<float>& levels);
+    void paint(juce::Graphics& g) override;
+
+private:
+    int first_ = 1, channels_ = 0, appChannels_ = 0;
+    std::vector<float> levels_;
+};
+
+class ReturnEditor : public juce::AudioProcessorEditor, private juce::Timer {
+public:
+    explicit ReturnEditor(ReturnProcessor& p);
+    ~ReturnEditor() override;
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+
+private:
+    void timerCallback() override;
+    void refreshStatus();
+
+    ReturnProcessor& proc_;
+    rkui::LookAndFeel lnf_;
+    ReturnMeters meters_;
+    rkui::FormPage page_;
+    rkui::StatusCard* card_ = nullptr; // owned by page_
+    juce::String cardKey_;
+    std::vector<std::unique_ptr<ParamBinding>> bindings_;
+    juce::TooltipWindow tooltips_{this, 600};
+    std::vector<float> levels_;
+    uint32_t recentDropouts_ = 0;
+    int dropoutHold_ = 0;
+};
+
+} // namespace rkplug

@@ -67,6 +67,8 @@ public:
     void startSimulation(const rk::SpeakerLayout& realRoom);
     bool simulating() const noexcept { return simThread_.joinable(); }
     void moveSimulatedMicrophone(rk::Vec3 p) noexcept { room_.setMicrophone(p); }
+    /// Return path (app -> DAW): true while a "Raumklang Rückweg" plugin is listening.
+    bool returnListening() const noexcept { return returnSender_.listening(); }
 
     void audioDeviceIOCallbackWithContext(const float* const* inputs, int numInputs, float* const* outputs,
                                           int numOutputs, int numSamples,
@@ -82,6 +84,8 @@ private:
     std::vector<float> genBuffers_; // kMaxGenerated x kGenBlock
     std::vector<float> bridgeBuffers_; // kSlots x 2 x kGenBlock
     rk::bridge::Receiver receiver_;
+    rk::bridge::ReturnSender returnSender_;
+    std::vector<float> returnBuffers_; // kMaxSpeakers x kGenBlock, used while a return plugin listens
     struct BridgeParamsAtomic {
         std::atomic<float> az{0.0f}, el{0.0f}, dist{2.0f}, spread{0.0f}, gain{0.0f}, send{-12.0f}, width{60.0f}, amount{1.0f};
     };

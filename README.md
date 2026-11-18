@@ -2,7 +2,7 @@
 
 Deutsch · [English](README.en.md)
 
-Raumklang ist ein freies Werkzeug für räumlichen Klang auf macOS und Windows. Es verteilt Klangquellen frei im Raum auf beliebig viele Lautsprecher, vom Stereopaar über Ring, Kuppel und 7.1.4 bis zum *Donut*, bei dem sich zwei Lautsprecherringe gegenüberstehen. Dazu gibt es Hall, eine Kopfhörer-Vorschau und zwei Plugins für die DAW. Ein Audio-Interface genügt: Die App spricht es direkt an, zusätzliche Programme für das Routing sind nicht nötig.
+Raumklang ist ein freies Werkzeug für räumlichen Klang auf macOS und Windows. Es verteilt Klangquellen frei im Raum auf beliebig viele Lautsprecher, vom Stereopaar über Ring, Kuppel und 7.1.4 bis zum *Donut*, bei dem sich zwei Lautsprecherringe gegenüberstehen. Dazu gibt es Hall, eine Kopfhörer-Vorschau und drei Plugins für die DAW. Ein Audio-Interface genügt: Die App spricht es direkt an, zusätzliche Programme für das Routing sind nicht nötig.
 
 ![Lautsprecher](docs/screenshots/01-lautsprecher.png)
 
@@ -81,10 +81,13 @@ Am besten beide Wege zusammen: das iPhone für Position und Ausrichtung, danach 
 
 ## In der DAW
 
-Zwei Plugins (VST3, auf dem Mac zusätzlich AU):
+Drei Plugins (VST3, auf dem Mac zusätzlich AU für Logic Pro):
 
-- **Raumklang Quelle** kommt auf jede Spur. Es setzt die Spur in den Raum und gibt einen Kanal pro Lautsprecher aus. Position, Breite, Pegel und Hallanteil sind automatisierbar. Die Spur muss so viele Kanäle haben wie das Layout Lautsprecher (z. B. in Reaper, Nuendo/Cubase oder Pro Tools Ultimate).
-- **Raumklang Raum** kommt auf den Summen- bzw. Lautsprecher-Bus. Hier wird das Layout bearbeitet, dazu Laufzeit und Pegel je Lautsprecher, Kopfhörer-Vorschau, Lautsprechertest und Schutzbegrenzer.
+- **Raumklang Quelle** kommt auf jede Spur. Läuft die Raumklang-App, erscheint die Spur dort unter *Aus der DAW* und die App spielt sie über ihr Audio-Interface, ganz ohne Routing. Position, Breite, Pegel und Hallanteil sind in der DAW automatisierbar, die App zeigt die Spur mit und übernimmt jede Bewegung. Ohne App gibt das Plugin einen Kanal pro Lautsprecher aus; die Spur braucht dann so viele Kanäle wie das Layout Lautsprecher.
+- **Raumklang Rückweg** holt die Lautsprechersignale der App zurück in die DAW, zum Aufnehmen und für Bounces in Echtzeit. In Logic etwa auf einem Aux in 7.1.4 für zwölf Lautsprecher; bei mehr Lautsprechern übernehmen weitere Spuren den Rest.
+- **Raumklang Raum** kommt auf den Summen- bzw. Lautsprecher-Bus, wenn ohne App gearbeitet wird. Hier wird das Layout bearbeitet, dazu Laufzeit und Pegel je Lautsprecher, Kopfhörer-Vorschau, Lautsprechertest und Schutzbegrenzer.
+
+DAW und App müssen mit derselben Abtastrate laufen. Die Plugins sagen es, wenn nicht.
 
 Das Lautsprecher-Setup teilen sich App und Plugins über eine Datei im Benutzerordner (`Raumklang/Lautsprecher-Setup.json`). Ein in der App eingerichtetes Layout steht damit sofort in der DAW bereit, und alle Quellen-Plugins einer Sitzung verwenden immer denselben Raum. Das DAW-Projekt speichert das Layout mit.
 

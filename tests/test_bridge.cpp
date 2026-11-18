@@ -330,3 +330,171 @@ TEST_CASE("bridge: plugin and app threads running at the same time") {
     plugin.join();
     ui.join();
 }
+
+// ---- return path: app -> DAW -------------------------------------------------------
+
+namespace {
+struct Multi {
+    std::vector<std::vector<float>> data;
+    std::vector<float*> ptr;
+    Multi(int ch, int n) : data((size_t)ch, std::vector<float>((size_t)n)), ptr((size_t)ch) {
+        for (int c = 0; c < ch; ++c) ptr[(size_t)c] = data[(size_t)c].data();
+    }
+};
+} // namespace
+
+TEST_CASE("return: speaker channels arrive continuously, at the chosen first channel") {
+    Names nm;
+    ReturnSender tx;
+    ReturnReceiver rx;
+    REQUIRE(tx.open(nm.name));
+    REQUIRE(rx.open(nm.name));
+    CHECK_FALSE(tx.listening());
+    rx.heartbeat();
+    CHECK(tx.listening());
+    tx.heartbeat(48000.0);
+    CHECK(rx.appRunning());
+
+    // Channel c carries the ramp offset by c * 100, so each channel is recognisable.
+    Multi app(12, 128);
+    long long written = 0;
+    Multi out(4, 256);
+    std::vector<std::vector<float>> got(4);
+    for (int it = 0; it < 400; ++it) {
+        for (int rep = 0; rep < 2; ++rep) {
+            for (int c = 0; c < 12; ++c)
+                for (int k = 0; k < 128; ++k)
+                    app.data[(size_t)c][(size_t)k] = (float)(((written + k) % 1000) + c * 100) * 1.0e-4f;
+            written += 128;
+            tx.write(app.ptr.data(), 12, 128);
+        }
+        const int ch = rx.read(8, out.ptr.data(), 4, 256, 48000.0);
+        if (ch > 0) {
+            CHECK(ch == 4);
+            for (int c = 0; c < 4; ++c) got[(size_t)c].insert(got[(size_t)c].end(), out.data[(size_t)c].begin(), out.data[(size_t)c].end());
+        }
+    }
+    REQUIRE(got[0].size() > 256 * 300);
+    int bad = 0;
+    for (int c = 0; c < 4; ++c) {
+        for (size_t i = 512; i + 1 < got[(size_t)c].size(); ++i) {
+            const float d = got[(size_t)c][i + 1] - got[(size_t)c][i];
+            if (std::fabs(d - 1.0e-4f) > 2.0e-5f && std::fabs(d + 0.0999f) > 2.0e-3f) ++bad;
+        }
+        // Output c is app channel 8 + c: its level sits above (8 + c) * 100 * 1e-4.
+        const float v = got[(size_t)c][2000];
+        CHECK(v >= (float)(8 + c) * 0.01f - 1.0e-4f);
+        CHECK(v < (float)(8 + c) * 0.01f + 0.1f);
+    }
+    CHECK(bad == 0);
+    CHECK(rx.takeDropouts() == 0);
+
+    // Outputs beyond what the app renders stay silent.
+    const int ch = rx.read(10, out.ptr.data(), 4, 256, 48000.0);
+    CHECK(ch == 2);
+    for (float s : out.data[3]) CHECK(s == 0.0f);
+}
+
+TEST_CASE("return: clock drift between app and DAW causes no dropouts") {
+    for (double drift : {-0.002, 0.002}) {
+        Names nm;
+        ReturnSender tx;
+        ReturnReceiver rx;
+        REQUIRE(tx.open(nm.name));
+        REQUIRE(rx.open(nm.name));
+        tx.heartbeat(48000.0);
+        Multi app(2, 128);
+        Multi out(2, 256);
+        double phase = 0.0, owed = 0.0;
+        int silent = 0;
+        for (int it = 0; it < 48000 * 30 / 256; ++it) {
+            owed += 256.0 * (1.0 + drift);
+            while (owed >= 128.0) {
+                for (int k = 0; k < 128; ++k) {
+                    app.data[0][(size_t)k] = app.data[1][(size_t)k] = 0.5f * (float)std::sin(phase);
+                    phase += 0.05;
+                }
+                tx.write(app.ptr.data(), 2, 128);
+                owed -= 128.0;
+            }
+            if (rx.read(0, out.ptr.data(), 2, 256, 48000.0) == 0 && it > 20) ++silent;
+        }
+        CAPTURE(drift);
+        CHECK(silent == 0);
+        CHECK(rx.takeDropouts() == 0);
+    }
+}
+
+TEST_CASE("return: no app, a stopped app or another sample rate give silence") {
+    Names nm;
+    ReturnReceiver rx;
+    REQUIRE(rx.open(nm.name));
+    Multi out(2, 64);
+    for (auto& d : out.data) std::fill(d.begin(), d.end(), 1.0f);
+    CHECK_FALSE(rx.appRunning());
+    CHECK(rx.read(0, out.ptr.data(), 2, 64, 48000.0) == 0);
+    for (auto& d : out.data)
+        for (float s : d) CHECK(s == 0.0f);
+
+    ReturnSender tx;
+    REQUIRE(tx.open(nm.name));
+    tx.heartbeat(44100.0);
+    Multi app(2, 64);
+    for (int i = 0; i < 20; ++i) tx.write(app.ptr.data(), 2, 64);
+    CHECK(rx.appSampleRate() == doctest::Approx(44100.0));
+    CHECK(rx.read(0, out.ptr.data(), 2, 64, 48000.0) == 0);
+}
+
+TEST_CASE("return: corrupted shared memory never crashes app or plugin") {
+    Names nm;
+    ReturnSender tx;
+    ReturnReceiver rx;
+    REQUIRE(tx.open(nm.name));
+    REQUIRE(rx.open(nm.name));
+    SharedMemory raw;
+    REQUIRE(raw.open(nm.name, returnSize()));
+    auto* bytes = static_cast<unsigned char*>(raw.data());
+    std::mt19937 rng(23);
+    Multi app(8, 512);
+    for (auto& d : app.data) std::fill(d.begin(), d.end(), 0.25f);
+    Multi out(8, 512);
+    for (int it = 0; it < 3000; ++it) {
+        for (int k = 0; k < 1 + (int)(rng() % 16); ++k) {
+            const size_t pos = rng() % (rng() % 3 == 0 ? returnSize() : 256);
+            if (rng() % 4 == 0 && pos + 8 <= returnSize()) {
+                uint64_t v = (uint64_t(rng()) << 32) | rng();
+                if (rng() % 3 == 0) v = ~0ull;
+                std::memcpy(bytes + pos, &v, 8);
+            } else {
+                bytes[pos] = (unsigned char)rng();
+            }
+        }
+        const int n = 1 + (int)(rng() % 512);
+        tx.heartbeat(48000.0);
+        rx.heartbeat();
+        tx.write(app.ptr.data(), (int)(rng() % 9), n);
+        const int got = rx.read((int)(rng() % 80) - 8, out.ptr.data(), 1 + (int)(rng() % 8), n, 48000.0);
+        REQUIRE(got >= 0);
+        REQUIRE(got <= 8);
+        for (auto& d : out.data)
+            for (int i = 0; i < n; ++i) REQUIRE(std::fabs(d[(size_t)i]) <= 1.0e6f);
+        REQUIRE(rx.appChannels() <= kReturnChannels);
+    }
+}
+
+TEST_CASE("return: write and read never allocate") {
+    Names nm;
+    ReturnSender tx;
+    ReturnReceiver rx;
+    REQUIRE(tx.open(nm.name));
+    REQUIRE(rx.open(nm.name));
+    tx.heartbeat(48000.0);
+    Multi app(16, 256);
+    Multi out(16, 256);
+    rktest::AllocGuard guard;
+    for (int i = 0; i < 200; ++i) {
+        tx.write(app.ptr.data(), 16, 256);
+        rx.read(0, out.ptr.data(), 16, 256, 48000.0);
+    }
+    CHECK(guard.allocations() == 0);
+}

@@ -97,7 +97,7 @@ void Engine::prepare(double sampleRate, int maxBlockSize) {
     sampleRate_ = (std::isfinite(sampleRate) && sampleRate >= 8000.0 && sampleRate <= 768000.0) ? sampleRate : 48000.0;
     maxBlock_ = std::clamp(maxBlockSize, 16, 8192);
     const size_t mb = static_cast<size_t>(maxBlock_);
-    inputCopy_.assign(static_cast<size_t>(kMaxSources) * mb, 0.0f);
+    inputCopy_.assign(static_cast<size_t>(kMaxInputs) * mb, 0.0f);
     mix_.assign(static_cast<size_t>(kMaxSpeakers) * mb, 0.0f);
     reverbBus_.assign(mb, 0.0f);
     subBus_.assign(mb, 0.0f);
@@ -222,7 +222,7 @@ void Engine::process(const float* const* inputs, int numInputs, float* const* ou
     ScopedNoDenormals noDenormals;
     if (numFrames <= 0 || outputs == nullptr) return;
     numOutputs = std::max(0, numOutputs);
-    numInputs = (inputs == nullptr) ? 0 : std::clamp(numInputs, 0, kMaxSources);
+    numInputs = (inputs == nullptr) ? 0 : std::clamp(numInputs, 0, kMaxInputs);
 
     if (inputCopy_.empty()) { // not prepared: output silence, never crash
         for (int c = 0; c < numOutputs; ++c)
