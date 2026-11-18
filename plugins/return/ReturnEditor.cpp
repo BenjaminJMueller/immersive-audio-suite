@@ -199,7 +199,7 @@ void ReturnEditor::paint(juce::Graphics& g) {
     g.fillRect(0, 51, getWidth(), 1);
     g.setColour(p.text);
     g.setFont(rkui::uiFont(15.0f, true));
-    g.drawText(juce::String::fromUTF8("Raumklang R\xc3\xbc" "ckweg"), 16, 0, 260, 52, juce::Justification::centredLeft);
+    g.drawText(juce::String("Raumklang Return"), 16, 0, 260, 52, juce::Justification::centredLeft);
 }
 
 void ReturnEditor::resized() {
