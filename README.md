@@ -57,6 +57,28 @@ Daraus ergaben sich die Anforderungen an dieses Werkzeug:
 
 Projekte werden automatisch gesichert, alle Schritte lassen sich rückgängig machen (⌘Z / Strg+Z). Beim ersten Start bietet eine Einführung an, mit einer Demo zu beginnen. Hat das Audiogerät weniger Ausgänge als das Layout Lautsprecher, schaltet die Demo von selbst die Kopfhörer-Vorschau ein. Die Oberfläche ist auf Deutsch, Englisch lässt sich unter *Hilfe* (?) umstellen.
 
+## Lautsprecher einmessen
+
+Wo die Lautsprecher wirklich hängen, lässt sich auf zwei Wegen messen. Beide enden in einer Vorschau: gestrichelt die bisherige Position, ausgefüllt die gemessene. *Übernehmen* schreibt sie ins Layout, und *Rückgängig* nimmt das wieder zurück.
+
+**Mit Mikrofon** (Schritt *Lautsprecher → Mit Mikrofon einmessen*). Ein Messmikrofon steht auf Ohrhöhe. Jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. Aus der Laufzeit folgt der Abstand, aus dem Pegel die Lautstärke.
+
+- *Schnell*: ein Messpunkt. Laufzeit und Pegel werden dort angeglichen.
+- *Mit Positionen*: 4 bis 12 Messpunkte (Standard 8), abwechselnd auf Ohrhöhe und 50 cm höher. Raumklang berechnet daraus die Position jedes Lautsprechers (Multilateration) und rechnet die Verzögerung des Audio-Interfaces von selbst heraus. Beim Donut sieht nicht jeder Punkt jeden Lautsprecher, deshalb beginnt die Messung dort mit 8 Punkten.
+
+Raumklang zeigt, wo das Mikrofon als Nächstes hin muss. Ein fehlendes Mikrofon, ein stummer Lautsprecher oder ein übersteuerter Eingang ergeben eine Meldung in Klartext statt eines falschen Ergebnisses. Vertauschte Kabel erkennt die Messung ebenfalls („Vertauscht mit A3?“).
+
+<p>
+  <img src="docs/screenshots/04-einmessen.png" width="49%" alt="Messpunkte">
+  <img src="docs/screenshots/05-einmessen-ergebnis.png" width="49%" alt="Ergebnis der Messung">
+</p>
+
+**Mit dem iPhone** (App *Raumklang Messen*, ein iPhone oder iPad mit LiDAR). Zuerst den Hörplatz antippen, dann die Richtung „vorne“, dann jeden Lautsprecher. Die App misst Position und Ausrichtung jedes Lautsprechers. Die Datei kommt per AirDrop, Mail oder Cloud auf den Rechner. In Raumklang lädt sie *iPhone-Messung laden*, oder sie wird einfach auf das Fenster gezogen.
+
+Eine Web-App kann das nicht: Safari auf dem iPhone bietet kein WebXR, eine Webseite kommt also weder an LiDAR noch an die Raumerfassung von ARKit. Deshalb ist *Raumklang Messen* eine kleine native App (`ios/RaumklangMessen`). Zum Installieren mit Xcode und einer kostenlosen Apple-ID auf das eigene Gerät spielen, siehe [ios/README.md](ios/README.md).
+
+Am besten beide Wege zusammen: das iPhone für Position und Ausrichtung, danach das Mikrofon im Modus *Schnell* für Laufzeit und Pegel.
+
 ## In der DAW
 
 Drei Plugins (VST3, auf dem Mac zusätzlich AU für Logic Pro):
@@ -113,7 +135,8 @@ Bekannte Grenzen:
 - Die Plugins rechnen in der DAW. DAWs ohne Mehrkanal-Spuren (z. B. Ableton Live, Logic außerhalb von Surround) können die Lautsprecherkanäle nicht weiterreichen. Eine direkte Verbindung vom Plugin zur App steht auf der [Roadmap](docs/ROADMAP.md).
 - Bei Layoutwechseln während der Wiedergabe gibt es eine kurze Blende (20 ms). Beim Ziehen von Lautsprechern während der Wiedergabe ist das hörbar.
 - Kopfhörer-Vorschau ohne individuelle HRTF, Elevation wird kaum abgebildet.
-- Keine OSC-Fernsteuerung, keine Ambisonics-Eingänge, keine Raumeinmessung (siehe Roadmap).
+- Keine OSC-Fernsteuerung, keine Ambisonics-Eingänge, keine Entzerrung (EQ) beim Einmessen (siehe Roadmap).
+- Das Einmessen mit Mikrofon misst Position, Laufzeit und Pegel, nicht die Ausrichtung. Die Genauigkeit hängt von Zahl und Abstand der Messpunkte ab. In der Simulation eines Rings mit 3 m Radius liegen 8 Messpunkte im Mittel 4 cm daneben, höchstens etwa 15 cm, mit 5 Punkten etwa doppelt so viel. Ein gemessener Abstand (Zollstock, Laser) macht es genauer. Raumklang zeigt die Genauigkeit je Lautsprecher an. Die iPhone-App ist noch nicht auf einem echten Gerät erprobt.
 - Mac-App und Plugins sind nicht von Apple signiert. Beim ersten Start *Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen*, oder im Terminal `xattr -dr com.apple.quarantine "/Applications/Raumklang.app"`. Unter Windows bei SmartScreen *Weitere Informationen → Trotzdem ausführen*.
 
 ## Installation

@@ -41,7 +41,7 @@ jobs:
           TSAN_OPTIONS: halt_on_error=1
         run: |
           if [ "${{ matrix.name }}" = "thread" ]; then
-            setarch -R ./build/tests/rk_tests -tc="RtSwap*,stress*,engine*,speaker processor*"
+            setarch -R ./build/tests/rk_tests -tc="RtSwap*,stress*,engine*,speaker processor*,calibration threads*"
           else
             ./build/tests/rk_tests
           fi
@@ -130,6 +130,21 @@ jobs:
             echo "::endgroup::"
           done
           exit $status
+      - name: auval (Logic Pro checks every Audio Unit with it)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          find build -path "*Release*" -name "*.component" -maxdepth 6 -prune -exec cp -R {} ~/Library/Audio/Plug-Ins/Components/ \;
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -a | grep -i Rmkl || true
+          status=0
+          for code in Rkq1 Rkr1; do
+            echo "::group::auval aufx $code Rmkl"
+            auval -strict -v aufx $code Rmkl || status=1
+            echo "::endgroup::"
+          done
+          exit $status
       - name: Collect builds
         shell: bash
         run: |
@@ -196,3 +211,20 @@ jobs:
           **macOS**: Raumklang-mac.dmg öffnen, Raumklang.app in Programme ziehen und *Plugins installieren.command* doppelklicken. Die App ist noch nicht beglaubigt: beim ersten Start Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen.
           **Windows**: Raumklang-Windows.zip entpacken, Raumklang.exe starten und *Plugins installieren.bat* doppelklicken."
           gh release create "$TAG" out/Raumklang-mac.dmg out/Raumklang-Windows.zip --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES" --latest
+
+  # "Raumklang Messen" for iPhone: geometry tests and a simulator build (no signing needed).
+  ios:
+    name: iPhone app (Raumklang Messen)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: SurveyKit tests
+        run: swift test --package-path ios/SurveyKit
+      - name: Generate the Xcode project
+        run: brew install xcodegen && cd ios/RaumklangMessen && xcodegen generate
+      - name: Build for the simulator
+        run: |
+          cd ios/RaumklangMessen
+          xcodebuild -project RaumklangMessen.xcodeproj -scheme RaumklangMessen -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build | tail -40
+          exit ${PIPESTATUS[0]}

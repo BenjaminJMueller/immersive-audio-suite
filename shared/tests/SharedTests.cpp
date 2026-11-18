@@ -4,6 +4,7 @@
 #include <rk_ui/Pages.h>
 #include <rk_ui/StageView.h>
 #include <rk_ui/Strings.h>
+#include <rk_ui/Survey.h>
 #include <rk_ui/Visuals.h>
 
 #include <random>
@@ -258,6 +259,134 @@ void visuals() {
     juce::PNGImageFormat().writeImageToStream(img, os);
 }
 
+void surveys() {
+    // Round trip.
+    rkui::Survey sv;
+    sv.source = "iPhone 15 Pro (LiDAR)";
+    sv.listenerHeight = 1.15f;
+    for (int i = 0; i < 4; ++i) {
+        rkui::SurveySpeaker sp;
+        sp.name = juce::String(i + 1);
+        sp.position = rk::toCartesian({90.0f * i, 10.0f, 3.0f});
+        sp.aim = rk::normalized(-sp.position);
+        sp.confidence = 0.8f;
+        sv.speakers.push_back(sp);
+    }
+    rkui::Survey back;
+    juce::String err;
+    EXPECT(rkui::surveyFromJson(rkui::surveyToJson(sv), back, err));
+    EXPECT(back.speakers.size() == 4);
+    EXPECT(std::abs(back.listenerHeight - 1.15f) < 1e-5f);
+    EXPECT(rk::length(back.speakers[2].position - sv.speakers[2].position) < 1e-4f);
+
+    // Broken and hostile files are rejected or cleaned, never crash.
+    for (const char* bad : {"", "null", "[]", "{\"format\":\"raumklang\"}", "{\"format\":\"raumklang-survey\",\"version\":1}",
+                            "{\"format\":\"raumklang-survey\",\"version\":9,\"speakers\":[]}",
+                            "{\"format\":\"raumklang-survey\",\"version\":1,\"frame\":\"arkit\",\"speakers\":[{\"position\":[1,2,3]}]}",
+                            "{\"format\":\"raumklang-survey\",\"version\":1,\"speakers\":[{\"position\":[1,2]}, {\"position\":\"x\"}, 5]}"}) {
+        rkui::Survey s2;
+        juce::String e2;
+        EXPECT(!rkui::surveyFromJson(bad, s2, e2));
+        EXPECT(e2.isNotEmpty());
+    }
+    {
+        rkui::Survey s2;
+        juce::String e2;
+        const char* mixed = "{\"format\":\"raumklang-survey\",\"version\":1,\"listenerHeight\":1e400,\"speakers\":["
+                            "{\"position\":[1,2,3],\"aim\":[0,0,0],\"confidence\":7},"
+                            "{\"position\":[1e9,2,3]},{\"position\":[0,3,1],\"aim\":[\"a\",1,2]}]}";
+        EXPECT(rkui::surveyFromJson(mixed, s2, e2));
+        EXPECT(s2.speakers.size() == 2);
+        EXPECT(s2.speakers[0].confidence == 1.0f);
+        EXPECT(rk::length(s2.speakers[0].aim) == 0.0f);
+        EXPECT(std::isfinite(s2.listenerHeight));
+    }
+    // Fuzz: random mutations of a valid file.
+    {
+        const juce::String good = rkui::surveyToJson(sv);
+        std::mt19937 rng(99);
+        for (int k = 0; k < 3000; ++k) {
+            juce::String t = good;
+            const int edits = 1 + (int)(rng() % 6);
+            for (int e = 0; e < edits; ++e) {
+                const int pos = (int)(rng() % (unsigned)juce::jmax(1, t.length()));
+                const juce::juce_wchar c = (juce::juce_wchar)(" -9.e[]{},:\"0Ea"[rng() % 15]);
+                t = t.substring(0, pos) + juce::String::charToString(c) + t.substring(pos + 1);
+            }
+            rkui::Survey s3;
+            juce::String e3;
+            if (rkui::surveyFromJson(t, s3, e3)) {
+                rk::SpeakerLayout l = rk::presets::ring(4, 2.0f);
+                rk::SpeakerLayout copy = rkui::applySurvey(l, s3, (rkui::SurveyMatch)(k % 3)).layout;
+                EXPECT(!rk::sanitize(copy));
+            }
+        }
+    }
+
+    // Applying: in order, by distance, as a new layout. Gains and delays of the layout stay.
+    rk::SpeakerLayout ring = rk::presets::ring(4, 3.0f);
+    ring.speakers[1].gainDb = -4.0f;
+    ring.speakers[1].delayMs = 2.5f;
+    rkui::Survey shifted = sv;
+    std::rotate(shifted.speakers.begin(), shifted.speakers.begin() + 1, shifted.speakers.end());
+    const auto inOrder = rkui::applySurvey(ring, shifted, rkui::SurveyMatch::InOrder);
+    EXPECT(rk::length(inOrder.layout.speakers[0].position - sv.speakers[1].position) < 1e-4f);
+    EXPECT(inOrder.layout.speakers[1].gainDb == -4.0f);
+    EXPECT(inOrder.layout.speakers[1].delayMs == 2.5f);
+    rk::SpeakerLayout planned;
+    for (int i = 0; i < 4; ++i) {
+        rk::Speaker sp;
+        sp.position = sv.speakers[(size_t)i].position * 1.1f;
+        planned.speakers.push_back(sp);
+    }
+    const auto nearest = rkui::applySurvey(planned, shifted, rkui::SurveyMatch::Nearest);
+    for (int i = 0; i < 4; ++i) EXPECT(rk::length(nearest.layout.speakers[(size_t)i].position - sv.speakers[(size_t)i].position) < 1e-4f);
+    EXPECT(nearest.unmatchedMeasured == 0);
+    // Facing the listener becomes "towards the listener" (aim zero).
+    EXPECT(rk::length(nearest.layout.speakers[0].aim) < 1e-6f);
+    const auto repl = rkui::applySurvey(rk::presets::ring(8, 2.0f), sv, rkui::SurveyMatch::Replace);
+    EXPECT(repl.layout.speakers.size() == 4);
+    // A donut speaker facing outwards keeps its measured direction.
+    rkui::Survey out = sv;
+    out.speakers[0].aim = rk::normalized(out.speakers[0].position);
+    const auto o2 = rkui::applySurvey(ring, out, rkui::SurveyMatch::InOrder);
+    EXPECT(rk::dot(o2.layout.speakers[0].aimDirection(), rk::normalized(out.speakers[0].position)) > 0.99f);
+    // Fewer measured than planned: the rest stays where it was.
+    rkui::Survey two = sv;
+    two.speakers.resize(2);
+    const auto partial = rkui::applySurvey(ring, two, rkui::SurveyMatch::InOrder);
+    EXPECT(partial.updated[2] == 0 && partial.updated[1] == 1);
+    EXPECT(partial.layout.speakers[3].position == ring.speakers[3].position);
+
+    // Proposals: options choose what is taken over; donut aims follow the new position.
+    rk::SpeakerLayout donut = rk::presets::donut(4, 1.0f, 8, 5.0f);
+    rkui::Proposal pr;
+    pr.speakers.resize(donut.speakers.size());
+    pr.speakers[0].hasPosition = true;
+    pr.speakers[0].position = rk::toCartesian({90.0f, 20.0f, 1.3f});
+    pr.speakers[0].hasDelay = true;
+    pr.speakers[0].delayMs = 3.0f;
+    pr.speakers[0].hasGain = true;
+    pr.speakers[0].gainDb = -2.0f;
+    pr.speakers[5].hasPosition = true;
+    pr.speakers[5].position = {std::nanf(""), 0, 0};
+    const auto all = rkui::applyProposal(donut, pr, {});
+    EXPECT(rk::length(all.speakers[0].position - pr.speakers[0].position) < 1e-5f);
+    EXPECT(rk::dot(all.speakers[0].aimDirection(), rk::normalized(rk::Vec3{all.speakers[0].position.x, all.speakers[0].position.y, 0})) > 0.99f);
+    EXPECT(all.speakers[0].delayMs == 3.0f && all.speakers[0].gainDb == -2.0f);
+    EXPECT(all.speakers[5].position == donut.speakers[5].position); // NaN ignored
+    rkui::ProposalOptions only;
+    only.positions = false;
+    only.levels = false;
+    const auto delaysOnly = rkui::applyProposal(donut, pr, only);
+    EXPECT(delaysOnly.speakers[0].position == donut.speakers[0].position);
+    EXPECT(delaysOnly.speakers[0].delayMs == 3.0f && delaysOnly.speakers[0].gainDb == 0.0f);
+    const auto fromPhone = rkui::proposalFromSurvey(ring, two, rkui::SurveyMatch::InOrder);
+    EXPECT(fromPhone.speakers.size() == 4 && fromPhone.speakers[0].hasPosition && !fromPhone.speakers[3].hasPosition);
+    const auto replaced = rkui::applyProposal(ring, rkui::proposalFromSurvey(ring, two, rkui::SurveyMatch::Replace), {});
+    EXPECT(replaced.speakers.size() == 2);
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     roundTrip();
@@ -269,6 +398,7 @@ int main() {
     translations();
     speakerAngles();
     visuals();
+    surveys();
     std::printf("%s (%d failures)\n", failures == 0 ? "ALL SHARED TESTS PASSED" : "SHARED TESTS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

@@ -28,8 +28,46 @@ juce::String AudioHost::start(const juce::XmlElement* savedState) {
 }
 
 void AudioHost::stop() {
+    if (simThread_.joinable()) {
+        simStop_.store(true);
+        simThread_.join();
+    }
     devices.removeAudioCallback(this);
     devices.closeAudioDevice();
+}
+
+void AudioHost::startSimulation(const rk::SpeakerLayout& realRoom) {
+    if (simThread_.joinable()) return;
+    devices.removeAudioCallback(this);
+    devices.closeAudioDevice();
+    std::vector<rk::RoomSimulator::Speaker> spk;
+    for (const auto& s : realRoom.speakers) spk.push_back({s.position, s.aimDirection()});
+    constexpr double sr = 48000.0;
+    constexpr int block = 512;
+    room_.prepare(sr, spk, 0.0113, -1.2f, 3.0e-5f, 343.0f);
+    room_.setMicrophone({0.0f, 0.0f, 0.0f});
+    sampleRate_.store(sr);
+    numOutputs_.store((int)spk.size());
+    numInputs_.store(1);
+    engine.prepare(sr, block);
+    simStop_.store(false);
+    simThread_ = std::thread([this, n = (int)spk.size()] {
+        std::vector<std::vector<float>> outBufs((size_t)n, std::vector<float>(block, 0.0f));
+        std::vector<float*> outs;
+        for (auto& b : outBufs) outs.push_back(b.data());
+        std::vector<float> mic(block, 0.0f);
+        const float* ins[1] = {mic.data()};
+        juce::AudioIODeviceCallbackContext ctx;
+        auto next = std::chrono::steady_clock::now();
+        // Runs four times faster than real time: the calibration does not depend on the clock.
+        const auto period = std::chrono::microseconds((long long)(1.0e6 * block / sr / 4.0));
+        while (!simStop_.load()) {
+            audioDeviceIOCallbackWithContext(ins, 1, outs.data(), n, block, ctx);
+            room_.process(outs.data(), n, mic.data(), block);
+            next += period;
+            std::this_thread::sleep_until(next);
+        }
+    });
 }
 
 std::vector<rk::bridge::TrackInfo> AudioHost::scanBridge() {
@@ -61,6 +99,18 @@ void AudioHost::readScope(float* dst, int n) const noexcept {
     const uint32_t end = scopeWrite_.load(std::memory_order_acquire);
     for (int i = 0; i < n; ++i)
         dst[i] = scope_[(end - (uint32_t)n + (uint32_t)i) % kScopeSize].load(std::memory_order_relaxed);
+}
+
+juce::StringArray AudioHost::inputNames() {
+    juce::StringArray out;
+    if (simThread_.joinable()) return {"Messmikrofon (Testraum)"};
+    if (auto* d = devices.getCurrentAudioDevice()) {
+        const auto names = d->getInputChannelNames();
+        const auto active = d->getActiveInputChannels();
+        for (int i = 0; i < names.size(); ++i)
+            if (active[i]) out.add(names[i]);
+    }
+    return out;
 }
 
 juce::String AudioHost::takeError() {
@@ -168,9 +218,12 @@ void AudioHost::audioDeviceIOCallbackWithContext(const float* const* inputs, int
                 a.amount.store(tp.distanceAmount, std::memory_order_relaxed);
             }
         }
+        // Measuring: calibration.process() replaces the engine output (silence + sweep on one
+        // speaker) and records the mic, before the signals go to the device or back to the DAW.
         if (toDaw) {
             for (int c = 0; c < rk::kMaxSpeakers; ++c) out[c] = &returnBuffers_[(size_t)c * kGenBlock];
             engine.process(in, kTotalInputs, out, rk::kMaxSpeakers, n);
+            calibration.process(in, numInputs, out, numOutputs, n);
             const int spk = juce::jlimit(0, rk::bridge::kReturnChannels, engine.numOutputChannels());
             returnSender_.write(out, spk, n);
             for (int c = 0; c < numOutputs; ++c)
@@ -178,6 +231,7 @@ void AudioHost::audioDeviceIOCallbackWithContext(const float* const* inputs, int
         } else {
             for (int c = 0; c < numOutputs; ++c) out[c] = outputs[c] != nullptr ? outputs[c] + off : nullptr;
             engine.process(in, kTotalInputs, out, numOutputs, n);
+            calibration.process(in, numInputs, out, numOutputs, n);
         }
 
         // Summed output for the visualisation (lock-free ring, newest samples win).

@@ -5,11 +5,14 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <rk/bridge.hpp>
+#include <rk/calibration.hpp>
 #include <rk/dsp.hpp>
 #include <rk/engine.hpp>
+#include <rk/room_sim.hpp>
 
 #include <array>
 #include <atomic>
+#include <thread>
 
 namespace rkapp {
 
@@ -53,6 +56,17 @@ public:
     void readScope(float* dst, int n) const noexcept;
     /// Off: DAW tracks are ignored (they fall back to playing in the DAW).
     std::atomic<bool> bridgeEnabled{true};
+    /// Speaker calibration: while it runs, every output is silent except the measuring sweep.
+    rk::calib::SweepRunner calibration;
+    /// Names of the active device inputs, in the order the audio callback sees them.
+    juce::StringArray inputNames();
+
+    /// Test room (environment variable RAUMKLANG_TESTRAUM): instead of an audio device, a
+    /// simulated room with the given speakers and one measuring microphone. For trying the
+    /// calibration without hardware and for automated checks.
+    void startSimulation(const rk::SpeakerLayout& realRoom);
+    bool simulating() const noexcept { return simThread_.joinable(); }
+    void moveSimulatedMicrophone(rk::Vec3 p) noexcept { room_.setMicrophone(p); }
     /// Return path (app -> DAW): true while a "Raumklang Rückweg" plugin is listening.
     bool returnListening() const noexcept { return returnSender_.listening(); }
 
@@ -83,6 +97,9 @@ private:
     std::array<long long, kMaxGenerated> clickCounter_{};
     std::atomic<int> numOutputs_{0}, numInputs_{0};
     std::atomic<double> sampleRate_{48000.0};
+    rk::RoomSimulator room_;
+    std::thread simThread_;
+    std::atomic<bool> simStop_{false};
     juce::CriticalSection errorLock_;
     juce::String error_;
 };

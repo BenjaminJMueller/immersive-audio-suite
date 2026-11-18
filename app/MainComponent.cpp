@@ -247,9 +247,12 @@ MainComponent::MainComponent()
     addAndMakeVisible(inspector_);
 
     // Audio: open the device stored last time, otherwise the system default.
-    std::unique_ptr<juce::XmlElement> audioState(settings_->getXmlValue("audioDevice"));
-    const juce::String err = host_.start(audioState.get());
-    if (err.isNotEmpty()) statusText_ = err;
+    const bool testRoom = juce::SystemStats::getEnvironmentVariable("RAUMKLANG_TESTRAUM", {}).isNotEmpty();
+    if (!testRoom) {
+        std::unique_ptr<juce::XmlElement> audioState(settings_->getXmlValue("audioDevice"));
+        const juce::String err = host_.start(audioState.get());
+        if (err.isNotEmpty()) statusText_ = err;
+    }
 
     // Restore the autosave, or show the introduction.
     const juce::File autosave = rkui::appDataFolder().getChildFile("Autosave.raumklang");
@@ -263,6 +266,16 @@ MainComponent::MainComponent()
         showIntro();
     }
 
+    if (testRoom) {
+        // A room that matches the layout only roughly, like a real one.
+        rk::SpeakerLayout real = scene_.layout;
+        juce::Random rnd(42);
+        for (auto& sp : real.speakers)
+            sp.position = sp.position + rk::Vec3{(rnd.nextFloat() - 0.5f) * 0.6f, (rnd.nextFloat() - 0.5f) * 0.6f, (rnd.nextFloat() - 0.5f) * 0.3f};
+        host_.startSimulation(real);
+        statusText_ = tr("Testraum ohne Audiogerät");
+    }
+
     setWantsKeyboardFocus(true);
     setSize(1320, 820);
     startTimerHz(30);
@@ -271,7 +284,8 @@ MainComponent::MainComponent()
 MainComponent::~MainComponent() {
     stopTimer();
     saveNow();
-    if (auto xml = host_.devices.createStateXml()) settings_->setValue("audioDevice", xml.get());
+    if (!host_.simulating())
+        if (auto xml = host_.devices.createStateXml()) settings_->setValue("audioDevice", xml.get());
     settings_->saveIfNeeded();
     host_.stop();
     juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
@@ -289,6 +303,8 @@ rkui::PageContext MainComponent::pageContext() {
         refreshSidebar();
     };
     c.commit = [this] { commit(); };
+    c.calibrate = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->startCalibration(); }); };
+    c.importSurvey = [this] { chooseSurveyFile(); };
     c.rebuild = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshSidebar(); } }); };
     return c;
 }
@@ -414,7 +430,10 @@ rkui::Scene MainComponent::stageScene() const {
 
 void MainComponent::showStage() {
     stage_.setFirstLockedSource((int)scene_.sources.size());
-    stage_.setScene(stageScene());
+    rkui::Scene s = stageScene();
+    if (calibrating_ && proposal_) s.layout = rkui::applyProposal(scene_.layout, *proposal_, proposalOpts_);
+    stage_.setScene(s);
+    updateCalibrationOverlay();
 }
 
 int MainComponent::dawTrackLevelIndex(int track) const {
@@ -513,6 +532,17 @@ void MainComponent::refreshSidebar() {
             r.dim = !sp.enabled || (!scene_.headphones && m >= outs);
             r.check = !r.dim && r.trailing.isEmpty();
             if (!scene_.headphones && m >= outs) r.subtitle = tr("Kein Ausgang") + u8(" \xc2\xb7 ") + rkui::num(p.azimuthDeg, 0) + degree();
+            if (calibrating_) {
+                r.subtitle = calibrationSubtitle(m);
+                if (proposal_ && m < (int)proposal_->speakers.size()) {
+                    const auto& q = proposal_->speakers[(size_t)m];
+                    r.check = q.measured && !q.warn;
+                    r.trailing = q.warn ? juce::String("!") : (q.hasDelay ? rkui::num(q.delayMs, 1) + " ms" : juce::String());
+                } else {
+                    r.check = false;
+                    r.trailing = {};
+                }
+            }
             rows.push_back(r);
         }
         sidebar_.setRows(rows);
@@ -570,6 +600,7 @@ void MainComponent::selectSpeaker(int i) {
 }
 
 void MainComponent::setStep(int step) {
+    if (calibrating_ && juce::jlimit(0, 3, step) != StepSpeakers) endCalibration();
     step_ = juce::jlimit(0, 3, step);
     if (step_ != StepOutput && speakerTestRunning_) {
         speakerTestRunning_ = false;
@@ -583,6 +614,11 @@ void MainComponent::rebuildInspector() {
     dawSliders_.clear();
     dawCard_ = nullptr;
     reverbView_ = nullptr;
+    if (calibrating_) {
+        if (phoneMode_) buildPhonePage();
+        else buildCalibrationPage();
+        return;
+    }
     switch (step_) {
     case StepSpeakers:
         rkui::buildLayoutPage(inspector_, pageContext(), selSpeaker_, [this](int i) {
@@ -1106,6 +1142,19 @@ void MainComponent::timerCallback() {
         speakerTestNext_ = now + 1500.0;
     }
 
+    if (calib_ != nullptr && calibrating_ && !phoneMode_) {
+        const bool changed = calib_->poll();
+        const int seen = (int)calib_->phase() * 100000 + calib_->currentPoint() * 1000 + calib_->done() + (calib_->message().isEmpty() ? 0 : 500);
+        if (seen != calibSeen_) {
+            calibSeen_ = seen;
+            rebuildInspector();
+            refreshSidebar();
+            updateCoach();
+        }
+        if (changed) updateCalibrationOverlay();
+    }
+    if (calibrating_ && stage_.hasCalibration()) stage_.repaint();
+
     host_.engine.collectGarbage();
 
     // Autosave one second after the last change.
@@ -1223,6 +1272,25 @@ void MainComponent::updateCoach() {
     const int nSpk = (int)scene_.layout.speakers.size();
     const rk::LayoutInfo info = rk::analyze(scene_.layout);
     const bool layoutOk = info.numActive > 0 && std::find(info.hints.begin(), info.hints.end(), "single_speaker") == info.hints.end();
+    if (calibrating_) {
+        if (phoneMode_) {
+            stage_.setCoach("1", tr("iPhone-Messung prüfen"), tr("Gestrichelt: bisher. Rechts die Zuordnung wählen und übernehmen."));
+        } else if (proposal_) {
+            stage_.setCoach({}, tr("Ergebnis prüfen"), tr("Gestrichelt: bisher. Rechts übernehmen oder verwerfen."), true);
+        } else if (calib_ != nullptr && calib_->phase() == Calibration::Phase::Measuring) {
+            stage_.setCoach("M" + juce::String(calib_->currentPoint() + 1), tr("Bitte leise sein"),
+                            tr("Lautsprecher") + " " + juce::String(calib_->playingSpeaker() + 1) + " " + tr("spielt den Messton") + u8(" \xc2\xb7 ") +
+                                juce::String(calib_->done() + 1) + " " + tr("von") + " " + juce::String(calib_->total()));
+        } else if (calib_ != nullptr && calib_->message().isNotEmpty()) {
+            stage_.setCoach("!", tr("Bitte prüfen"), calib_->message());
+        } else if (calib_ != nullptr && calib_->nextPoint() >= 0) {
+            const int j = calib_->nextPoint();
+            stage_.setCoach("M" + juce::String(j + 1), tr("Mikrofon auf Messpunkt") + " " + juce::String(j + 1) + " " + tr("stellen"), calib_->describePoint(j));
+        } else {
+            stage_.setCoach({}, tr("Alle Punkte gemessen"), tr("Rechts das Ergebnis zeigen."), true);
+        }
+        return;
+    }
     switch (step_) {
     case StepSpeakers:
         if (!layoutOk) stage_.setCoach("1", tr("Vorlage wählen"), tr("Rechts eine Vorlage wählen oder Lautsprecher hinzufügen."));
@@ -1256,6 +1324,345 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     if (key.getKeyCode() == 'O' && mods.isCommandDown()) { openProject(); return true; }
     if (key.getKeyCode() >= '1' && key.getKeyCode() <= '4' && mods.isCommandDown()) { setStep(key.getKeyCode() - '1'); return true; }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// Speaker calibration
+
+void MainComponent::startCalibration() {
+    if (step_ != StepSpeakers) setStep(StepSpeakers);
+    speakerTestRunning_ = false;
+    host_.engine.speakerTest = -1;
+    calibrating_ = true;
+    phoneMode_ = false;
+    proposal_.reset();
+    proposalOpts_ = {};
+    calibSettings_.micInput = juce::jlimit(0, juce::jmax(0, host_.numDeviceInputs() - 1), calibSettings_.micInput);
+    // In a donut not every point hears every speaker: start with at least 8 points there.
+    if (rk::analyze(scene_.layout).facesInwardAndOutward) calibSettings_.numPoints = juce::jmax(calibSettings_.numPoints, 8);
+    calib_ = std::make_unique<Calibration>(host_, scene_.layout, calibSettings_);
+    calibSeen_ = -1;
+    refreshAll();
+}
+
+void MainComponent::restartCalibration() {
+    // Settings changed before anything was measured: new measuring points, new sweep.
+    if (calib_ != nullptr && calib_->measuredPoints() > 0) return;
+    calib_ = std::make_unique<Calibration>(host_, scene_.layout, calibSettings_);
+    calibSeen_ = -1;
+    showStage();
+    rebuildInspector();
+    updateCoach();
+}
+
+void MainComponent::endCalibration() {
+    if (calib_ != nullptr) calib_->cancel();
+    calib_.reset();
+    calibrating_ = false;
+    phoneMode_ = false;
+    proposal_.reset();
+    stage_.clearCalibration();
+    calibSeen_ = -1;
+}
+
+void MainComponent::evaluateCalibration() {
+    if (calib_ == nullptr || !calib_->evaluate()) {
+        rebuildInspector();
+        updateCoach();
+        return;
+    }
+    proposal_ = calib_->proposal();
+    proposalOpts_ = {};
+    proposalOpts_.positions = proposal_->canPositions;
+    refreshAll();
+}
+
+void MainComponent::acceptProposal() {
+    if (!proposal_) return;
+    const bool moved = proposal_->replaces || (proposalOpts_.positions && proposal_->canPositions);
+    scene_.layout = rkui::applyProposal(scene_.layout, *proposal_, proposalOpts_);
+    if (moved) scene_.presetId = "custom";
+    selSpeaker_ = juce::jmin(selSpeaker_, (int)scene_.layout.speakers.size() - 1);
+    endCalibration();
+    applyScene(true);
+    commit(); // one undo step, also shared with the plugins (e.g. in Logic)
+    refreshAll();
+}
+
+void MainComponent::updateCalibrationOverlay() {
+    if (!calibrating_) {
+        if (stage_.hasCalibration()) stage_.clearCalibration();
+        return;
+    }
+    rkui::StageView::CalibrationOverlay o;
+    if (calib_ != nullptr && !phoneMode_ && !proposal_) {
+        o.points = calib_->points();
+        o.pointState = calib_->pointState();
+        o.activePoint = calib_->phase() == Calibration::Phase::Measuring ? calib_->currentPoint() : calib_->nextPoint();
+        o.playingSpeaker = calib_->playingSpeaker();
+    }
+    if (proposal_) {
+        const auto preview = rkui::applyProposal(scene_.layout, *proposal_, proposalOpts_);
+        if (!proposal_->replaces)
+            for (size_t i = 0; i < scene_.layout.speakers.size() && i < preview.speakers.size(); ++i) {
+                o.before.push_back(scene_.layout.speakers[i].position);
+                o.moved.push_back(rk::length(scene_.layout.speakers[i].position - preview.speakers[i].position) > 0.01f ? 1 : 0);
+            }
+    }
+    stage_.setCalibration(std::move(o));
+}
+
+juce::String MainComponent::calibrationSubtitle(int m) const {
+    const juce::String dot = u8(" \xc2\xb7 ");
+    if (proposal_) {
+        if (m >= (int)proposal_->speakers.size()) return {};
+        const auto& q = proposal_->speakers[(size_t)m];
+        juce::String t = q.note;
+        if (t.isEmpty() && q.hasPosition && m < (int)scene_.layout.speakers.size()) {
+            // e.g. after an iPhone survey: how far the speaker moves.
+            const float d = rk::length(q.position - scene_.layout.speakers[(size_t)m].position);
+            t = d < 0.01f ? tr("Unverändert") : tr("Verschoben um") + " " + juce::String(juce::roundToInt(d * 100.0f)) + " cm";
+        }
+        if (q.measured && q.hasGain) t << dot << rkui::num(q.gainDb, 1) << " dB";
+        return t;
+    }
+    if (calib_ == nullptr) return {};
+    if (calib_->playingSpeaker() == m) return tr("Misst") + u8("\xe2\x80\xa6");
+    int heard = 0, tried = 0;
+    for (int j = 0; j < (int)calib_->points().size(); ++j) {
+        const auto& c = calib_->cell(m, j);
+        if (!c.measured) continue;
+        ++tried;
+        if (c.m.arrival.valid && !c.m.clipped) ++heard;
+    }
+    if (tried == 0) return tr("Ausgang") + " " + juce::String(m + 1);
+    return tr("Gehört an") + " " + juce::String(heard) + " " + tr("von") + " " + juce::String(tried) + " " + tr("Punkten");
+}
+
+void MainComponent::buildCalibrationPage() {
+    inspector_.clear();
+    if (calib_ == nullptr) return;
+    const juce::String dot = u8(" \xc2\xb7 ");
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Einmessen mit Mikrofon"),
+        tr("Ein Messmikrofon (oder ein gutes Kugelmikrofon) nach oben zeigend auf ein Stativ, auf Ohrhöhe. Jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. "
+           "Aus der Laufzeit folgt der Abstand, aus mehreren Messpunkten die genaue Position. Laufzeit und Pegel werden am Messpunkt 1 ausgeglichen.")), 26);
+
+    if (proposal_) {
+        const auto& v = calib_->verdict();
+        auto card = std::make_unique<rkui::StatusCard>();
+        card->set(v.ok ? rkui::StatusCard::Kind::Ok : rkui::StatusCard::Kind::Warn, v.title, v.detail);
+        card->setProgress(v.good, v.total);
+        const int h = card->idealHeight(juce::jmax(200, inspector_.getWidth() - 24));
+        inspector_.add(std::move(card), h);
+        inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Übernehmen"), tr("Was ins Layout übernommen wird. Alles lässt sich mit Rückgängig zurücknehmen.")), 26);
+        auto toggle = [this](const juce::String& name, bool& flag, bool enabled) {
+            auto* t = inspector_.add(std::make_unique<juce::ToggleButton>(name), 28);
+            t->setToggleState(flag && enabled, juce::dontSendNotification);
+            t->setEnabled(enabled);
+            t->onClick = [this, t, &flag] {
+                flag = t->getToggleState();
+                showStage();
+                refreshSidebar();
+            };
+        };
+        toggle(tr("Positionen"), proposalOpts_.positions, proposal_->canPositions);
+        toggle(tr("Laufzeit angleichen"), proposalOpts_.delays, proposal_->canDelays);
+        toggle(tr("Pegel angleichen"), proposalOpts_.levels, proposal_->canLevels);
+        auto* ok = inspector_.add(rkui::makeButton(tr("Übernehmen"), true), 32);
+        ok->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->acceptProposal(); }); };
+        auto* more = inspector_.add(rkui::makeButton(tr("Weiter messen"), false, true), 32);
+        more->onClick = [this] {
+            proposal_.reset();
+            if (calib_ != nullptr) calib_->reopen();
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
+        };
+        auto* discard = inspector_.add(rkui::makeButton(tr("Verwerfen"), false, true), 32);
+        discard->onClick = [this] {
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
+        };
+        inspector_.addDetails(tr("Gestrichelt ist, wo die Lautsprecher bisher standen. Positionen werden nur übernommen, wenn sie von mindestens vier Messpunkten bestätigt sind.\n\n"
+                                 "Laufzeit: alle Lautsprecher klingen am Messpunkt 1 gleichzeitig. Pegel: alle gleich laut, leiser gestellt wird nur, was zu laut ist.\n\n"
+                                 "Die Ausrichtung bleibt, wie sie war (zur Mitte, nach außen oder nach innen). Für die genaue Richtung jedes Lautsprechers die iPhone-Messung verwenden."));
+        return;
+    }
+
+    const bool locked = calib_->measuredPoints() > 0 || calib_->phase() == Calibration::Phase::Measuring;
+    const juce::StringArray inputs = host_.inputNames();
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Messung")), 26);
+    auto* mic = inspector_.add(std::make_unique<rkui::ChoiceRow>(tr("Mikrofon"), inputs.isEmpty() ? juce::StringArray{tr("Kein Eingang")} : inputs), 36);
+    mic->box().setSelectedItemIndex(juce::jlimit(0, juce::jmax(0, inputs.size() - 1), calibSettings_.micInput), juce::dontSendNotification);
+    mic->setEnabled(!locked && !inputs.isEmpty());
+    mic->onChange = [this](int i) { calibSettings_.micInput = i; restartCalibration(); };
+    auto* mode = inspector_.add(std::make_unique<rkui::Segmented>(juce::StringArray{tr("Schnell"), tr("Mit Positionen")}, false), 32);
+    mode->setTooltip(tr("Schnell: ein Messpunkt, gleicht Laufzeit und Pegel aus. Mit Positionen: mehrere Messpunkte, misst auch, wo die Lautsprecher stehen."));
+    mode->setSelected(calibSettings_.positions ? 1 : 0);
+    mode->setEnabled(!locked);
+    mode->onChange = [this](int i) { calibSettings_.positions = i == 1; restartCalibration(); };
+    if (calibSettings_.positions) {
+        auto* n = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Messpunkte"), 4, 12, 1, "", 0, 4), 32);
+        n->setTooltip(tr("Mehr Punkte machen die Messung genauer. Beim Donut sieht nicht jeder Punkt jeden Lautsprecher, dort 8 oder mehr."));
+        n->setValue(calibSettings_.numPoints);
+        n->setEnabledState(!locked);
+        n->onChange = [this](double v) { calibSettings_.numPoints = (int)v; };
+        n->onCommit = [this] { restartCalibration(); };
+    }
+    auto* lvl = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Messlautstärke"), -40, -6, 1, "dB", 0, -40), 32);
+    lvl->setTooltip(tr("So laut, dass der Messton deutlich über dem Raumgeräusch liegt. Bei „Zu laut“ leiser stellen."));
+    lvl->setValue(calibSettings_.levelDb);
+    lvl->setEnabledState(calib_->phase() != Calibration::Phase::Measuring);
+    lvl->onChange = [this](double v) { calibSettings_.levelDb = (float)v; };
+    lvl->onCommit = [this] { restartCalibration(); };
+
+    // Status in plain words.
+    auto card = std::make_unique<rkui::StatusCard>();
+    const int total = (int)calib_->points().size();
+    const juce::String problem = calib_->problemBeforeStart();
+    if (problem.isNotEmpty()) {
+        card->set(rkui::StatusCard::Kind::Warn, tr("Noch nicht bereit"), problem);
+    } else if (calib_->phase() == Calibration::Phase::Measuring) {
+        card->set(rkui::StatusCard::Kind::Info, tr("Messpunkt") + " " + juce::String(calib_->currentPoint() + 1) + dot + tr("bitte leise sein"),
+                  tr("Lautsprecher") + " " + juce::String(juce::jmin(calib_->done() + 1, calib_->total())) + " " + tr("von") + " " + juce::String(calib_->total()));
+        card->setProgress(calib_->done(), calib_->total());
+    } else if (calib_->message().isNotEmpty()) {
+        card->set(rkui::StatusCard::Kind::Warn, tr("Bitte prüfen"), calib_->message());
+        card->setProgress(calib_->measuredPoints(), total);
+    } else if (calib_->nextPoint() >= 0) {
+        const int j = calib_->nextPoint();
+        card->set(rkui::StatusCard::Kind::Info, tr("Mikrofon auf Messpunkt") + " " + juce::String(j + 1), calib_->describePoint(j));
+        card->setProgress(calib_->measuredPoints(), total);
+    } else {
+        card->set(rkui::StatusCard::Kind::Ok, tr("Alle Punkte gemessen"), juce::String(total) + " " + tr("von") + " " + juce::String(total));
+        card->setProgress(total, total);
+    }
+    const int h = card->idealHeight(juce::jmax(200, inspector_.getWidth() - 24));
+    inspector_.add(std::move(card), h);
+
+    // Actions, added main action first: it ends up rightmost (measure, evaluate, leave).
+    if (calib_->phase() == Calibration::Phase::Measuring) {
+        auto* stop = inspector_.add(rkui::makeButton(tr("Abbrechen"), false, true), 32);
+        stop->onClick = [this] { if (calib_ != nullptr) calib_->cancel(); calibSeen_ = -1; };
+    } else {
+        const int next = calib_->nextPoint();
+        const int needed = calibSettings_.positions ? 4 : 1;
+        if (next >= 0) {
+            const bool repeat = calib_->pointState()[(size_t)next] == 2;
+            auto* go = inspector_.add(rkui::makeButton((repeat ? tr("Wiederholen") : tr("Messen")) + u8(" \xc2\xb7 M") + juce::String(next + 1), true), 32);
+            go->setEnabled(problem.isEmpty());
+            go->onClick = [this, next] {
+                if (calib_ != nullptr) calib_->measurePoint(next);
+                calibSeen_ = -1;
+            };
+        }
+        if (calib_->measuredPoints() >= 1) {
+            auto* eval = inspector_.add(rkui::makeButton(tr("Ergebnis zeigen"), next < 0 || calib_->measuredPoints() >= total), 32);
+            if (calib_->measuredPoints() < needed) eval->setTooltip(tr("Für Positionen mindestens 4 Messpunkte. Mit weniger nur Laufzeit und Pegel."));
+            eval->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->evaluateCalibration(); }); };
+        }
+        auto* leave = inspector_.add(rkui::makeButton(tr("Beenden"), false, true), 32);
+        leave->onClick = [this] {
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
+        };
+    }
+
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Genauer"), tr("Mit einem gemessenen Abstand (Zollstock oder Laser) von Messpunkt 1 zu Lautsprecher 1 wird die Messung auch mit wenigen Punkten genau. "
+                                                                           "Sonst rechnet Raumklang die Verzögerung des Audio-Interfaces aus den Messpunkten heraus.")), 26);
+    auto* tape = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Abstand M1 zu 1"), 0, 30, 0.01, "m", 2, 0), 32);
+    tape->formatter = [](double v) { return v < 0.05 ? tr("Aus") : rkui::num(v, 2) + " m"; };
+    tape->setValue(calibSettings_.tapeMetres);
+    tape->setEnabledState(calib_->phase() != Calibration::Phase::Measuring);
+    tape->onChange = [this](double v) { calibSettings_.tapeMetres = (float)v; };
+    tape->onCommit = [this] { if (calib_ != nullptr && calib_->measuredPoints() == 0) restartCalibration(); };
+    auto* temp = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Raumtemperatur"), 0, 40, 0.5, juce::String(juce::CharPointer_UTF8("\xc2\xb0""C")), 1, 0), 32);
+    temp->setValue(calibSettings_.temperature);
+    temp->setTooltip(tr("Der Schall ist bei Wärme schneller. 5 °C Unterschied machen auf 5 m etwa 4 cm aus."));
+    temp->onChange = [this](double v) { calibSettings_.temperature = (float)v; };
+    temp->onCommit = [this] { if (calib_ != nullptr && calib_->measuredPoints() == 0) restartCalibration(); };
+    inspector_.addDetails(tr("Ablauf: Mikrofon auf den angezeigten Messpunkt stellen, „Messen“ drücken und still sein. Jeder Lautsprecher spielt etwa 2,5 Sekunden. Dann zum nächsten Punkt.\n\n"
+                             "Messpunkt 1 ist der Hörplatz. Die anderen liegen rundherum, einer davon höher, damit auch die Höhe der Lautsprecher bestimmt werden kann. "
+                             "Auf 10 cm genau aufstellen reicht, den Rest rechnet Raumklang heraus.\n\n"
+                             "Beim Donut liegen die Punkte im Ring zwischen innen und außen. Dass die Säule manche Lautsprecher verdeckt, ist eingeplant.\n\n"
+                             "Während der Messung schweigen alle Quellen und die DAW-Spuren."));
+}
+
+void MainComponent::buildPhonePage() {
+    inspector_.clear();
+    const juce::String dot = u8(" \xc2\xb7 ");
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("iPhone-Messung"), tr("Positionen und Ausrichtung aus der App „Raumklang Messen“. Laufzeit und Pegel bleiben, wie sie sind. Danach lohnt sich „Mit Mikrofon einmessen“ im Modus „Schnell“.")), 26);
+    auto card = std::make_unique<rkui::StatusCard>();
+    const int nm = (int)survey_.speakers.size(), ns = (int)scene_.layout.speakers.size();
+    const juce::String from = survey_.source.isNotEmpty() ? survey_.source : juce::String("iPhone");
+    if (nm == ns || surveyMatch_ == 2)
+        card->set(rkui::StatusCard::Kind::Ok, juce::String(nm) + " " + tr("Lautsprecher gemessen"), from);
+    else
+        card->set(rkui::StatusCard::Kind::Warn, juce::String(nm) + " " + tr("von") + " " + juce::String(ns) + " " + tr("Lautsprechern gemessen"),
+                  from + dot + tr("die übrigen bleiben, wo sie sind"));
+    const int h = card->idealHeight(juce::jmax(200, inspector_.getWidth() - 24));
+    inspector_.add(std::move(card), h);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Zuordnung"), tr("Reihenfolge: der zuerst angetippte Lautsprecher wird Lautsprecher 1 (Ausgang 1) und so weiter.\n\n"
+                                                                             "Nach Nähe: jeder Lautsprecher bekommt die gemessene Position, die seiner bisherigen am nächsten liegt.\n\n"
+                                                                             "Neues Layout: genau die gemessenen Lautsprecher, in der angetippten Reihenfolge.")), 26);
+    auto* match = inspector_.add(std::make_unique<rkui::Segmented>(juce::StringArray{tr("Reihenfolge"), tr("Nach Nähe"), tr("Neues Layout")}, false), 32);
+    match->setSelected(surveyMatch_);
+    match->onChange = [this](int i) {
+        surveyMatch_ = i;
+        proposal_ = rkui::proposalFromSurvey(scene_.layout, survey_, (rkui::SurveyMatch)i);
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
+    };
+    auto* ok = inspector_.add(rkui::makeButton(tr("Übernehmen"), true), 32);
+    ok->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->acceptProposal(); }); };
+    auto* discard = inspector_.add(rkui::makeButton(tr("Verwerfen"), false, true), 32);
+    discard->onClick = [this] {
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
+    };
+    inspector_.addDetails(tr("Die App misst mit LiDAR, wo jeder Lautsprecher hängt und wohin er zeigt. Der Hörplatz und die Richtung „vorne“ werden in der App festgelegt.\n\n"
+                             "Die Datei kommt per AirDrop, Mail oder Cloud auf den Rechner und lässt sich einfach auf das Raumklang-Fenster ziehen."));
+}
+
+void MainComponent::chooseSurveyFile() {
+    chooser_ = std::make_unique<juce::FileChooser>(tr("iPhone-Messung laden"), juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("Downloads"),
+                                                   "*.raumklang-messung;*.json");
+    chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [sp = juce::Component::SafePointer<MainComponent>(this)](const juce::FileChooser& fc) {
+                              if (sp == nullptr) return;
+                              const juce::File f = fc.getResult();
+                              if (f.existsAsFile()) sp->loadSurvey(f);
+                          });
+}
+
+bool MainComponent::isInterestedInFileDrag(const juce::StringArray& files) {
+    for (const auto& f : files)
+        if (f.endsWithIgnoreCase(".raumklang-messung") || f.endsWithIgnoreCase(".json")) return true;
+    return false;
+}
+
+void MainComponent::filesDropped(const juce::StringArray& files, int, int) {
+    for (const auto& f : files)
+        if (f.endsWithIgnoreCase(".raumklang-messung") || f.endsWithIgnoreCase(".json")) {
+            loadSurvey(juce::File(f));
+            return;
+        }
+}
+
+void MainComponent::loadSurvey(const juce::File& file) {
+    juce::String error;
+    rkui::Survey s;
+    const bool ok = file.getSize() < 8 * 1024 * 1024 && rkui::surveyFromJson(file.loadFileAsString(), s, error);
+    if (!ok) {
+        if (error.isEmpty()) error = "Die Datei ist zu groß.";
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, tr("iPhone-Messung laden"), tr(error));
+        return;
+    }
+    if (step_ != StepSpeakers) setStep(StepSpeakers);
+    endCalibration();
+    speakerTestRunning_ = false;
+    host_.engine.speakerTest = -1;
+    survey_ = std::move(s);
+    calibrating_ = true;
+    phoneMode_ = true;
+    surveyMatch_ = (int)survey_.speakers.size() == (int)scene_.layout.speakers.size() ? 0 : 2;
+    proposal_ = rkui::proposalFromSurvey(scene_.layout, survey_, (rkui::SurveyMatch)surveyMatch_);
+    proposalOpts_ = {};
+    refreshAll();
 }
 
 } // namespace rkapp

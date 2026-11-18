@@ -1,5 +1,12 @@
 # Änderungen
 
+## Unveröffentlicht
+
+- **Einmessen mit Mikrofon**: Gleitton über jeden Lautsprecher, Laufzeit und Pegel angleichen, mit 4 bis 12 Messpunkten auch die Positionen (Multilateration, Verzögerung des Interfaces wird herausgerechnet). Hinweis auf vertauschte Kabel, Vorschau mit gestrichelter alter Position, Rückgängig.
+- **iPhone-App „Raumklang Messen“**: Lautsprecher mit LiDAR antippen, Position und Ausrichtung als Datei an Raumklang. Laden oder auf das Fenster ziehen.
+- **Testraum**: `RAUMKLANG_TESTRAUM=1` startet die App mit einem simulierten Raum und Mikrofon, zum Ausprobieren ohne Aufbau.
+- **Logic Pro**: Die AU-Plugins werden in der CI mit `auval` geprüft.
+
 ## 0.1.0 – 2026-11-18
 
 Erste Version.

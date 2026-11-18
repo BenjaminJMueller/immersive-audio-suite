@@ -8,7 +8,7 @@ juce_add_gui_app(RaumklangApp
     HARDENED_RUNTIME_ENABLED TRUE
     HARDENED_RUNTIME_OPTIONS com.apple.security.device.audio-input)
 
-target_sources(RaumklangApp PRIVATE Main.cpp MainComponent.cpp AudioHost.cpp)
+target_sources(RaumklangApp PRIVATE Main.cpp MainComponent.cpp AudioHost.cpp Calibration.cpp)
 target_compile_definitions(RaumklangApp PRIVATE
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:RaumklangApp,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:RaumklangApp,JUCE_VERSION>")

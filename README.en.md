@@ -110,7 +110,8 @@ Known limits:
 - The plugins compute inside the DAW. DAWs without multichannel tracks (e.g. Ableton Live, Logic outside surround) cannot pass the speaker channels on. A direct connection from plugin to app is on the [roadmap](docs/ROADMAP.md).
 - Layout changes during playback use a short fade (20 ms). This is audible when dragging speakers during playback.
 - Headphone preview without individual HRTF, elevation is barely reproduced.
-- No OSC remote control, no Ambisonics inputs, no room calibration yet (see roadmap).
+- No OSC remote control, no Ambisonics inputs, no EQ in the speaker calibration yet (see roadmap).
+- Speaker calibration: with a measuring microphone (sweeps, multilateration over 4 to 12 points: position, delay and level) or with the iPhone app *Raumklang Messen* (LiDAR: position and aim), see the German README. The iPhone app has not been tried on a real device yet.
 - The Mac app and plugins are not signed by Apple. On first start use *System Settings → Privacy & Security → Open Anyway*, or run `xattr -dr com.apple.quarantine "/Applications/Raumklang.app"` in Terminal. On Windows, for SmartScreen click *More info → Run anyway*.
 
 ## Installation

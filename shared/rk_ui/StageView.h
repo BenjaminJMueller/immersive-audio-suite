@@ -8,6 +8,7 @@
 
 #include <array>
 #include <functional>
+#include <optional>
 
 namespace rkui {
 
@@ -33,6 +34,20 @@ public:
     /// Sources from this index on are shown but cannot be dragged (e.g. tracks from the DAW).
     void setFirstLockedSource(int i) { firstLocked_ = i; repaint(); }
     void setProjection(Projection p);
+
+    /// Calibration overlay: measuring points for the microphone and, after a measurement, where
+    /// the speakers were before (thin dashed outline joined to the new position).
+    struct CalibrationOverlay {
+        std::vector<rk::Vec3> points;
+        std::vector<int> pointState;  // 0 open, 1 measured, 2 problem
+        int activePoint = -1;
+        std::vector<rk::Vec3> before; // per speaker, previous position
+        std::vector<char> moved;      // per speaker: draw the "before" marker
+        int playingSpeaker = -1;      // speaker that plays the sweep right now
+    };
+    void setCalibration(CalibrationOverlay o);
+    void clearCalibration();
+    bool hasCalibration() const noexcept { return calib_.has_value(); }
     Projection projection() const noexcept { return proj_; }
 
     std::function<void(int, rk::Vec3)> onSourceMoved;
@@ -57,6 +72,8 @@ public:
 private:
     void updateScale();
     void paintLegend(juce::Graphics& g);
+    void paintCalibrationBelow(juce::Graphics& g);
+    void paintCalibrationAbove(juce::Graphics& g);
     void paintCoach(juce::Graphics& g);
     void paintGrid(juce::Graphics& g, float step);
     void paintField(juce::Graphics& g, const std::function<juce::Colour(int)>& speakerColour);
@@ -82,6 +99,7 @@ private:
     int firstLocked_ = 1 << 30;
     IconButton fit_{Icon::Fit, "Alles zeigen"};
     Projection proj_ = Projection::Top;
+    std::optional<CalibrationOverlay> calib_;
     Segmented views_;
 };
 

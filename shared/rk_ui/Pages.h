@@ -21,6 +21,9 @@ struct PageContext {
     std::function<void()> rebuild;
     /// Optional: receives the reverb visualisation of the room page (to feed it a live spectrum).
     std::function<void(class ReverbView*)> reverbView;
+    /// Optional (app only): measure the speakers with a microphone / load a phone measurement.
+    std::function<void()> calibrate;
+    std::function<void()> importSurvey;
 };
 
 /// Preset, analysis card, panning method and the selected speaker.
