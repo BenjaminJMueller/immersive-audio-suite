@@ -1,4 +1,4 @@
-// "Raumklang Rückweg": brings the speaker signals the Raumklang app renders back
+// "Raumklang Return" (Rückweg): brings the speaker signals the Raumklang app renders back
 // into the DAW, one channel per speaker, for recording and real-time bounces.
 // Goes on an (aux or audio) track with as many channels as should come back; the
 // track's own input is replaced. Several instances can each take a range of channels.
@@ -25,7 +25,7 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
-    const juce::String getName() const override { return juce::String::fromUTF8("Raumklang R\xc3\xbc" "ckweg"); }
+    const juce::String getName() const override { return juce::String("Raumklang Return"); }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
