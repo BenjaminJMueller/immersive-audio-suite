@@ -160,7 +160,7 @@ jobs:
   # "Raumklang Messen" for iPhone: geometry tests and a simulator build (no signing needed).
   ios:
     name: iPhone app (Raumklang Messen)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: SurveyKit tests
