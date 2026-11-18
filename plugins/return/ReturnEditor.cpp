@@ -78,7 +78,7 @@ ReturnEditor::ReturnEditor(ReturnProcessor& p) : AudioProcessorEditor(p), proc_(
 
     card_ = page_.add(std::make_unique<rkui::StatusCard>(), 72);
     page_.add(std::make_unique<rkui::SectionHeader>(
-                  L("Kan\xc3\xa4le", "Channels"),
+                  tr("Lautsprecher"),
                   L("Die Spur bekommt so viele Lautsprecher, wie sie Kan\xc3\xa4le hat, ab dem ersten Lautsprecher. "
                     "Mehr Lautsprecher als eine Spur fasst? Weitere Spuren mit diesem Plugin anlegen und den ersten Lautsprecher weiterz\xc3\xa4hlen.",
                     "The track receives as many speakers as it has channels, starting at the first speaker. "
@@ -86,7 +86,7 @@ ReturnEditor::ReturnEditor(ReturnProcessor& p) : AudioProcessorEditor(p), proc_(
               26);
     auto* prm = proc_.params.getParameter("first");
     const auto range = prm->getNormalisableRange();
-    auto* s = page_.add(std::make_unique<rkui::ParamSlider>(L("Ab Lautsprecher", "From speaker"), range.start, range.end, 1.0,
+    auto* s = page_.add(std::make_unique<rkui::ParamSlider>(L("Ab Nummer", "From number"), range.start, range.end, 1.0,
                                                             juce::String(), 0, range.start),
                         32);
     s->setTooltip(L("Welcher Lautsprecher der App auf Kanal 1 dieser Spur kommt", "Which app speaker arrives on channel 1 of this track"));
