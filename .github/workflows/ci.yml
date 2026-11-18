@@ -63,7 +63,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-2022, ubuntu-24.04]
+        os: [macos-15, windows-2022, ubuntu-24.04]
     steps:
       - uses: actions/checkout@v4
       - name: Linux dependencies
@@ -106,6 +106,23 @@ jobs:
             $RUN $PV --strictness-level 10 --validate-in-process --timeout-ms 900000 --validate "$plugin" || status=1
             echo "::endgroup::"
           done < <(find build -path "*Release*" \( -name "*.vst3" -o -name "*.component" \) -maxdepth 6 -prune -print0)
+          exit $status
+      - name: auval (Logic Pro, GarageBand)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # Logic only loads Audio Units that pass Apple's validator.
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          find build -path "*Release*" -name "*.component" -maxdepth 6 -prune -exec cp -R {} ~/Library/Audio/Plug-Ins/Components/ \;
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 2
+          auval -a | grep -i Rmkl || true
+          status=0
+          for code in Rkq1 Rkr1; do
+            echo "::group::auval $code"
+            auval -strict -v aufx $code Rmkl || status=1
+            echo "::endgroup::"
+          done
           exit $status
       - name: Collect builds
         shell: bash
