@@ -1,6 +1,7 @@
 // Host-style stress test for both plugins, without a DAW: bus layouts, random block
 // sizes, NaN input, automation from another thread, state round trips, editors.
 // pluginval runs in CI as well; this test also runs under the sanitizers.
+#include "../return/ReturnProcessor.h"
 #include "../room/RoomProcessor.h"
 #include "../source/SourceProcessor.h"
 
@@ -160,6 +161,52 @@ void bridgeEndToEnd() {
     juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
     src.editorBeingDeleted(e.get());
 }
+
+void returnEndToEnd() {
+    rk::bridge::ReturnSender app;
+    if (!app.open()) {
+        std::printf("return: shared memory unavailable, end-to-end test skipped\n");
+        return;
+    }
+    app.heartbeat(48000.0);
+    rkplug::ReturnProcessor ret; // announces itself as listener in its constructor
+    EXPECT(app.listening());
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add(juce::AudioChannelSet::discreteChannels(4));
+    layout.outputBuses.add(juce::AudioChannelSet::discreteChannels(4));
+    EXPECT(ret.setBusesLayout(layout));
+    ret.setRateAndBufferSizeDetails(48000.0, 256);
+    ret.prepareToPlay(48000.0, 256);
+    auto* first = ret.params.getParameter("first");
+    first->setValueNotifyingHost(first->convertTo0to1(9.0f)); // speakers 9 to 12
+
+    // The app renders 12 speakers; speaker c carries a constant (c + 1) * 0.05.
+    std::vector<std::vector<float>> spk(12, std::vector<float>(256));
+    std::vector<const float*> ptr;
+    for (int c = 0; c < 12; ++c) {
+        std::fill(spk[(size_t)c].begin(), spk[(size_t)c].end(), (float)(c + 1) * 0.05f);
+        ptr.push_back(spk[(size_t)c].data());
+    }
+    juce::AudioBuffer<float> buf(4, 256);
+    juce::MidiBuffer midi;
+    int right = 0;
+    for (int b = 0; b < 400; ++b) {
+        app.write(ptr.data(), 12, 256);
+        for (int c = 0; c < 4; ++c) buf.clear();
+        buf.setSample(0, 0, 0.9f); // the track's own input must be replaced
+        ret.processBlock(buf, midi);
+        bool ok = true;
+        for (int c = 0; c < 4; ++c)
+            ok = ok && std::abs(buf.getSample(c, 200) - (float)(9 + c) * 0.05f) < 1.0e-4f;
+        if (ok) ++right;
+    }
+    EXPECT(right > 350);
+    const auto st = ret.status();
+    EXPECT(st.appRunning && st.receiving && st.appChannels == 12 && st.firstChannel == 9);
+    std::unique_ptr<juce::AudioProcessorEditor> e(ret.createEditorIfNeeded());
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
+    ret.editorBeingDeleted(e.get());
+}
 } // namespace
 
 int main() {
@@ -179,8 +226,15 @@ int main() {
             stateRoundTrip(room, room2);
             editors(room);
         }
+        {
+            rkplug::ReturnProcessor ret, ret2;
+            for (int ch : {1, 2, 8, 12, 16, 64}) hammer(ret, ch, ch, rng);
+            stateRoundTrip(ret, ret2);
+            editors(ret);
+        }
     }
     bridgeEndToEnd();
+    returnEndToEnd();
     std::printf("%s (%d failures)\n", failures == 0 ? "PLUGIN STRESS TEST PASSED" : "PLUGIN STRESS TEST FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

@@ -6,6 +6,8 @@ AudioHost::AudioHost() {
     genBuffers_.assign(static_cast<size_t>(kMaxGenerated) * kGenBlock, 0.0f);
     bridgeBuffers_.assign(static_cast<size_t>(rk::bridge::kSlots) * 2 * kGenBlock, 0.0f);
     receiver_.open(); // may fail (e.g. sandbox): the app then simply works without DAW tracks
+    returnSender_.open();
+    returnBuffers_.assign(static_cast<size_t>(rk::kMaxSpeakers) * kGenBlock, 0.0f);
     for (int i = 0; i < kMaxGenerated; ++i) {
         testSignal[(size_t)i].store(0);
         pink_[(size_t)i] = rk::PinkNoise(0x9e3779b9u * (uint32_t)(i + 1));
@@ -32,7 +34,9 @@ void AudioHost::stop() {
 
 std::vector<rk::bridge::TrackInfo> AudioHost::scanBridge() {
     // Opened once in the constructor only: the audio thread reads the receiver without locks.
-    if (!receiver_.isOpen() || !bridgeEnabled.load()) return {};
+    if (!bridgeEnabled.load()) return {};
+    if (returnSender_.isOpen()) returnSender_.heartbeat(sampleRate_.load());
+    if (!receiver_.isOpen()) return {};
     receiver_.heartbeat(sampleRate_.load());
     return receiver_.scan();
 }
@@ -127,6 +131,9 @@ void AudioHost::audioDeviceIOCallbackWithContext(const float* const* inputs, int
     numInputs = juce::jlimit(0, kMaxDeviceInputs, numInputs);
     const bool bridge = receiver_.isOpen() && bridgeEnabled.load(std::memory_order_relaxed);
     if (bridge) receiver_.beginBlock(sampleRate_.load(std::memory_order_relaxed));
+    // While a return plugin listens, every speaker is rendered (also those the audio
+    // device has no output for), so the DAW can record the complete speaker mix.
+    const bool toDaw = returnSender_.isOpen() && bridgeEnabled.load(std::memory_order_relaxed) && returnSender_.listening();
 
     for (int off = 0; off < numSamples; off += kGenBlock) {
         const int n = std::min(kGenBlock, numSamples - off);
@@ -161,8 +168,17 @@ void AudioHost::audioDeviceIOCallbackWithContext(const float* const* inputs, int
                 a.amount.store(tp.distanceAmount, std::memory_order_relaxed);
             }
         }
-        for (int c = 0; c < numOutputs; ++c) out[c] = outputs[c] != nullptr ? outputs[c] + off : nullptr;
-        engine.process(in, kTotalInputs, out, numOutputs, n);
+        if (toDaw) {
+            for (int c = 0; c < rk::kMaxSpeakers; ++c) out[c] = &returnBuffers_[(size_t)c * kGenBlock];
+            engine.process(in, kTotalInputs, out, rk::kMaxSpeakers, n);
+            const int spk = juce::jlimit(0, rk::bridge::kReturnChannels, engine.numOutputChannels());
+            returnSender_.write(out, spk, n);
+            for (int c = 0; c < numOutputs; ++c)
+                if (outputs[c] != nullptr) std::memcpy(outputs[c] + off, out[c], sizeof(float) * (size_t)n);
+        } else {
+            for (int c = 0; c < numOutputs; ++c) out[c] = outputs[c] != nullptr ? outputs[c] + off : nullptr;
+            engine.process(in, kTotalInputs, out, numOutputs, n);
+        }
 
         // Summed output for the visualisation (lock-free ring, newest samples win).
         uint32_t w = scopeWrite_.load(std::memory_order_relaxed);

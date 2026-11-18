@@ -118,7 +118,7 @@ jobs:
           sleep 2
           auval -a | grep -i Rmkl || true
           status=0
-          for code in Rkq1 Rkr1; do
+          for code in Rkq1 Rkr1 Rkb1; do
             echo "::group::auval $code"
             auval -strict -v aufx $code Rmkl || status=1
             echo "::endgroup::"
