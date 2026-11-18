@@ -9,7 +9,9 @@
 namespace rk {
 
 inline constexpr int kMaxSpeakers = 128;
-inline constexpr int kMaxSources = 128;
+inline constexpr int kMaxSources = 256;
+/// Input channels the engine accepts (device inputs, test signals and DAW tracks together).
+inline constexpr int kMaxInputs = 512;
 
 struct Speaker {
     std::string name;
