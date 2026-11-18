@@ -6,6 +6,11 @@
 
 namespace rkui {
 
+/// Speaker direction as (rotation, tilt) in degrees: rotation 0 = towards the centre,
+/// 180 = outwards, positive = to the left; tilt positive = up.
+std::pair<float, float> aimAngles(const rk::Speaker& sp);
+void setAimAngles(rk::Speaker& sp, float rotDeg, float tiltDeg);
+
 struct PageContext {
     Scene* scene = nullptr;
     /// Something changed. `structural` = layout or panner changed (engine must rebuild).

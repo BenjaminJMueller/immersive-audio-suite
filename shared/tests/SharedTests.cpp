@@ -1,6 +1,7 @@
 // Tests for the document model: round trips and robustness against broken files.
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <rk_ui/Scene.h>
+#include <rk_ui/Pages.h>
 #include <rk_ui/StageView.h>
 #include <rk_ui/Strings.h>
 #include <rk_ui/Visuals.h>
@@ -152,6 +153,25 @@ void translations() {
 
 // Spectrum analyser: a 1 kHz sine lands in the right band near 0 dB; garbage is harmless.
 // With RK_PREVIEW_DIR set, also renders the stage and the reverb view to PNG for a visual check.
+// Free speaker angles: the donut's inner ring faces outwards (180 deg), round trips hold.
+void speakerAngles() {
+    const auto d = rk::presets::donut(4, 1.0f, 8, 5.0f);
+    for (const auto& sp : d.speakers) {
+        const auto a = rkui::aimAngles(sp);
+        const bool inner = rk::length(sp.position) < 2.0f;
+        EXPECT(std::abs(std::abs(a.first) - (inner ? 180.0f : 0.0f)) < 0.5f);
+    }
+    rk::Speaker sp;
+    sp.position = rk::toCartesian({30.0f, 0.0f, 3.0f});
+    for (float rot : {-170.0f, -45.0f, 0.0f, 20.0f, 90.0f, 179.0f})
+        for (float tilt : {-60.0f, 0.0f, 35.0f}) {
+            rkui::setAimAngles(sp, rot, tilt);
+            const auto a = rkui::aimAngles(sp);
+            EXPECT(std::abs(a.first - rot) < 0.01f);
+            EXPECT(std::abs(a.second - tilt) < 0.01f);
+        }
+}
+
 void visuals() {
     rkui::SpectrumAnalyzer an;
     std::vector<float> x(rkui::SpectrumAnalyzer::kSize);
@@ -247,6 +267,7 @@ int main() {
     presetsAndAlign();
     atomicWrite();
     translations();
+    speakerAngles();
     visuals();
     std::printf("%s (%d failures)\n", failures == 0 ? "ALL SHARED TESTS PASSED" : "SHARED TESTS FAILED", failures);
     return failures == 0 ? 0 : 1;
