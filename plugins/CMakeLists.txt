@@ -5,9 +5,17 @@ if(APPLE)
     list(APPEND RK_PLUGIN_FORMATS AU)
 endif()
 
+# Optional 5th argument: the name hosts show, when it is not plain ASCII. File and
+# bundle names stay ASCII (PRODUCT_NAME), because VST3 hosts fail to load bundles
+# with non-ASCII paths on some systems.
 function(rk_add_plugin target name code description)
+    set(display "${name}")
+    if(ARGC GREATER 4)
+        set(display "${ARGV4}")
+    endif()
     juce_add_plugin(${target}
         PRODUCT_NAME "${name}"
+        PLUGIN_NAME "${display}"
         COMPANY_NAME "Raumklang"
         BUNDLE_ID "io.github.benjaminjmueller.${target}"
         PLUGIN_MANUFACTURER_CODE Rmkl
@@ -33,7 +41,8 @@ target_sources(RaumklangQuelle PRIVATE source/SourceProcessor.cpp source/SourceE
 rk_add_plugin(RaumklangRaum "Raumklang Raum" Rkr1 "Speaker setup, calibration and headphone preview")
 target_sources(RaumklangRaum PRIVATE room/RoomProcessor.cpp room/RoomEditor.cpp)
 
-rk_add_plugin(RaumklangRueckweg "Raumklang Rückweg" Rkb1 "Brings the Raumklang app's speaker signals back into the DAW")
+rk_add_plugin(RaumklangRueckweg "Raumklang Return" Rkb1 "Brings the Raumklang app's speaker signals back into the DAW"
+    "Raumklang Rückweg")
 target_sources(RaumklangRueckweg PRIVATE return/ReturnProcessor.cpp return/ReturnEditor.cpp)
 
 if(RK_BUILD_TESTS)
