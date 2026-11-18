@@ -60,6 +60,20 @@ struct Shared {
     Slot slots[kSlots];
 };
 
+struct ReturnShared {
+    std::atomic<uint32_t> magic;
+    std::atomic<uint32_t> version;
+    std::atomic<int64_t> appHeartbeatMs;
+    std::atomic<int64_t> listenerHeartbeatMs;
+    std::atomic<uint32_t> sampleRate;
+    std::atomic<uint32_t> channels;
+    std::atomic<uint32_t> blockSize;
+    std::atomic<uint32_t> reserved;
+    std::atomic<uint64_t> writePos;
+    std::atomic<float> audio[kReturnChannels][kRingFrames];
+};
+
+static_assert(std::is_standard_layout_v<ReturnShared>);
 static_assert(std::is_standard_layout_v<Slot>);
 static_assert(std::is_standard_layout_v<Shared>);
 
@@ -78,6 +92,15 @@ int64_t nowMs() {
 }
 
 size_t sharedSize() { return sizeof(Shared); }
+size_t returnSize() { return sizeof(ReturnShared); }
+
+const char* defaultReturnName() {
+#if defined(_WIN32)
+    return "Local\\RaumklangReturnV1";
+#else
+    return "/raumklang-return-v1";
+#endif
+}
 
 // ---- parameters ---------------------------------------------------------------
 
@@ -206,6 +229,19 @@ Shared* attach(SharedMemory& mem, const std::string& name) {
     if (s->magic.compare_exchange_strong(expected, kMagic)) {
         s->version.store(kVersion);
     } else if (expected != kMagic) {
+        mem.close();
+        return nullptr;
+    }
+    return s;
+}
+
+ReturnShared* attachReturn(SharedMemory& mem, const std::string& name) {
+    if (!mem.open(name, sizeof(ReturnShared))) return nullptr;
+    auto* s = static_cast<ReturnShared*>(mem.data());
+    uint32_t expected = 0;
+    if (s->magic.compare_exchange_strong(expected, kReturnMagic)) {
+        s->version.store(kVersion);
+    } else if (expected != kReturnMagic) {
         mem.close();
         return nullptr;
     }
@@ -370,6 +406,81 @@ void Sender::write(const float* const* channels, int numChannels, int numFrames,
     s.lastWriteMs.store(nowMs(), std::memory_order_relaxed);
 }
 
+// ---- drift-corrected reading (shared by both directions) ----------------------
+
+/// Reads `numFrames` from a ring that another process writes at its own clock. Keeps the
+/// read position at a target distance behind the writer and corrects drift by at most
+/// 0.5 % with linear interpolation. Fills all `outChannels` outputs (silence when dry).
+/// Returns false when nothing could be played. Realtime safe.
+template <typename RingFn>
+bool driftRead(DriftState& st, uint64_t w, int block, int numFrames, double sampleRate, int channels, int outChannels,
+               RingFn ring, float* const* out, std::atomic<uint32_t>& dropouts) noexcept {
+    auto silence = [&] {
+        for (int ch = 0; ch < outChannels; ++ch)
+            if (out[ch] != nullptr) std::fill(out[ch], out[ch] + numFrames, 0.0f);
+    };
+    const double target = std::clamp(2.0 * block + numFrames + 64.0, 256.0, kRingFrames / 2.0);
+    if (!st.running) {
+        if ((double)w < target) {
+            silence();
+            return false;
+        }
+        st.running = true;
+        st.readPos = (double)w - target;
+        st.smoothedError = 0.0;
+        st.fade = 0.0f;
+    }
+    double fill = (double)w - st.readPos;
+    // The writer jumped (new owner, stall, garbage): start again at the target distance.
+    if (fill < 0.0 || fill > kRingFrames - (double)block - 2.0) {
+        dropouts.fetch_add(1, std::memory_order_relaxed);
+        st.readPos = (double)w - target;
+        st.smoothedError = 0.0;
+        fill = target;
+    }
+    // Slow drift correction: at most 0.5 % faster or slower, smoothed over many blocks.
+    const double error = fill - target;
+    st.smoothedError += (error - st.smoothedError) * std::min(1.0, numFrames / (0.5 * sampleRate));
+    const double ratio = 1.0 + std::clamp(st.smoothedError * 2.0e-5, -0.005, 0.005);
+    const double needed = numFrames * ratio + 2.0;
+    if (fill < needed) {
+        // Ran dry (the other side stopped or stalled): silence until data is back.
+        if (w != st.lastWrite) dropouts.fetch_add(1, std::memory_order_relaxed);
+        st.lastWrite = w;
+        st.running = false;
+        silence();
+        return false;
+    }
+    st.lastWrite = w;
+
+    const float fadeStep = 1.0f / std::max(1.0f, 0.005f * (float)sampleRate);
+    float fadeEnd = st.fade;
+    for (int ch = 0; ch < outChannels; ++ch) {
+        float* dst = out[ch];
+        if (dst == nullptr) continue;
+        if (ch >= channels) {
+            std::fill(dst, dst + numFrames, 0.0f);
+            continue;
+        }
+        const std::atomic<float>* r = ring(ch);
+        double pos = st.readPos;
+        float fade = st.fade;
+        for (int k = 0; k < numFrames; ++k) {
+            const uint64_t i0 = (uint64_t)pos;
+            const float frac = (float)(pos - (double)i0);
+            const float a = r[i0 & kRingMask].load(std::memory_order_relaxed);
+            const float b = r[(i0 + 1) & kRingMask].load(std::memory_order_relaxed);
+            fade = std::min(1.0f, fade + fadeStep);
+            dst[k] = sanitizeSample(a + (b - a) * frac) * fade;
+            pos += ratio;
+        }
+        fadeEnd = fade;
+    }
+    st.fade = fadeEnd;
+    st.readPos += numFrames * ratio;
+    return true;
+}
+
 // ---- receiver -----------------------------------------------------------------
 
 Receiver::Receiver() = default;
@@ -441,64 +552,104 @@ int Receiver::read(int slot, float* const* out, int numFrames, TrackParams& para
     const int channels = std::clamp((int)s.channels.load(std::memory_order_relaxed), 1, kMaxChannels);
     const uint64_t w = s.writePos.load(std::memory_order_acquire);
     const int block = std::clamp((int)s.blockSize.load(std::memory_order_relaxed), 1, kRingFrames / 4);
-    const double target = std::clamp(2.0 * block + numFrames + 64.0, 256.0, kRingFrames / 2.0);
+    const bool ok = driftRead(st, w, block, numFrames, sampleRate_, channels, kMaxChannels,
+                              [&s](int ch) { return s.audio[ch]; }, out, dropouts_);
+    return ok ? channels : 0;
+}
 
-    if (!st.running) {
-        if ((double)w < target) {
-            silence();
-            return 0;
+// ---- return path ----------------------------------------------------------------
+
+ReturnSender::ReturnSender() = default;
+ReturnSender::~ReturnSender() = default;
+
+bool ReturnSender::open(const std::string& name) {
+    if (shared_ != nullptr) return true;
+    shared_ = attachReturn(mem_, name);
+    return shared_ != nullptr;
+}
+
+void ReturnSender::heartbeat(double sampleRate) {
+    if (shared_ == nullptr) return;
+    shared_->sampleRate.store((uint32_t)std::clamp(sampleRate, 0.0, 1.0e6));
+    shared_->appHeartbeatMs.store(nowMs());
+}
+
+bool ReturnSender::listening() const noexcept {
+    return shared_ != nullptr && nowMs() - shared_->listenerHeartbeatMs.load(std::memory_order_relaxed) < kStaleMs;
+}
+
+void ReturnSender::write(const float* const* channels, int numChannels, int numFrames) noexcept {
+    if (shared_ == nullptr || channels == nullptr || numFrames <= 0) return;
+    numChannels = std::clamp(numChannels, 0, kReturnChannels);
+    ReturnShared& s = *shared_;
+    s.channels.store((uint32_t)numChannels, std::memory_order_relaxed);
+    const uint32_t prevBlock = s.blockSize.load(std::memory_order_relaxed);
+    s.blockSize.store((uint32_t)std::max<int>(numFrames, (int)(prevBlock * 0.999)), std::memory_order_relaxed);
+    uint64_t w = s.writePos.load(std::memory_order_relaxed);
+    int done = 0;
+    while (done < numFrames) {
+        const int n = std::min(numFrames - done, kRingFrames / 2);
+        for (int ch = 0; ch < numChannels; ++ch) {
+            const float* src = channels[ch] != nullptr ? channels[ch] + done : nullptr;
+            auto* dst = s.audio[ch];
+            for (int k = 0; k < n; ++k)
+                dst[(w + (uint64_t)k) & kRingMask].store(src != nullptr ? sanitizeSample(src[k]) : 0.0f, std::memory_order_relaxed);
         }
-        st.running = true;
-        st.readPos = (double)w - target;
-        st.smoothedError = 0.0;
-        st.fade = 0.0f;
+        w += (uint64_t)n;
+        s.writePos.store(w, std::memory_order_release);
+        done += n;
     }
-    double fill = (double)w - st.readPos;
-    // The writer jumped (new owner, stall, garbage): start again at the target distance.
-    if (fill < 0.0 || fill > kRingFrames - (double)block - 2.0) {
-        dropouts_.fetch_add(1, std::memory_order_relaxed);
-        st.readPos = (double)w - target;
-        st.smoothedError = 0.0;
-        fill = target;
+}
+
+ReturnReceiver::ReturnReceiver() = default;
+ReturnReceiver::~ReturnReceiver() = default;
+
+bool ReturnReceiver::open(const std::string& name) {
+    if (shared_ != nullptr) return true;
+    shared_ = attachReturn(mem_, name);
+    return shared_ != nullptr;
+}
+
+void ReturnReceiver::heartbeat() {
+    if (shared_ != nullptr) shared_->listenerHeartbeatMs.store(nowMs());
+}
+
+bool ReturnReceiver::appRunning() const noexcept {
+    return shared_ != nullptr && nowMs() - shared_->appHeartbeatMs.load(std::memory_order_relaxed) < kStaleMs;
+}
+
+double ReturnReceiver::appSampleRate() const noexcept {
+    return shared_ != nullptr ? (double)shared_->sampleRate.load(std::memory_order_relaxed) : 0.0;
+}
+
+int ReturnReceiver::appChannels() const noexcept {
+    return shared_ != nullptr ? std::clamp((int)shared_->channels.load(std::memory_order_relaxed), 0, kReturnChannels) : 0;
+}
+
+int ReturnReceiver::read(int firstChannel, float* const* out, int numOut, int numFrames, double sampleRate) noexcept {
+    if (out == nullptr || numOut <= 0 || numFrames <= 0) return 0;
+    auto silence = [&] {
+        for (int ch = 0; ch < numOut; ++ch)
+            if (out[ch] != nullptr) std::fill(out[ch], out[ch] + numFrames, 0.0f);
+    };
+    if (sampleRate != rate_) {
+        rate_ = sampleRate;
+        state_ = DriftState{};
     }
-    // Slow drift correction: at most 0.5 % faster or slower, smoothed over many blocks.
-    const double error = fill - target;
-    st.smoothedError += (error - st.smoothedError) * std::min(1.0, numFrames / (0.5 * sampleRate_));
-    const double ratio = 1.0 + std::clamp(st.smoothedError * 2.0e-5, -0.005, 0.005);
-    const double needed = numFrames * ratio + 2.0;
-    if (fill < needed) {
-        // Ran dry (DAW stopped calling the plugin or stalled): silence until data is back.
-        if (w != st.lastWrite) dropouts_.fetch_add(1, std::memory_order_relaxed);
-        st.lastWrite = w;
-        st.running = false;
+    if (shared_ == nullptr || !appRunning() || std::abs(appSampleRate() - sampleRate) > 0.5) {
+        state_.running = false;
         silence();
         return 0;
     }
-    st.lastWrite = w;
-
-    const float fadeStep = 1.0f / std::max(1.0f, 0.005f * (float)sampleRate_);
-    for (int ch = 0; ch < kMaxChannels; ++ch) {
-        float* dst = out[ch];
-        if (ch >= channels) {
-            std::fill(dst, dst + numFrames, 0.0f);
-            continue;
-        }
-        const auto* ring = s.audio[ch];
-        double pos = st.readPos;
-        float fade = st.fade;
-        for (int k = 0; k < numFrames; ++k) {
-            const uint64_t i0 = (uint64_t)pos;
-            const float frac = (float)(pos - (double)i0);
-            const float a = ring[i0 & kRingMask].load(std::memory_order_relaxed);
-            const float b = ring[(i0 + 1) & kRingMask].load(std::memory_order_relaxed);
-            fade = std::min(1.0f, fade + fadeStep);
-            dst[k] = sanitizeSample(a + (b - a) * frac) * fade;
-            pos += ratio;
-        }
-        if (ch == channels - 1) st.fade = fade;
-    }
-    st.readPos += numFrames * ratio;
-    return channels;
+    ReturnShared& s = *shared_;
+    firstChannel = std::clamp(firstChannel, 0, kReturnChannels - 1);
+    const int avail = std::clamp(appChannels() - firstChannel, 0, numOut);
+    const uint64_t w = s.writePos.load(std::memory_order_acquire);
+    const int block = std::clamp((int)s.blockSize.load(std::memory_order_relaxed), 1, kRingFrames / 4);
+    const bool ok = driftRead(state_, w, block, numFrames, sampleRate, avail, numOut,
+                              [&s, firstChannel](int ch) { return s.audio[std::min(firstChannel + ch, kReturnChannels - 1)]; },
+                              out, dropouts_);
+    return ok ? avail : 0;
 }
 
 } // namespace rk::bridge
