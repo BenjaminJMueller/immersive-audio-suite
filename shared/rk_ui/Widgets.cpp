@@ -2,13 +2,95 @@
 
 #include "Strings.h"
 
+#include <map>
+
 namespace rkui {
 
 // ---------------------------------------------------------------------------
+SectionHeader::SectionHeader(juce::String text, juce::String info) : text_(std::move(text)), info_(std::move(info)) {
+    if (info_.isNotEmpty()) setTooltip(info_);
+}
+
 void SectionHeader::paint(juce::Graphics& g) {
-    g.setColour(palette().text);
-    g.setFont(uiFont(14.0f, true));
-    g.drawText(text_, getLocalBounds().withTrimmedLeft(4), juce::Justification::bottomLeft, true);
+    const Palette& p = palette();
+    const juce::Font f = uiFont(13.5f, true);
+    g.setColour(p.text);
+    g.setFont(f);
+    auto r = getLocalBounds().withTrimmedLeft(4).withTrimmedBottom(4);
+    g.drawText(text_, r, juce::Justification::bottomLeft, true);
+    if (info_.isNotEmpty()) {
+        const float tw = juce::GlyphArrangement::getStringWidth(f, text_);
+        auto ic = juce::Rectangle<float>(r.getX() + tw + 6.0f, (float)r.getBottom() - 15.0f, 13.0f, 13.0f);
+        drawIcon(g, Icon::Info, ic, isMouseOver() ? p.text : p.text3, 1.2f);
+    }
+}
+
+// ---------------------------------------------------------------------------
+IconButton::IconButton(Icon icon, const juce::String& tooltip) : juce::Button(tooltip), icon_(icon) {
+    setTooltip(tooltip);
+    setWantsKeyboardFocus(false);
+}
+
+void IconButton::paintButton(juce::Graphics& g, bool highlighted, bool down) {
+    const Palette& p = palette();
+    auto r = getLocalBounds().toFloat().reduced(1.0f);
+    if (down) g.setColour(p.select);
+    else if (highlighted) g.setColour(p.hover.withMultipliedAlpha(1.6f));
+    else g.setColour(juce::Colours::transparentBlack);
+    g.fillRoundedRectangle(r, 6.0f);
+    const float s = 16.0f;
+    juce::Colour c = isEnabled() ? (highlighted ? p.text : p.text2) : p.text3.withMultipliedAlpha(0.6f);
+    drawIcon(g, icon_, r.withSizeKeepingCentre(s, s), c, 1.4f);
+}
+
+// ---------------------------------------------------------------------------
+namespace {
+std::map<juce::String, bool>& disclosureState() {
+    static std::map<juce::String, bool> m;
+    return m;
+}
+} // namespace
+
+Disclosure::Disclosure(juce::String title, juce::String text) : title_(std::move(title)), text_(std::move(text)) {
+    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+}
+
+int Disclosure::heightFor(int width) const {
+    if (!disclosureState()[title_]) return 30;
+    juce::AttributedString a;
+    a.setLineSpacing(3.0f);
+    a.append(text_, uiFont(12.5f));
+    juce::TextLayout t;
+    t.createLayout(a, (float)juce::jmax(60, width - 24));
+    return 34 + juce::roundToInt(t.getHeight()) + 8;
+}
+
+void Disclosure::paint(juce::Graphics& g) {
+    const Palette& p = palette();
+    const bool open = disclosureState()[title_];
+    auto head = getLocalBounds().removeFromTop(30).toFloat();
+    juce::Path chevron;
+    const float cx = head.getX() + 9.0f, cy = head.getCentreY();
+    if (open) { chevron.startNewSubPath(cx - 3.5f, cy - 1.5f); chevron.lineTo(cx, cy + 2.0f); chevron.lineTo(cx + 3.5f, cy - 1.5f); }
+    else { chevron.startNewSubPath(cx - 1.5f, cy - 3.5f); chevron.lineTo(cx + 2.0f, cy); chevron.lineTo(cx - 1.5f, cy + 3.5f); }
+    g.setColour(isMouseOver() ? p.text : p.text2);
+    g.strokePath(chevron, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setFont(uiFont(13.5f));
+    g.drawText(title_, head.withTrimmedLeft(22), juce::Justification::centredLeft, true);
+    if (!open) return;
+    juce::AttributedString a;
+    a.setLineSpacing(3.0f);
+    a.append(text_, uiFont(12.5f), p.text2);
+    juce::TextLayout t;
+    t.createLayout(a, (float)juce::jmax(60, getWidth() - 24));
+    t.draw(g, juce::Rectangle<float>(22.0f, 32.0f, (float)getWidth() - 24.0f, (float)getHeight() - 32.0f));
+}
+
+void Disclosure::mouseUp(const juce::MouseEvent& e) {
+    if (e.y > 30) return;
+    disclosureState()[title_] = !disclosureState()[title_];
+    if (onToggle) onToggle();
+    repaint();
 }
 
 // ---------------------------------------------------------------------------
@@ -55,18 +137,21 @@ void ParamSlider::updateText() {
     value_.setText(formatter ? formatter(v) : num(v, decimals_) + (unit_.isEmpty() ? "" : " " + unit_), juce::dontSendNotification);
 }
 
+namespace {
+int labelWidth(int w) { return juce::jlimit(72, 120, w * 31 / 100); }
+} // namespace
+
 void ParamSlider::resized() {
     auto r = getLocalBounds();
-    r.removeFromLeft(juce::jmin(118, getWidth() / 3));
-    value_.setBounds(r.removeFromRight(72));
+    r.removeFromLeft(labelWidth(getWidth()));
+    value_.setBounds(r.removeFromRight(60));
     slider_.setBounds(r);
 }
 
 void ParamSlider::paint(juce::Graphics& g) {
     g.setColour(slider_.isEnabled() ? palette().text : palette().text3);
     g.setFont(uiFont(13.5f));
-    g.drawText(label_, getLocalBounds().withWidth(juce::jmin(118, getWidth() / 3)).withTrimmedLeft(4),
-               juce::Justification::centredLeft, true);
+    g.drawText(label_, getLocalBounds().withWidth(labelWidth(getWidth())), juce::Justification::centredLeft, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -79,8 +164,8 @@ ChoiceRow::ChoiceRow(juce::String label, const juce::StringArray& items) : label
 }
 
 void ChoiceRow::resized() {
-    auto r = getLocalBounds().reduced(0, 3);
-    if (label_.isNotEmpty()) r.removeFromLeft(juce::jmin(118, getWidth() / 3));
+    auto r = getLocalBounds().withSizeKeepingCentre(getWidth(), juce::jmin(getHeight(), 26));
+    if (label_.isNotEmpty()) r.removeFromLeft(labelWidth(getWidth()));
     box_.setBounds(r);
 }
 
@@ -88,30 +173,28 @@ void ChoiceRow::paint(juce::Graphics& g) {
     if (label_.isEmpty()) return;
     g.setColour(palette().text);
     g.setFont(uiFont(13.5f));
-    g.drawText(label_, getLocalBounds().withWidth(juce::jmin(118, getWidth() / 3)).withTrimmedLeft(4),
-               juce::Justification::centredLeft, true);
+    g.drawText(label_, getLocalBounds().withWidth(labelWidth(getWidth())), juce::Justification::centredLeft, true);
 }
 
 // ---------------------------------------------------------------------------
 TextRow::TextRow(juce::String label) : label_(std::move(label)) {
     editor_.setFont(uiFont(13.5f));
-    editor_.setIndents(8, 6);
+    editor_.setIndents(8, 5);
     editor_.onReturnKey = [this] { if (onCommit) onCommit(editor_.getText()); };
     editor_.onFocusLost = [this] { if (onCommit) onCommit(editor_.getText()); };
     addAndMakeVisible(editor_);
 }
 
 void TextRow::resized() {
-    auto r = getLocalBounds().reduced(0, 3);
-    r.removeFromLeft(juce::jmin(118, getWidth() / 3));
+    auto r = getLocalBounds().withSizeKeepingCentre(getWidth(), juce::jmin(getHeight(), 26));
+    r.removeFromLeft(labelWidth(getWidth()));
     editor_.setBounds(r);
 }
 
 void TextRow::paint(juce::Graphics& g) {
     g.setColour(palette().text);
     g.setFont(uiFont(13.5f));
-    g.drawText(label_, getLocalBounds().withWidth(juce::jmin(118, getWidth() / 3)).withTrimmedLeft(4),
-               juce::Justification::centredLeft, true);
+    g.drawText(label_, getLocalBounds().withWidth(labelWidth(getWidth())), juce::Justification::centredLeft, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +310,7 @@ int StatusCard::idealHeight(int width) const {
     a.append(detail_, uiFont(12.5f));
     juce::TextLayout t;
     t.createLayout(a, (float)juce::jmax(50, width - 64));
-    return juce::jmax(64, 34 + juce::roundToInt(t.getHeight()) + 14);
+    return juce::jmax(64, 34 + juce::roundToInt(t.getHeight()) + 14 + (total_ > 0 ? 12 : 0));
 }
 
 void StatusCard::paint(juce::Graphics& g) {
@@ -260,6 +343,16 @@ void StatusCard::paint(juce::Graphics& g) {
     juce::TextLayout t;
     t.createLayout(a, r.getWidth() - 64);
     t.draw(g, juce::Rectangle<float>(52, 32, r.getWidth() - 64, r.getHeight() - 36));
+    if (total_ > 0) {
+        const int n = juce::jmin(total_, 12);
+        const float gap = 4.0f, x0 = 14.0f, w = r.getWidth() - 28.0f;
+        const float seg = (w - gap * (n - 1)) / n;
+        const int filledSegs = juce::roundToInt((float)filled_ / (float)total_ * n);
+        for (int i = 0; i < n; ++i) {
+            g.setColour(i < filledSegs ? c : p.select);
+            g.fillRoundedRectangle(x0 + i * (seg + gap), r.getBottom() - 12.0f, seg, 3.0f, 1.5f);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +414,9 @@ void SidebarList::paint(juce::Graphics& g) {
         if (it.row == selected_) {
             g.setColour(p.select);
             g.fillRoundedRectangle(r, 8.0f);
+        } else if (it.row == hover_) {
+            g.setColour(p.hover);
+            g.fillRoundedRectangle(r, 8.0f);
         }
         auto badge = juce::Rectangle<float>(r.getX() + 10, r.getCentreY() - 10, 20, 20);
         drawNumberBadge(g, badge, row.number, row.dim ? row.colour.withSaturation(0.0f).withAlpha(0.6f) : row.colour);
@@ -363,6 +459,17 @@ void SidebarList::mouseUp(const juce::MouseEvent& e) {
         }
 }
 
+void SidebarList::mouseMove(const juce::MouseEvent& e) {
+    int h = -1;
+    for (const auto& it : layoutItems())
+        if (it.bounds.contains(e.getPosition())) h = it.row;
+    if (h != hover_) { hover_ = h; repaint(); }
+}
+
+void SidebarList::mouseExit(const juce::MouseEvent&) {
+    if (hover_ != -1) { hover_ = -1; repaint(); }
+}
+
 // ---------------------------------------------------------------------------
 FormPage::FormPage() {
     viewport_.setViewedComponent(&content_, false);
@@ -385,14 +492,87 @@ void FormPage::addRow(std::unique_ptr<juce::Component> c, int height) {
 
 void FormPage::addSpace(int height) { addRow(std::make_unique<juce::Component>(), height); }
 
+void FormPage::addDetails(const juce::String& text) {
+    auto d = std::make_unique<Disclosure>(tr("Details und Hilfen"), text);
+    Disclosure* raw = d.get();
+    const int w = juce::jmax(100, getWidth() - 24);
+    addRow(std::move(d), raw->heightFor(w));
+    raw->onToggle = [this, raw] { setRowHeight(raw, raw->heightFor(raw->getWidth())); };
+}
+
+void FormPage::setRowHeight(juce::Component* c, int height) {
+    for (auto& e : entries_)
+        if (e.comp.get() == c) e.height = height;
+    relayout();
+}
+
+namespace {
+bool isSettingRow(juce::Component* c) {
+    return dynamic_cast<ParamSlider*>(c) != nullptr || dynamic_cast<ChoiceRow*>(c) != nullptr ||
+           dynamic_cast<TextRow*>(c) != nullptr || dynamic_cast<juce::ToggleButton*>(c) != nullptr;
+}
+} // namespace
+
+void FormPage::Content::paint(juce::Graphics& g) {
+    const Palette& p = palette();
+    for (const auto& c : cards) {
+        g.setColour(p.group);
+        g.fillRoundedRectangle(c, 10.0f);
+        g.setColour(p.line);
+        g.drawRoundedRectangle(c.reduced(0.25f), 10.0f, 0.75f);
+    }
+    g.setColour(p.line);
+    for (const auto& l : separators) g.drawLine(l, 0.75f);
+}
+
 void FormPage::relayout() {
     const int w = juce::jmax(100, viewport_.getMaximumVisibleWidth() > 0 ? viewport_.getMaximumVisibleWidth() : getWidth());
-    int y = 6;
+    const int pad = 12, inner = 12;
+    content_.cards.clear();
+    content_.separators.clear();
+    int y = 8;
+    int groupTop = -1;
+    buttonRowY_ = -1;
+    buttonRowRight_ = 0;
+    auto closeGroup = [&] {
+        if (groupTop < 0) return;
+        content_.cards.emplace_back((float)pad, (float)groupTop, (float)(w - 2 * pad), (float)(y - groupTop));
+        groupTop = -1;
+        y += 10;
+    };
     for (auto& e : entries_) {
-        e.comp->setBounds(12, y, w - 24, e.height);
-        y += e.height + 4;
+        juce::Component* c = e.comp.get();
+        if (isSettingRow(c)) {
+            if (buttonRowY_ >= 0) { y = buttonRowY_ + 36; buttonRowY_ = -1; }
+            const int h = juce::jmax(e.height, 38);
+            if (groupTop < 0) groupTop = y;
+            else content_.separators.emplace_back((float)(pad + inner), (float)y, (float)(w - pad), (float)y);
+            c->setBounds(pad + inner, y, w - 2 * (pad + inner), h);
+            y += h;
+            continue;
+        }
+        closeGroup();
+        if (auto* b = dynamic_cast<juce::TextButton*>(c); b != nullptr && !(bool)b->getProperties().getWithDefault("block", false)) {
+            // Action buttons: right-aligned, consecutive ones share a row when they fit.
+            const int bw = juce::jmin(w - 2 * pad, juce::roundToInt(juce::GlyphArrangement::getStringWidth(uiFont(13.5f), b->getButtonText())) + 30);
+            if (buttonRowRight_ - bw < pad || buttonRowY_ < 0) {
+                if (buttonRowY_ >= 0) y += 34;
+                buttonRowY_ = y;
+                buttonRowRight_ = w - pad;
+            }
+            b->setBounds(buttonRowRight_ - bw, buttonRowY_, bw, 28);
+            buttonRowRight_ -= bw + 8;
+            continue;
+        }
+        if (buttonRowY_ >= 0) { y = buttonRowY_ + 36; buttonRowY_ = -1; }
+        if (auto* d = dynamic_cast<Disclosure*>(c)) e.height = d->heightFor(w - 2 * pad);
+        c->setBounds(pad, y, w - 2 * pad, e.height);
+        y += e.height + (dynamic_cast<SectionHeader*>(c) != nullptr ? 2 : 8);
     }
+    closeGroup();
+    if (buttonRowY_ >= 0) { y = buttonRowY_ + 36; buttonRowY_ = -1; }
     content_.setSize(w, y + 16);
+    content_.repaint();
 }
 
 void FormPage::resized() {

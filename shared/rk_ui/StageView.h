@@ -3,6 +3,7 @@
 
 #include "Scene.h"
 #include "Theme.h"
+#include "Widgets.h"
 
 #include <functional>
 
@@ -19,7 +20,11 @@ public:
     void setSelectedSpeaker(int i) { selSpeaker_ = i; repaint(); }
     void setSpeakerLevels(const std::vector<float>& l) { speakerLevels_ = l; repaint(); }
     void setSourceLevels(const std::vector<float>& l) { sourceLevels_ = l; repaint(); }
-    void setHint(juce::String h) { hint_ = std::move(h); repaint(); }
+    /// Coach bar at the bottom centre: the next step in plain words (Projection Studio style).
+    /// `badge` is a step number or empty; `ok` turns the badge green.
+    void setCoach(juce::String badge, juce::String title, juce::String text, bool ok = false);
+    /// Sources from this index on are shown but cannot be dragged (e.g. tracks from the DAW).
+    void setFirstLockedSource(int i) { firstLocked_ = i; repaint(); }
 
     std::function<void(int, rk::Vec3)> onSourceMoved;
     std::function<void(int, rk::Vec3)> onSpeakerMoved;
@@ -28,17 +33,20 @@ public:
     std::function<void()> onDragEnd;
 
     void paint(juce::Graphics& g) override;
-    void resized() override { updateScale(); }
+    void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
+    void mouseMove(const juce::MouseEvent& e) override;
 
     juce::Point<float> toScreen(rk::Vec3 p) const;
     rk::Vec3 toWorld(juce::Point<float> s, float z) const;
 
 private:
     void updateScale();
+    void paintLegend(juce::Graphics& g);
+    void paintCoach(juce::Graphics& g);
     int hitSource(juce::Point<float> p) const;
     int hitSpeaker(juce::Point<float> p) const;
 
@@ -52,7 +60,10 @@ private:
     float zoom_ = 1.0f;
     juce::Point<float> centre_;
     std::vector<float> speakerLevels_, sourceLevels_;
-    juce::String hint_;
+    juce::String coachBadge_, coachTitle_, coachText_;
+    bool coachOk_ = false;
+    int firstLocked_ = 1 << 30;
+    IconButton fit_{Icon::Fit, "Alles zeigen"};
 };
 
 } // namespace rkui

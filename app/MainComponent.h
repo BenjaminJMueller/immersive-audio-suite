@@ -43,6 +43,7 @@ private:
     void rebuildInspector();
     void buildSourcesPage();
     void buildOutputPage();
+    void addDeviceRows();
     void selectSource(int i);
     void selectSpeaker(int i);
     void addSource();
@@ -52,6 +53,9 @@ private:
     void saveProjectAs();
     void showHelpMenu();
     void applyTheme();
+    void updateCoach();
+    void updateTooltips();
+    void showIntro();
     rkui::PageContext pageContext();
     juce::String sourceSubtitle(int i) const;
 
@@ -73,14 +77,18 @@ private:
 
     rkui::LookAndFeel lnf_;
     rkui::Segmented steps_;
-    std::unique_ptr<juce::TextButton> undoBtn_, redoBtn_, openBtn_, saveBtn_, helpBtn_, addBtn_;
+    rkui::IconButton undoBtn_{rkui::Icon::Undo, {}}, redoBtn_{rkui::Icon::Redo, {}}, openBtn_{rkui::Icon::Open, {}},
+        saveBtn_{rkui::Icon::Save, {}}, helpBtn_{rkui::Icon::Help, {}};
+    std::unique_ptr<juce::TextButton> addBtn_;
     rkui::SidebarList sidebar_;
     juce::Viewport sidebarView_;
     rkui::StageView stage_;
     rkui::FormPage inspector_;
     std::unique_ptr<IntroOverlay> intro_;
-    std::unique_ptr<juce::AudioDeviceSelectorComponent> deviceSelector_;
+    juce::String deviceError_;
     juce::String statusText_;
+    std::array<bool, rk::kMaxSources> sourceHasSignal_{};
+    std::array<double, rk::kMaxSources> signalSeen_{};
     juce::TooltipWindow tooltips_{this, 600};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

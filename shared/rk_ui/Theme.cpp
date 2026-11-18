@@ -82,6 +82,85 @@ juce::Font uiFont(float height, bool bold) {
     return juce::Font(juce::FontOptions(height, bold ? juce::Font::bold : juce::Font::plain));
 }
 
+juce::Path iconPath(Icon icon, juce::Rectangle<float> r) {
+    // Designed on a 16 x 16 grid, scaled into r.
+    juce::Path p;
+    switch (icon) {
+    case Icon::Undo:
+        p.startNewSubPath(5.5f, 3.5f); p.lineTo(2.5f, 6.5f); p.lineTo(5.5f, 9.5f);
+        p.startNewSubPath(2.5f, 6.5f); p.lineTo(10.0f, 6.5f);
+        p.cubicTo(12.5f, 6.5f, 13.5f, 8.5f, 13.5f, 10.0f); p.cubicTo(13.5f, 11.5f, 12.5f, 13.0f, 10.0f, 13.0f); p.lineTo(7.0f, 13.0f);
+        break;
+    case Icon::Redo:
+        p.startNewSubPath(10.5f, 3.5f); p.lineTo(13.5f, 6.5f); p.lineTo(10.5f, 9.5f);
+        p.startNewSubPath(13.5f, 6.5f); p.lineTo(6.0f, 6.5f);
+        p.cubicTo(3.5f, 6.5f, 2.5f, 8.5f, 2.5f, 10.0f); p.cubicTo(2.5f, 11.5f, 3.5f, 13.0f, 6.0f, 13.0f); p.lineTo(9.0f, 13.0f);
+        break;
+    case Icon::Open:
+        p.startNewSubPath(1.5f, 4.0f); p.lineTo(1.5f, 12.5f); p.lineTo(13.0f, 12.5f); p.lineTo(14.5f, 6.5f); p.lineTo(4.0f, 6.5f); p.lineTo(2.5f, 12.0f);
+        p.startNewSubPath(1.5f, 4.0f); p.lineTo(1.5f, 3.0f); p.lineTo(5.5f, 3.0f); p.lineTo(7.0f, 4.5f); p.lineTo(12.0f, 4.5f); p.lineTo(12.0f, 6.5f);
+        break;
+    case Icon::Save:
+        p.addRoundedRectangle(2.5f, 2.5f, 11.0f, 11.0f, 1.5f);
+        p.startNewSubPath(5.0f, 2.5f); p.lineTo(5.0f, 5.5f); p.lineTo(10.5f, 5.5f); p.lineTo(10.5f, 2.5f);
+        p.addRoundedRectangle(5.0f, 9.0f, 6.0f, 4.5f, 0.8f);
+        break;
+    case Icon::Help:
+        p.addEllipse(1.75f, 1.75f, 12.5f, 12.5f);
+        p.startNewSubPath(6.0f, 6.2f); p.cubicTo(6.0f, 4.0f, 10.2f, 4.0f, 10.2f, 6.3f); p.cubicTo(10.2f, 7.8f, 8.0f, 7.9f, 8.0f, 9.5f);
+        p.addEllipse(7.4f, 11.0f, 1.2f, 1.2f);
+        break;
+    case Icon::Info:
+        p.addEllipse(1.75f, 1.75f, 12.5f, 12.5f);
+        p.startNewSubPath(8.0f, 7.2f); p.lineTo(8.0f, 11.5f);
+        p.addEllipse(7.4f, 4.4f, 1.2f, 1.2f);
+        break;
+    case Icon::Fit:
+        p.startNewSubPath(2.0f, 5.5f); p.lineTo(2.0f, 2.0f); p.lineTo(5.5f, 2.0f);
+        p.startNewSubPath(10.5f, 2.0f); p.lineTo(14.0f, 2.0f); p.lineTo(14.0f, 5.5f);
+        p.startNewSubPath(14.0f, 10.5f); p.lineTo(14.0f, 14.0f); p.lineTo(10.5f, 14.0f);
+        p.startNewSubPath(5.5f, 14.0f); p.lineTo(2.0f, 14.0f); p.lineTo(2.0f, 10.5f);
+        break;
+    case Icon::Plus:
+        p.startNewSubPath(8.0f, 3.0f); p.lineTo(8.0f, 13.0f); p.startNewSubPath(3.0f, 8.0f); p.lineTo(13.0f, 8.0f);
+        break;
+    case Icon::Speaker:
+        p.startNewSubPath(2.5f, 6.0f); p.lineTo(5.0f, 6.0f); p.lineTo(8.5f, 3.0f); p.lineTo(8.5f, 13.0f); p.lineTo(5.0f, 10.0f); p.lineTo(2.5f, 10.0f); p.closeSubPath();
+        p.startNewSubPath(11.0f, 5.5f); p.cubicTo(12.3f, 6.8f, 12.3f, 9.2f, 11.0f, 10.5f);
+        p.startNewSubPath(12.8f, 3.8f); p.cubicTo(15.2f, 6.2f, 15.2f, 9.8f, 12.8f, 12.2f);
+        break;
+    case Icon::Source:
+        p.addEllipse(5.0f, 5.0f, 6.0f, 6.0f);
+        p.addEllipse(2.0f, 2.0f, 12.0f, 12.0f);
+        break;
+    case Icon::Room:
+        p.startNewSubPath(2.0f, 13.5f); p.lineTo(2.0f, 6.0f); p.lineTo(8.0f, 2.5f); p.lineTo(14.0f, 6.0f); p.lineTo(14.0f, 13.5f); p.closeSubPath();
+        p.startNewSubPath(5.0f, 10.0f); p.cubicTo(6.5f, 8.0f, 9.5f, 8.0f, 11.0f, 10.0f);
+        break;
+    case Icon::Output:
+        p.addRoundedRectangle(2.0f, 3.5f, 12.0f, 9.0f, 1.5f);
+        p.addEllipse(4.0f, 6.0f, 2.0f, 2.0f); p.addEllipse(7.0f, 6.0f, 2.0f, 2.0f); p.addEllipse(10.0f, 6.0f, 2.0f, 2.0f);
+        p.startNewSubPath(4.0f, 10.5f); p.lineTo(12.0f, 10.5f);
+        break;
+    case Icon::Headphones:
+        p.startNewSubPath(2.5f, 10.0f); p.lineTo(2.5f, 8.0f); p.cubicTo(2.5f, 1.5f, 13.5f, 1.5f, 13.5f, 8.0f); p.lineTo(13.5f, 10.0f);
+        p.addRoundedRectangle(2.0f, 9.0f, 3.0f, 5.0f, 1.0f); p.addRoundedRectangle(11.0f, 9.0f, 3.0f, 5.0f, 1.0f);
+        break;
+    case Icon::Daw:
+        p.addRoundedRectangle(1.5f, 3.0f, 13.0f, 10.0f, 1.5f);
+        p.startNewSubPath(4.0f, 6.0f); p.lineTo(4.0f, 10.5f); p.startNewSubPath(6.5f, 7.5f); p.lineTo(6.5f, 10.5f);
+        p.startNewSubPath(9.0f, 5.5f); p.lineTo(9.0f, 10.5f); p.startNewSubPath(11.5f, 8.0f); p.lineTo(11.5f, 10.5f);
+        break;
+    }
+    p.applyTransform(juce::AffineTransform::scale(r.getWidth() / 16.0f, r.getHeight() / 16.0f).translated(r.getX(), r.getY()));
+    return p;
+}
+
+void drawIcon(juce::Graphics& g, Icon icon, juce::Rectangle<float> r, juce::Colour c, float stroke) {
+    g.setColour(c);
+    g.strokePath(iconPath(icon, r), juce::PathStrokeType(stroke, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
 void drawNumberBadge(juce::Graphics& g, juce::Rectangle<float> r, int number, juce::Colour c, bool selected) {
     g.setColour(c);
     g.fillEllipse(r);
@@ -163,6 +242,10 @@ void LookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& b, const
         g.setColour(p.line);
         g.drawRoundedRectangle(r, 6.0f, 0.75f);
     }
+    if (b.hasKeyboardFocus(false) && b.isShowing()) {
+        g.setColour(p.accent.withAlpha(0.45f));
+        g.drawRoundedRectangle(r.reduced(0.5f), 6.0f, 2.5f);
+    }
 }
 
 juce::Font LookAndFeel::getTextButtonFont(juce::TextButton&, int h) { return uiFont(juce::jmin(13.5f, h * 0.5f)); }
@@ -181,12 +264,37 @@ void LookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& b, bool, b
 
 void LookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& b, bool highlighted, bool down) {
     const Palette& p = palette();
-    const float box = 16.0f;
-    const float y = (b.getHeight() - box) * 0.5f;
-    drawTickBox(g, b, 2.0f, y, box, box, b.getToggleState(), b.isEnabled(), highlighted, down);
+    if (b.getProperties().getWithDefault("checkbox", false)) {
+        const float box = 16.0f;
+        const float y = (b.getHeight() - box) * 0.5f;
+        drawTickBox(g, b, 2.0f, y, box, box, b.getToggleState(), b.isEnabled(), highlighted, down);
+        g.setColour(b.isEnabled() ? p.text : p.text3);
+        g.setFont(uiFont(13.5f));
+        g.drawFittedText(b.getButtonText(), b.getLocalBounds().withTrimmedLeft(26), juce::Justification::centredLeft, 2);
+        return;
+    }
+    // macOS switch: label left, switch right.
+    const float sw = 32.0f, sh = 18.0f;
+    auto sr = juce::Rectangle<float>((float)b.getWidth() - sw - 2.0f, (b.getHeight() - sh) * 0.5f, sw, sh);
+    const bool on = b.getToggleState();
+    juce::Colour track = on ? p.accent : p.track;
+    if (highlighted && !on) track = track.brighter(0.15f);
+    if (!b.isEnabled()) track = track.withMultipliedAlpha(0.5f);
+    g.setColour(track);
+    g.fillRoundedRectangle(sr, sh * 0.5f);
+    const float k = sh - 4.0f;
+    auto knob = juce::Rectangle<float>(on ? sr.getRight() - k - 2.0f : sr.getX() + 2.0f, sr.getY() + 2.0f, k, k);
+    g.setColour(juce::Colours::black.withAlpha(0.2f));
+    g.fillEllipse(knob.translated(0.0f, 0.75f));
+    g.setColour(down ? juce::Colour(0xfff2f2f4) : juce::Colours::white);
+    g.fillEllipse(knob);
+    if (b.hasKeyboardFocus(false)) {
+        g.setColour(p.accent.withAlpha(0.45f));
+        g.drawRoundedRectangle(sr.expanded(2.0f), sh * 0.5f + 2.0f, 2.0f);
+    }
     g.setColour(b.isEnabled() ? p.text : p.text3);
     g.setFont(uiFont(13.5f));
-    g.drawFittedText(b.getButtonText(), b.getLocalBounds().withTrimmedLeft(26), juce::Justification::centredLeft, 2);
+    g.drawFittedText(b.getButtonText(), b.getLocalBounds().withTrimmedRight((int)sw + 12), juce::Justification::centredLeft, 2);
 }
 
 void LookAndFeel::drawTickBox(juce::Graphics& g, juce::Component&, float x, float y, float w, float h, bool ticked,
@@ -244,7 +352,8 @@ void LookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int w, int h
         return;
     }
     const float cy = y + h * 0.5f;
-    const float x0 = (float)x + 8.0f, x1 = (float)(x + w) - 8.0f;
+    // x and w already exclude the thumb radius (see getSliderThumbRadius).
+    const float x0 = (float)x, x1 = (float)(x + w);
     g.setColour(p.track);
     g.fillRoundedRectangle(x0, cy - 2.0f, x1 - x0, 4.0f, 2.0f);
     // Fill from the "zero" point if the range crosses it, else from the left.
@@ -252,11 +361,16 @@ void LookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int w, int h
     const float zx = (float)s.getPositionOfValue(zero);
     g.setColour(s.isEnabled() ? p.accent : p.text3);
     g.fillRoundedRectangle(juce::jmin(zx, pos), cy - 2.0f, std::abs(pos - zx), 4.0f, 2.0f);
-    const float r = 8.0f;
-    g.setColour(juce::Colours::black.withAlpha(0.25f));
-    g.fillEllipse(pos - r, cy - r + 1.0f, 2 * r, 2 * r);
-    g.setColour(s.isMouseButtonDown() ? p.knob.brighter(0.2f) : p.knob);
-    g.fillEllipse(pos - r, cy - r, 2 * r, 2 * r);
+    // Capsule knob (Projection Studio, variant B): 24 x 14, radius 7.
+    auto knob = juce::Rectangle<float>(24.0f, 14.0f).withCentre({pos, cy});
+    g.setColour(juce::Colours::black.withAlpha(isDark() ? 0.35f : 0.16f));
+    g.fillRoundedRectangle(knob.translated(0.0f, 0.75f).expanded(0.5f), 7.5f);
+    g.setColour(s.isMouseButtonDown() ? p.knob.brighter(0.15f) : (s.isMouseOver() ? p.knob.brighter(0.06f) : p.knob));
+    g.fillRoundedRectangle(knob, 7.0f);
+    if (s.hasKeyboardFocus(false)) {
+        g.setColour(p.accent.withAlpha(0.45f));
+        g.drawRoundedRectangle(knob.expanded(2.0f), 9.0f, 2.0f);
+    }
 }
 
 void LookAndFeel::fillTextEditorBackground(juce::Graphics& g, int w, int h, juce::TextEditor&) {

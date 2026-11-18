@@ -19,6 +19,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout makeLayout() {
     p.push_back(std::make_unique<P>(juce::ParameterID{"reverbSend", 1}, "Hallanteil", juce::NormalisableRange<float>(-80.0f, 6.0f, 0.1f), -12.0f, A().withLabel("dB")));
     p.push_back(std::make_unique<P>(juce::ParameterID{"stereoWidth", 1}, "Stereobreite", juce::NormalisableRange<float>(0.0f, 180.0f, 0.1f), 60.0f, A().withLabel(juce::String::fromUTF8("\xc2\xb0"))));
     p.push_back(std::make_unique<P>(juce::ParameterID{"distanceAmount", 1}, "Entfernung", juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 100.0f, A().withLabel("%")));
+    p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"route", 1}, "Ausgabe",
+                                                             juce::StringArray{"Automatisch", "An die App", "In der DAW"}, 0));
     return {p.begin(), p.end()};
 }
 
@@ -37,11 +39,34 @@ SourceProcessor::SourceProcessor()
     send_ = params.getRawParameterValue("reverbSend");
     width_ = params.getRawParameterValue("stereoWidth");
     distAmt_ = params.getRawParameterValue("distanceAmount");
+    route_ = params.getRawParameterValue("route");
     reloadSetup(true);
-    startTimer(1000);
+    timerCallback(); // connect to the app right away
+    startTimer(500);
 }
 
-SourceProcessor::~SourceProcessor() { stopTimer(); }
+SourceProcessor::~SourceProcessor() {
+    stopTimer();
+    sender_.release();
+}
+
+void SourceProcessor::updateTrackProperties(const TrackProperties& properties) {
+    const juce::ScopedLock sl(nameLock_);
+    trackName_ = properties.name.value_or(juce::String());
+}
+
+SourceProcessor::LinkStatus SourceProcessor::linkStatus() const {
+    LinkStatus s;
+    s.sending = sending_.load();
+    s.appRunning = appRunning_.load();
+    s.bridgeAvailable = sender_.isOpen();
+    s.slot = sender_.slot();
+    s.appSampleRate = appSampleRate_.load();
+    s.sampleRate = getSampleRate();
+    s.rateMismatch = s.appRunning && s.appSampleRate > 0.0 && s.sampleRate > 0.0 && std::abs(s.appSampleRate - s.sampleRate) > 1.0;
+    s.route = static_cast<Route>(juce::jlimit(0, 2, (int)std::lround(route_->load())));
+    return s;
+}
 
 bool SourceProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     const int in = layouts.getMainInputChannels();
@@ -109,6 +134,28 @@ void SourceProcessor::setSourcePosition(rk::Vec3 p) {
 void SourceProcessor::timerCallback() {
     reloadSetup(false);
     engine.collectGarbage();
+    // Bridge housekeeping (message thread): open, claim a slot while the app runs, stay alive.
+    if (!sender_.isOpen()) sender_.open();
+    const bool running = sender_.appRunning();
+    appRunning_ = running;
+    const double appRate = sender_.appSampleRate();
+    appSampleRate_ = appRate;
+    const double ownRate = getSampleRate();
+    const bool rateOk = appRate <= 0.0 || ownRate <= 0.0 || std::abs(appRate - ownRate) <= 1.0;
+    // "Automatic" only hands the track to the app when the app can actually play it.
+    appUsable_ = running && rateOk;
+    const auto route = static_cast<Route>(juce::jlimit(0, 2, (int)std::lround(route_->load())));
+    if ((route == Route::App && running) || (route == Route::Automatic && running && rateOk)) {
+        if (sender_.slot() < 0) sender_.claim();
+        juce::String name;
+        {
+            const juce::ScopedLock sl(nameLock_);
+            name = trackName_;
+        }
+        sender_.heartbeat(name.isEmpty() ? std::string("Raumklang Quelle") : name.toStdString());
+    } else if (sender_.slot() >= 0) {
+        sender_.release();
+    }
 }
 
 void SourceProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
@@ -117,23 +164,45 @@ void SourceProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     const int numOut = buffer.getNumChannels();
     const int n = buffer.getNumSamples();
 
-    // A stereo input becomes two sources, spread left and right of the centre direction.
-    const float az = az_->load(), el = el_->load(), dist = dist_->load();
-    const float half = numIn == 2 ? width_->load() * 0.5f : 0.0f;
-    for (int ch = 0; ch < 2; ++ch) {
-        auto& s = engine.source(ch);
-        if (ch >= numIn) { s.active = false; continue; }
-        s.active = true;
-        s.inputChannel = ch;
-        s.gainDb = gain_->load() + (numIn == 2 ? -3.0f : 0.0f);
-        s.spread = spread_->load() * 0.01f;
-        s.reverbSendDb = send_->load();
-        s.distanceAmount = distAmt_->load() * 0.01f;
-        const float a = az + (ch == 0 ? half : -half);
-        const rk::Vec3 p = rk::toCartesian({rk::wrapDegrees(a), el, dist});
-        if (p.x != s.x.load() || p.y != s.y.load() || p.z != s.z.load()) s.setPosition(p);
-        else s.touch();
+    float peak = 0.0f;
+    for (int ch = 0; ch < numIn; ++ch) peak = std::max(peak, buffer.getMagnitude(ch, 0, n));
+    if (std::isfinite(peak) && peak > inputPeak_.load(std::memory_order_relaxed)) inputPeak_.store(peak, std::memory_order_relaxed);
+
+    // Send to the app: the app spatialises and plays the track, the DAW track stays silent.
+    const auto route = static_cast<Route>(juce::jlimit(0, 2, (int)std::lround(route_->load())));
+    const bool toApp = route == Route::App || (route == Route::Automatic && appUsable_.load(std::memory_order_relaxed));
+    if (toApp && sender_.slot() >= 0) {
+        rk::bridge::TrackParams tp;
+        tp.azimuthDeg = az_->load();
+        tp.elevationDeg = el_->load();
+        tp.distance = dist_->load();
+        tp.spread = spread_->load() * 0.01f;
+        tp.gainDb = gain_->load();
+        tp.reverbSendDb = send_->load();
+        tp.stereoWidthDeg = width_->load();
+        tp.distanceAmount = distAmt_->load() * 0.01f;
+        sender_.write(buffer.getArrayOfReadPointers(), juce::jmax(1, numIn), n, getSampleRate(), tp);
+        buffer.clear();
+        sending_.store(true, std::memory_order_relaxed);
+        return;
     }
+    sending_.store(false, std::memory_order_relaxed);
+    if (route == Route::App) { // explicitly "app", but the app is not there: stay silent
+        buffer.clear();
+        return;
+    }
+
+    // Render in the DAW: one output channel per speaker.
+    rk::bridge::TrackParams tp;
+    tp.azimuthDeg = az_->load();
+    tp.elevationDeg = el_->load();
+    tp.distance = dist_->load();
+    tp.spread = spread_->load() * 0.01f;
+    tp.gainDb = gain_->load();
+    tp.reverbSendDb = send_->load();
+    tp.stereoWidthDeg = width_->load();
+    tp.distanceAmount = distAmt_->load() * 0.01f;
+    rk::bridge::applyTrack(engine, 0, 0, juce::jmax(1, numIn), tp, numIn > 0);
     engine.process(buffer.getArrayOfReadPointers(), numIn, buffer.getArrayOfWritePointers(), numOut, n);
 }
 
