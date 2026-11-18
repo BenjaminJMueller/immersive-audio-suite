@@ -187,8 +187,17 @@ void visuals() {
         st.setProjection(static_cast<rkui::StageView::Projection>(proj));
         st.setSelectedSource(-1);
         st.setAmbience(0.7f);
-        std::vector<float> spk(sc.layout.speakers.size());
-        for (size_t m = 0; m < spk.size(); ++m) spk[m] = 0.25f + 0.6f * (float)((m * 7) % 5) / 4.0f;
+        // Speaker levels as the engine would produce them from the four sources.
+        const float srcLvl[4] = {0.9f, 0.6f, 0.8f, 0.5f};
+        rk::Panner pan;
+        pan.prepare(sc.layout, sc.effectivePanner(), {sc.dbapRolloffDb, sc.dbapBlur, sc.dbapDirectivity}, 3);
+        std::vector<float> spk(sc.layout.speakers.size(), 0.0f);
+        float gains[rk::kMaxSpeakers];
+        for (int i = 0; i < 4; ++i) {
+            pan.compute({sc.sources[(size_t)i].position, sc.sources[(size_t)i].spread}, gains);
+            for (size_t m = 0; m < spk.size(); ++m) spk[m] += gains[m] * gains[m] * srcLvl[i];
+        }
+        for (auto& v : spk) v = std::min(1.0f, std::sqrt(v) * 0.95f + 0.04f); // plus a little reverb everywhere
         st.setSpeakerLevels(spk);
         st.setSourceLevels({0.0f, 0.0f, 0.0f, 0.0f});
         st.setSourceLevels({0.9f, 0.6f, 0.8f, 0.5f});
@@ -203,17 +212,22 @@ void visuals() {
         juce::PNGImageFormat().writeImageToStream(img, os);
     }
     rkui::ReverbView rv;
-    rv.setBounds(0, 0, 326, 150);
+    rv.setBounds(0, 0, 326, 170);
     rv.setParams({2.2f, 6000.0f, 20.0f, 1.2f}, -6.0f);
-    for (size_t i = 0; i < x.size(); ++i) {
-        const double t = (double)i / 48000.0;
-        x[i] = (float)(0.3 * std::sin(2.0 * juce::MathConstants<double>::pi * 110.0 * t) + 0.15 * std::sin(2.0 * juce::MathConstants<double>::pi * 660.0 * t) +
-                       0.05 * std::sin(2.0 * juce::MathConstants<double>::pi * 3300.0 * t) + 0.02 * ((double)((i * 2654435761u) % 1000) / 500.0 - 1.0));
-    }
     rkui::SpectrumAnalyzer an2;
-    an2.process(x.data(), 48000.0);
-    rv.setBands(an2.bandsDb());
-    juce::Image img(juce::Image::ARGB, 326 * 2, 150 * 2, true);
+    for (int frame = 0; frame < 40; ++frame) { // a little melody so the waterfall moves
+        const double f1 = 110.0 * std::pow(2.0, (double)((frame / 6) % 4) * 3.0 / 12.0);
+        for (size_t i = 0; i < x.size(); ++i) {
+            const double t = (double)(i + (size_t)frame * 1600) / 48000.0;
+            const double env = 0.6 + 0.4 * std::sin(frame * 0.5);
+            x[i] = (float)(env * (0.3 * std::sin(2.0 * juce::MathConstants<double>::pi * f1 * t) + 0.12 * std::sin(2.0 * juce::MathConstants<double>::pi * f1 * 3.0 * t) +
+                                  0.05 * std::sin(2.0 * juce::MathConstants<double>::pi * f1 * 7.0 * t)) +
+                           0.02 * ((double)(((i + (size_t)frame * 977) * 2654435761u) % 1000) / 500.0 - 1.0));
+        }
+        an2.process(x.data(), 48000.0);
+        rv.setBands(an2.bandsDb());
+    }
+    juce::Image img(juce::Image::ARGB, 326 * 2, 170 * 2, true);
     juce::Graphics g(img);
     g.fillAll(rkui::palette().side);
     g.addTransform(juce::AffineTransform::scale(2.0f));

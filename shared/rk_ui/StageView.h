@@ -6,6 +6,7 @@
 #include "Theme.h"
 #include "Widgets.h"
 
+#include <array>
 #include <functional>
 
 namespace rkui {
@@ -58,6 +59,7 @@ private:
     void paintLegend(juce::Graphics& g);
     void paintCoach(juce::Graphics& g);
     void paintGrid(juce::Graphics& g, float step);
+    void paintField(juce::Graphics& g, const std::function<juce::Colour(int)>& speakerColour);
     juce::Point<float> plane(rk::Vec3 p) const; // view-plane coordinates in metres
     int hitSource(juce::Point<float> p) const;
     int hitSpeaker(juce::Point<float> p) const;

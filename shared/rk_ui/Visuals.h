@@ -1,6 +1,5 @@
-// Raumklang UI: sound visualisation. A live spectrum of what the speakers play and the
-// shape of the reverb tail over frequency, in the colours of the spectrum (red = low,
-// violet = high), drawn as soft glowing light.
+// Raumklang UI: sound visualisation. A live spectrum of what the speakers play as a
+// waterfall receding into depth, and the reverb time over frequency as a fine curve.
 #pragma once
 
 #include "Theme.h"
@@ -42,6 +41,8 @@ private:
     float wetDb_ = -6.0f;
     std::array<float, SpectrumAnalyzer::kBands> bands_{};
     bool hasBands_ = false;
+    static constexpr int kHistory = 28; // waterfall depth
+    std::vector<std::array<float, SpectrumAnalyzer::kBands>> history_; // newest first
 };
 
 } // namespace rkui

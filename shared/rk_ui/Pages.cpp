@@ -268,7 +268,7 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
 void buildRoomPage(FormPage& page, PageContext ctx) {
     page.clear();
     Scene& s = *ctx.scene;
-    auto* view = page.add(std::make_unique<ReverbView>(), 150);
+    auto* view = page.add(std::make_unique<ReverbView>(), 170);
     view->setTooltip(tr("Farbig: was die Lautsprecher gerade spielen, tief links, hoch rechts. Die Linie zeigt, wie lange der Hall je Tonhöhe nachklingt."));
     view->setParams(s.reverb, s.reverbWetDb);
     if (ctx.reverbView) ctx.reverbView(view);
