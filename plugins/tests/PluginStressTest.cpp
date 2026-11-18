@@ -1,6 +1,7 @@
 // Host-style stress test for both plugins, without a DAW: bus layouts, random block
 // sizes, NaN input, automation from another thread, state round trips, editors.
 // pluginval runs in CI as well; this test also runs under the sanitizers.
+#include "../return/ReturnProcessor.h"
 #include "../room/RoomProcessor.h"
 #include "../source/SourceProcessor.h"
 
@@ -94,6 +95,118 @@ void editors(juce::AudioProcessor& p) {
         p.editorBeingDeleted(e.get());
     }
 }
+// The whole chain without a DAW: "Quelle" sends its track to an app-side receiver, the
+// DAW output stays silent, and switching the destination to "In der DAW" renders locally.
+void bridgeEndToEnd() {
+    rk::bridge::Receiver app;
+    if (!app.open()) {
+        std::printf("bridge: shared memory unavailable, end-to-end test skipped\n");
+        return;
+    }
+    app.heartbeat(48000.0);
+    rkplug::SourceProcessor src; // connects to the app in its constructor
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add(juce::AudioChannelSet::mono());
+    layout.outputBuses.add(juce::AudioChannelSet::discreteChannels(8));
+    EXPECT(src.setBusesLayout(layout));
+    src.setRateAndBufferSizeDetails(48000.0, 256);
+    src.prepareToPlay(48000.0, 256);
+    const auto st = src.linkStatus();
+    EXPECT(st.appRunning);
+    EXPECT(st.slot >= 0);
+    if (st.slot < 0) return;
+
+    juce::AudioBuffer<float> buf(8, 256);
+    juce::MidiBuffer midi;
+    std::vector<float> l(256), r(256);
+    double phase = 0.0;
+    int heard = 0;
+    float dawLeak = 0.0f;
+    for (int b = 0; b < 400; ++b) {
+        buf.clear();
+        for (int i = 0; i < 256; ++i) {
+            buf.setSample(0, i, 0.5f * (float)std::sin(phase));
+            phase += 2.0 * juce::MathConstants<double>::pi * 440.0 / 48000.0;
+        }
+        src.processBlock(buf, midi);
+        for (int c = 0; c < 8; ++c) dawLeak = std::max(dawLeak, buf.getMagnitude(c, 0, 256));
+        app.beginBlock(48000.0);
+        float* out[2] = {l.data(), r.data()};
+        rk::bridge::TrackParams tp;
+        const int ch = app.read(st.slot, out, 256, tp);
+        float peak = 0.0f;
+        for (float v : l) peak = std::max(peak, std::abs(v));
+        if (ch == 1 && peak > 0.4f && peak < 0.6f) ++heard;
+        if (b % 100 == 0) app.heartbeat(48000.0);
+    }
+    EXPECT(dawLeak == 0.0f); // the track plays in the app only, never twice
+    EXPECT(heard > 350);
+    const auto tracks = app.scan();
+    EXPECT(tracks.size() == 1 && tracks[0].sending && tracks[0].channels == 1);
+    EXPECT(src.linkStatus().sending);
+
+    // Destination "In der DAW": the plugin renders the speakers itself again.
+    auto* route = src.params.getParameter("route");
+    route->setValueNotifyingHost(route->convertTo0to1(2.0f));
+    float dawPeak = 0.0f;
+    for (int b = 0; b < 40; ++b) {
+        buf.clear();
+        for (int i = 0; i < 256; ++i) buf.setSample(0, i, 0.5f * (float)std::sin(phase += 0.0576));
+        src.processBlock(buf, midi);
+        for (int c = 0; c < 8; ++c) dawPeak = std::max(dawPeak, buf.getMagnitude(c, 0, 256));
+    }
+    EXPECT(dawPeak > 0.01f);
+    EXPECT(!src.linkStatus().sending);
+    std::unique_ptr<juce::AudioProcessorEditor> e(src.createEditorIfNeeded());
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
+    src.editorBeingDeleted(e.get());
+}
+
+void returnEndToEnd() {
+    rk::bridge::ReturnSender app;
+    if (!app.open()) {
+        std::printf("return: shared memory unavailable, end-to-end test skipped\n");
+        return;
+    }
+    app.heartbeat(48000.0);
+    rkplug::ReturnProcessor ret; // announces itself as listener in its constructor
+    EXPECT(app.listening());
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add(juce::AudioChannelSet::discreteChannels(4));
+    layout.outputBuses.add(juce::AudioChannelSet::discreteChannels(4));
+    EXPECT(ret.setBusesLayout(layout));
+    ret.setRateAndBufferSizeDetails(48000.0, 256);
+    ret.prepareToPlay(48000.0, 256);
+    auto* first = ret.params.getParameter("first");
+    first->setValueNotifyingHost(first->convertTo0to1(9.0f)); // speakers 9 to 12
+
+    // The app renders 12 speakers; speaker c carries a constant (c + 1) * 0.05.
+    std::vector<std::vector<float>> spk(12, std::vector<float>(256));
+    std::vector<const float*> ptr;
+    for (int c = 0; c < 12; ++c) {
+        std::fill(spk[(size_t)c].begin(), spk[(size_t)c].end(), (float)(c + 1) * 0.05f);
+        ptr.push_back(spk[(size_t)c].data());
+    }
+    juce::AudioBuffer<float> buf(4, 256);
+    juce::MidiBuffer midi;
+    int right = 0;
+    for (int b = 0; b < 400; ++b) {
+        app.write(ptr.data(), 12, 256);
+        for (int c = 0; c < 4; ++c) buf.clear();
+        buf.setSample(0, 0, 0.9f); // the track's own input must be replaced
+        ret.processBlock(buf, midi);
+        bool ok = true;
+        for (int c = 0; c < 4; ++c)
+            ok = ok && std::abs(buf.getSample(c, 200) - (float)(9 + c) * 0.05f) < 1.0e-4f;
+        if (ok) ++right;
+    }
+    EXPECT(right > 350);
+    const auto st = ret.status();
+    EXPECT(st.appRunning && st.receiving && st.appChannels == 12 && st.firstChannel == 9);
+    std::unique_ptr<juce::AudioProcessorEditor> e(ret.createEditorIfNeeded());
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
+    ret.editorBeingDeleted(e.get());
+}
 } // namespace
 
 int main() {
@@ -113,7 +226,15 @@ int main() {
             stateRoundTrip(room, room2);
             editors(room);
         }
+        {
+            rkplug::ReturnProcessor ret, ret2;
+            for (int ch : {1, 2, 8, 12, 16, 64}) hammer(ret, ch, ch, rng);
+            stateRoundTrip(ret, ret2);
+            editors(ret);
+        }
     }
+    bridgeEndToEnd();
+    returnEndToEnd();
     std::printf("%s (%d failures)\n", failures == 0 ? "PLUGIN STRESS TEST PASSED" : "PLUGIN STRESS TEST FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

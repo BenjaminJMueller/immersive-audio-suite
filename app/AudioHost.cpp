@@ -4,6 +4,10 @@ namespace rkapp {
 
 AudioHost::AudioHost() {
     genBuffers_.assign(static_cast<size_t>(kMaxGenerated) * kGenBlock, 0.0f);
+    bridgeBuffers_.assign(static_cast<size_t>(rk::bridge::kSlots) * 2 * kGenBlock, 0.0f);
+    receiver_.open(); // may fail (e.g. sandbox): the app then simply works without DAW tracks
+    returnSender_.open();
+    returnBuffers_.assign(static_cast<size_t>(rk::kMaxSpeakers) * kGenBlock, 0.0f);
     for (int i = 0; i < kMaxGenerated; ++i) {
         testSignal[(size_t)i].store(0);
         pink_[(size_t)i] = rk::PinkNoise(0x9e3779b9u * (uint32_t)(i + 1));
@@ -26,6 +30,37 @@ juce::String AudioHost::start(const juce::XmlElement* savedState) {
 void AudioHost::stop() {
     devices.removeAudioCallback(this);
     devices.closeAudioDevice();
+}
+
+std::vector<rk::bridge::TrackInfo> AudioHost::scanBridge() {
+    // Opened once in the constructor only: the audio thread reads the receiver without locks.
+    if (!bridgeEnabled.load()) return {};
+    if (returnSender_.isOpen()) returnSender_.heartbeat(sampleRate_.load());
+    if (!receiver_.isOpen()) return {};
+    receiver_.heartbeat(sampleRate_.load());
+    return receiver_.scan();
+}
+
+rk::bridge::TrackParams AudioHost::bridgeParams(int slot) const noexcept {
+    rk::bridge::TrackParams p;
+    if (slot < 0 || slot >= rk::bridge::kSlots) return p;
+    const auto& a = bridgeParams_[(size_t)slot];
+    p.azimuthDeg = a.az.load(std::memory_order_relaxed);
+    p.elevationDeg = a.el.load(std::memory_order_relaxed);
+    p.distance = a.dist.load(std::memory_order_relaxed);
+    p.spread = a.spread.load(std::memory_order_relaxed);
+    p.gainDb = a.gain.load(std::memory_order_relaxed);
+    p.reverbSendDb = a.send.load(std::memory_order_relaxed);
+    p.stereoWidthDeg = a.width.load(std::memory_order_relaxed);
+    p.distanceAmount = a.amount.load(std::memory_order_relaxed);
+    return p;
+}
+
+void AudioHost::readScope(float* dst, int n) const noexcept {
+    n = juce::jlimit(0, kScopeSize, n);
+    const uint32_t end = scopeWrite_.load(std::memory_order_acquire);
+    for (int i = 0; i < n; ++i)
+        dst[i] = scope_[(end - (uint32_t)n + (uint32_t)i) % kScopeSize].load(std::memory_order_relaxed);
 }
 
 juce::String AudioHost::takeError() {
@@ -90,11 +125,15 @@ void AudioHost::generate(int s, int type, float* out, int n) noexcept {
 void AudioHost::audioDeviceIOCallbackWithContext(const float* const* inputs, int numInputs, float* const* outputs,
                                                  int numOutputs, int numSamples,
                                                  const juce::AudioIODeviceCallbackContext&) {
-    constexpr int kTotalInputs = kMaxDeviceInputs + kMaxGenerated;
     const float* in[kTotalInputs];
     float* out[rk::kMaxSpeakers];
     numOutputs = juce::jlimit(0, rk::kMaxSpeakers, numOutputs);
     numInputs = juce::jlimit(0, kMaxDeviceInputs, numInputs);
+    const bool bridge = receiver_.isOpen() && bridgeEnabled.load(std::memory_order_relaxed);
+    if (bridge) receiver_.beginBlock(sampleRate_.load(std::memory_order_relaxed));
+    // While a return plugin listens, every speaker is rendered (also those the audio
+    // device has no output for), so the DAW can record the complete speaker mix.
+    const bool toDaw = returnSender_.isOpen() && bridgeEnabled.load(std::memory_order_relaxed) && returnSender_.listening();
 
     for (int off = 0; off < numSamples; off += kGenBlock) {
         const int n = std::min(kGenBlock, numSamples - off);
@@ -105,8 +144,53 @@ void AudioHost::audioDeviceIOCallbackWithContext(const float* const* inputs, int
             if (type != 0) generate(s, type, buf, n);
             in[kGeneratorBase + s] = type != 0 ? buf : nullptr;
         }
-        for (int c = 0; c < numOutputs; ++c) out[c] = outputs[c] != nullptr ? outputs[c] + off : nullptr;
-        engine.process(in, kTotalInputs, out, numOutputs, n);
+        for (int k = 0; k < rk::bridge::kSlots; ++k) {
+            float* l = &bridgeBuffers_[((size_t)k * 2) * kGenBlock];
+            float* r = &bridgeBuffers_[((size_t)k * 2 + 1) * kGenBlock];
+            int ch = 0;
+            rk::bridge::TrackParams tp;
+            if (bridge) {
+                float* both[2] = {l, r};
+                ch = receiver_.read(k, both, n, tp);
+            }
+            in[kBridgeInputBase + 2 * k] = ch > 0 ? l : nullptr;
+            in[kBridgeInputBase + 2 * k + 1] = ch > 1 ? r : nullptr;
+            rk::bridge::applyTrack(engine, kBridgeSourceBase + 2 * k, kBridgeInputBase + 2 * k, ch > 0 ? ch : 1, tp, ch > 0);
+            if (ch > 0) {
+                auto& a = bridgeParams_[(size_t)k];
+                a.az.store(tp.azimuthDeg, std::memory_order_relaxed);
+                a.el.store(tp.elevationDeg, std::memory_order_relaxed);
+                a.dist.store(tp.distance, std::memory_order_relaxed);
+                a.spread.store(tp.spread, std::memory_order_relaxed);
+                a.gain.store(tp.gainDb, std::memory_order_relaxed);
+                a.send.store(tp.reverbSendDb, std::memory_order_relaxed);
+                a.width.store(tp.stereoWidthDeg, std::memory_order_relaxed);
+                a.amount.store(tp.distanceAmount, std::memory_order_relaxed);
+            }
+        }
+        if (toDaw) {
+            for (int c = 0; c < rk::kMaxSpeakers; ++c) out[c] = &returnBuffers_[(size_t)c * kGenBlock];
+            engine.process(in, kTotalInputs, out, rk::kMaxSpeakers, n);
+            const int spk = juce::jlimit(0, rk::bridge::kReturnChannels, engine.numOutputChannels());
+            returnSender_.write(out, spk, n);
+            for (int c = 0; c < numOutputs; ++c)
+                if (outputs[c] != nullptr) std::memcpy(outputs[c] + off, out[c], sizeof(float) * (size_t)n);
+        } else {
+            for (int c = 0; c < numOutputs; ++c) out[c] = outputs[c] != nullptr ? outputs[c] + off : nullptr;
+            engine.process(in, kTotalInputs, out, numOutputs, n);
+        }
+
+        // Summed output for the visualisation (lock-free ring, newest samples win).
+        uint32_t w = scopeWrite_.load(std::memory_order_relaxed);
+        const float norm = numOutputs > 0 ? 1.0f / std::sqrt((float)numOutputs) : 0.0f;
+        for (int i = 0; i < n; ++i) {
+            float sum = 0.0f;
+            for (int c = 0; c < numOutputs; ++c)
+                if (out[c] != nullptr) sum += out[c][i];
+            scope_[w % kScopeSize].store(sum * norm, std::memory_order_relaxed);
+            ++w;
+        }
+        scopeWrite_.store(w, std::memory_order_release);
     }
 }
 

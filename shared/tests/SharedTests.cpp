@@ -1,7 +1,10 @@
 // Tests for the document model: round trips and robustness against broken files.
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <rk_ui/Scene.h>
+#include <rk_ui/Pages.h>
+#include <rk_ui/StageView.h>
 #include <rk_ui/Strings.h>
+#include <rk_ui/Visuals.h>
 
 #include <random>
 
@@ -148,6 +151,113 @@ void translations() {
 
 } // namespace
 
+// Spectrum analyser: a 1 kHz sine lands in the right band near 0 dB; garbage is harmless.
+// With RK_PREVIEW_DIR set, also renders the stage and the reverb view to PNG for a visual check.
+// Free speaker angles: the donut's inner ring faces outwards (180 deg), round trips hold.
+void speakerAngles() {
+    const auto d = rk::presets::donut(4, 1.0f, 8, 5.0f);
+    for (const auto& sp : d.speakers) {
+        const auto a = rkui::aimAngles(sp);
+        const bool inner = rk::length(sp.position) < 2.0f;
+        EXPECT(std::abs(std::abs(a.first) - (inner ? 180.0f : 0.0f)) < 0.5f);
+    }
+    rk::Speaker sp;
+    sp.position = rk::toCartesian({30.0f, 0.0f, 3.0f});
+    for (float rot : {-170.0f, -45.0f, 0.0f, 20.0f, 90.0f, 179.0f})
+        for (float tilt : {-60.0f, 0.0f, 35.0f}) {
+            rkui::setAimAngles(sp, rot, tilt);
+            const auto a = rkui::aimAngles(sp);
+            EXPECT(std::abs(a.first - rot) < 0.01f);
+            EXPECT(std::abs(a.second - tilt) < 0.01f);
+        }
+}
+
+void visuals() {
+    rkui::SpectrumAnalyzer an;
+    std::vector<float> x(rkui::SpectrumAnalyzer::kSize);
+    for (size_t i = 0; i < x.size(); ++i) x[i] = (float)std::sin(2.0 * juce::MathConstants<double>::pi * 1000.0 * (double)i / 48000.0);
+    an.process(x.data(), 48000.0);
+    int best = 0;
+    for (int b = 1; b < rkui::SpectrumAnalyzer::kBands; ++b)
+        if (an.bandsDb()[(size_t)b] > an.bandsDb()[(size_t)best]) best = b;
+    const float f = rkui::SpectrumAnalyzer::bandFrequency(best);
+    EXPECT(f > 850.0f && f < 1180.0f);
+    EXPECT(an.bandsDb()[(size_t)best] > -9.0f && an.bandsDb()[(size_t)best] < 3.0f);
+    std::fill(x.begin(), x.end(), std::numeric_limits<float>::quiet_NaN());
+    an.process(x.data(), 48000.0);
+    for (float v : an.bandsDb()) EXPECT(std::isfinite(v));
+
+    const juce::String dir = juce::SystemStats::getEnvironmentVariable("RK_PREVIEW_DIR", {});
+    if (dir.isEmpty()) return;
+    rkui::setDarkMode(true);
+    rkui::Scene sc;
+    sc.presetId = "dome";
+    rkui::regenerateLayout(sc);
+    for (int i = 0; i < 4; ++i) {
+        rkui::SourceInfo si;
+        si.name = "Q" + juce::String(i + 1);
+        si.position = rk::toCartesian({-140.0f + 85.0f * (float)i, i == 2 ? 35.0f : 0.0f, 2.2f});
+        si.spread = i == 1 ? 0.3f : 0.0f;
+        sc.sources.push_back(si);
+    }
+    for (int proj = 0; proj < 3; ++proj) {
+        rkui::StageView st;
+        st.setBounds(0, 0, 850, 780);
+        st.setScene(sc);
+        st.setProjection(static_cast<rkui::StageView::Projection>(proj));
+        st.setSelectedSource(-1);
+        st.setAmbience(0.7f);
+        // Speaker levels as the engine would produce them from the four sources.
+        const float srcLvl[4] = {0.9f, 0.6f, 0.8f, 0.5f};
+        rk::Panner pan;
+        pan.prepare(sc.layout, sc.effectivePanner(), {sc.dbapRolloffDb, sc.dbapBlur, sc.dbapDirectivity}, 3);
+        std::vector<float> spk(sc.layout.speakers.size(), 0.0f);
+        float gains[rk::kMaxSpeakers];
+        for (int i = 0; i < 4; ++i) {
+            pan.compute({sc.sources[(size_t)i].position, sc.sources[(size_t)i].spread}, gains);
+            for (size_t m = 0; m < spk.size(); ++m) spk[m] += gains[m] * gains[m] * srcLvl[i];
+        }
+        for (auto& v : spk) v = std::min(1.0f, std::sqrt(v) * 0.95f + 0.04f); // plus a little reverb everywhere
+        st.setSpeakerLevels(spk);
+        st.setSourceLevels({0.0f, 0.0f, 0.0f, 0.0f});
+        st.setSourceLevels({0.9f, 0.6f, 0.8f, 0.5f});
+        st.setCoach("2", "Quellen im Raum platzieren", "Ziehen verschiebt sie.");
+        juce::Image img(juce::Image::RGB, 850 * 2, 780 * 2, true);
+        juce::Graphics g(img);
+        g.addTransform(juce::AffineTransform::scale(2.0f));
+        st.paintEntireComponent(g, true);
+        juce::File out = juce::File(dir).getChildFile("stage-" + juce::String(proj) + ".png");
+        out.deleteFile();
+        juce::FileOutputStream os(out);
+        juce::PNGImageFormat().writeImageToStream(img, os);
+    }
+    rkui::ReverbView rv;
+    rv.setBounds(0, 0, 326, 170);
+    rv.setParams({2.2f, 6000.0f, 20.0f, 1.2f}, -6.0f);
+    rkui::SpectrumAnalyzer an2;
+    for (int frame = 0; frame < 40; ++frame) { // a little melody so the waterfall moves
+        const double f1 = 110.0 * std::pow(2.0, (double)((frame / 6) % 4) * 3.0 / 12.0);
+        for (size_t i = 0; i < x.size(); ++i) {
+            const double t = (double)(i + (size_t)frame * 1600) / 48000.0;
+            const double env = 0.6 + 0.4 * std::sin(frame * 0.5);
+            x[i] = (float)(env * (0.3 * std::sin(2.0 * juce::MathConstants<double>::pi * f1 * t) + 0.12 * std::sin(2.0 * juce::MathConstants<double>::pi * f1 * 3.0 * t) +
+                                  0.05 * std::sin(2.0 * juce::MathConstants<double>::pi * f1 * 7.0 * t)) +
+                           0.02 * ((double)(((i + (size_t)frame * 977) * 2654435761u) % 1000) / 500.0 - 1.0));
+        }
+        an2.process(x.data(), 48000.0);
+        rv.setBands(an2.bandsDb());
+    }
+    juce::Image img(juce::Image::ARGB, 326 * 2, 170 * 2, true);
+    juce::Graphics g(img);
+    g.fillAll(rkui::palette().side);
+    g.addTransform(juce::AffineTransform::scale(2.0f));
+    rv.paintEntireComponent(g, true);
+    juce::File out = juce::File(dir).getChildFile("reverb.png");
+    out.deleteFile();
+    juce::FileOutputStream os(out);
+    juce::PNGImageFormat().writeImageToStream(img, os);
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     roundTrip();
@@ -157,6 +267,8 @@ int main() {
     presetsAndAlign();
     atomicWrite();
     translations();
+    speakerAngles();
+    visuals();
     std::printf("%s (%d failures)\n", failures == 0 ? "ALL SHARED TESTS PASSED" : "SHARED TESTS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

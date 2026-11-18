@@ -5,6 +5,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <rk/bridge.hpp>
 #include <rk/engine.hpp>
 #include <rk_ui/Scene.h>
 
@@ -34,6 +35,22 @@ public:
     void changeProgramName(int, const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock& dest) override;
     void setStateInformation(const void* data, int size) override;
+    void updateTrackProperties(const TrackProperties& properties) override;
+
+    /// Where the audio goes: 0 automatic (app if it runs), 1 always the app, 2 the DAW track.
+    enum class Route { Automatic = 0, App = 1, Daw = 2 };
+    /// What the editor shows about the connection (message thread).
+    struct LinkStatus {
+        bool sending = false;          // audio currently goes to the app
+        bool appRunning = false;
+        bool rateMismatch = false;     // app runs at another sample rate
+        bool bridgeAvailable = false;  // shared memory could be opened
+        int slot = -1;
+        double appSampleRate = 0.0;
+        double sampleRate = 0.0;
+        Route route = Route::Automatic;
+    };
+    LinkStatus linkStatus() const;
 
     juce::AudioProcessorValueTreeState params;
     rk::Engine engine;
@@ -45,6 +62,7 @@ public:
     void setSourcePosition(rk::Vec3 p);
     int outputChannels() const { return outputChannels_.load(); }
     float takeOutputPeak(int c) { return engine.takeOutputPeak(c); }
+    float takeInputPeak() { return inputPeak_.exchange(0.0f); }
 
 private:
     void timerCallback() override;
@@ -63,6 +81,17 @@ private:
     std::atomic<float>* send_ = nullptr;
     std::atomic<float>* width_ = nullptr;
     std::atomic<float>* distAmt_ = nullptr;
+    std::atomic<float>* route_ = nullptr;
+
+    // Plugin -> app bridge (no routing software needed).
+    rk::bridge::Sender sender_;
+    std::atomic<bool> appRunning_{false};
+    std::atomic<bool> appUsable_{false}; // running and at the same sample rate
+    std::atomic<bool> sending_{false};
+    std::atomic<float> inputPeak_{0.0f};
+    std::atomic<double> appSampleRate_{0.0};
+    juce::CriticalSection nameLock_;
+    juce::String trackName_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SourceProcessor)
 };

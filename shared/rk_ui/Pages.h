@@ -6,6 +6,11 @@
 
 namespace rkui {
 
+/// Speaker direction as (rotation, tilt) in degrees: rotation 0 = towards the centre,
+/// 180 = outwards, positive = to the left; tilt positive = up.
+std::pair<float, float> aimAngles(const rk::Speaker& sp);
+void setAimAngles(rk::Speaker& sp, float rotDeg, float tiltDeg);
+
 struct PageContext {
     Scene* scene = nullptr;
     /// Something changed. `structural` = layout or panner changed (engine must rebuild).
@@ -14,6 +19,8 @@ struct PageContext {
     std::function<void()> commit;
     /// The page must be rebuilt (e.g. different controls are needed now).
     std::function<void()> rebuild;
+    /// Optional: receives the reverb visualisation of the room page (to feed it a live spectrum).
+    std::function<void(class ReverbView*)> reverbView;
 };
 
 /// Preset, analysis card, panning method and the selected speaker.

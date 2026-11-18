@@ -1,9 +1,12 @@
-# Two plugins: "Raumklang Quelle" (one per track) and "Raumklang Raum" (master bus).
+# Three plugins: "Raumklang Quelle" (one per track), "Raumklang Raum" (master bus) and
+# "Raumklang Return" (brings the app's speaker signals back into the DAW).
 set(RK_PLUGIN_FORMATS VST3 Standalone)
 if(APPLE)
     list(APPEND RK_PLUGIN_FORMATS AU)
 endif()
 
+# Plugin names stay plain ASCII: JUCE's VST3 wrapper mangles UTF-8 names, and
+# pluginval then refuses to load the bundle.
 function(rk_add_plugin target name code description)
     juce_add_plugin(${target}
         PRODUCT_NAME "${name}"
@@ -32,10 +35,14 @@ target_sources(RaumklangQuelle PRIVATE source/SourceProcessor.cpp source/SourceE
 rk_add_plugin(RaumklangRaum "Raumklang Raum" Rkr1 "Speaker setup, calibration and headphone preview")
 target_sources(RaumklangRaum PRIVATE room/RoomProcessor.cpp room/RoomEditor.cpp)
 
+rk_add_plugin(RaumklangRueckweg "Raumklang Return" Rkb1 "Brings the Raumklang app's speaker signals back into the DAW")
+target_sources(RaumklangRueckweg PRIVATE return/ReturnProcessor.cpp return/ReturnEditor.cpp)
+
 if(RK_BUILD_TESTS)
     juce_add_console_app(rk_plugin_tests PRODUCT_NAME "Raumklang Plugin Tests")
     target_sources(rk_plugin_tests PRIVATE tests/PluginStressTest.cpp
-        source/SourceProcessor.cpp source/SourceEditor.cpp room/RoomProcessor.cpp room/RoomEditor.cpp)
+        source/SourceProcessor.cpp source/SourceEditor.cpp room/RoomProcessor.cpp room/RoomEditor.cpp
+        return/ReturnProcessor.cpp return/ReturnEditor.cpp)
     target_compile_definitions(rk_plugin_tests PRIVATE RK_NO_PLUGIN_ENTRY=1 JucePlugin_Name="Raumklang Test"
         JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_link_libraries(rk_plugin_tests PRIVATE rk_shared

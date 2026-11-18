@@ -1,4 +1,5 @@
 #include "Pages.h"
+#include "Visuals.h"
 
 #include "Strings.h"
 
@@ -14,18 +15,19 @@ void describeLayout(const Scene& s, StatusCard& card) {
     auto has = [&info](const char* id) { return std::find(info.hints.begin(), info.hints.end(), id) != info.hints.end(); };
     const juce::String method = juce::String(rk::pannerId(s.effectivePanner())).toUpperCase().replace("AMBISONICS", "Ambisonics");
     const juce::String counts = juce::String(info.numActive) + " " + tr("Lautsprecher") + (info.numSubs > 0 ? " + " + juce::String(info.numSubs) + " Sub" : juce::String());
+    const juce::String dot = u8(" \xc2\xb7 ");
     if (info.numActive == 0) {
-        card.set(StatusCard::Kind::Warn, tr("Keine Lautsprecher"), tr("Füge Lautsprecher hinzu oder wähle eine Vorlage."));
+        card.set(StatusCard::Kind::Warn, tr("Keine Lautsprecher"), tr("Vorlage wählen oder Lautsprecher hinzufügen."));
     } else if (has("single_speaker")) {
-        card.set(StatusCard::Kind::Warn, tr("Bitte prüfen"), tr("Nur ein Lautsprecher: Es gibt keine Richtung."));
+        card.set(StatusCard::Kind::Warn, tr("Bitte prüfen"), tr("Nur ein Lautsprecher, also keine Richtung."));
     } else if (has("donut_uses_dbap")) {
-        card.set(StatusCard::Kind::Ok, tr("Sitzt gut") + u8(" \xc2\xb7 ") + method, counts + ". " + tr("Donut erkannt: Lautsprecher stehen sich gegenüber. DBAP wird verwendet."));
+        card.set(StatusCard::Kind::Ok, tr("Sitzt gut") + dot + method, counts + ", " + tr("Donut erkannt"));
     } else if (has("unequal_distances")) {
-        card.set(StatusCard::Kind::Warn, tr("Bitte prüfen") + u8(" \xc2\xb7 ") + method, counts + ". " + tr("Lautsprecher haben sehr unterschiedliche Abstände. Pegel und Verzögerung unter Lautsprecher angleichen."));
+        card.set(StatusCard::Kind::Warn, tr("Bitte prüfen") + dot + method, counts + ", " + tr("Abstände sehr verschieden. „Abstände ausgleichen“ hilft."));
     } else if (has("listener_not_enclosed")) {
-        card.set(StatusCard::Kind::Info, tr("Sitzt gut") + u8(" \xc2\xb7 ") + method, counts + ". " + tr("Der Hörplatz ist nicht umschlossen. DBAP verteilt den Klang nach Abstand."));
+        card.set(StatusCard::Kind::Info, tr("Sitzt gut") + dot + method, counts + ", " + tr("Hörplatz nicht umschlossen"));
     } else {
-        card.set(StatusCard::Kind::Ok, tr("Sitzt gut") + u8(" \xc2\xb7 ") + method, counts + ". " + tr("Lautsprecher umschließen den Hörplatz. VBAP passt am besten."));
+        card.set(StatusCard::Kind::Ok, tr("Sitzt gut") + dot + method, counts + " " + tr("rund um den Hörplatz"));
     }
 }
 
@@ -33,10 +35,10 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
     page.clear();
     Scene& s = *ctx.scene;
 
-    page.add(std::make_unique<SectionHeader>(tr("Vorlage")), 26);
+    page.add(std::make_unique<SectionHeader>(tr("Aufbau"), tr("Vorlage wählen und Lautsprecher in der Ansicht ziehen. Sobald ein Lautsprecher verschoben ist, wird daraus ein eigenes Layout.")), 26);
     juce::StringArray names;
     for (const auto& id : presetIds()) names.add(tr(presetName(id)));
-    auto* preset = page.add(std::make_unique<ChoiceRow>(juce::String(), names), 36);
+    auto* preset = page.add(std::make_unique<ChoiceRow>(tr("Vorlage"), names), 36);
     preset->box().setSelectedItemIndex(juce::jmax(0, presetIds().indexOf(s.presetId)), juce::dontSendNotification);
     preset->onChange = [ctx](int i) {
         ctx.scene->presetId = presetIds()[i];
@@ -96,13 +98,12 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         h->onCommit = commitRebuild;
     }
 
-    page.addSpace(4);
     auto card = std::make_unique<StatusCard>();
     describeLayout(s, *card);
     const int cardH = card->idealHeight(juce::jmax(200, page.getWidth() - 24));
     page.add(std::move(card), cardH);
 
-    page.add(std::make_unique<SectionHeader>(tr("Verfahren")), 26);
+    page.add(std::make_unique<SectionHeader>(tr("Verfahren"), tr("VBAP für Lautsprecher rund um den Hörplatz, DBAP für Aufbauten ohne Mitte wie den Donut, Ambisonics für gleichmäßige Kuppeln. „Automatisch“ wählt passend zum Layout.")), 26);
     auto* method = page.add(std::make_unique<Segmented>(juce::StringArray{tr("Automatisch"), "VBAP", "DBAP", "Ambisonics"}, false), 32);
     method->setSelected(s.autoPanner ? 0 : 1 + static_cast<int>(s.panner));
     method->onChange = [ctx](int i) {
@@ -113,15 +114,18 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         ctx.rebuild();
     };
     if (s.effectivePanner() == rk::PannerKind::DBAP) {
-        auto* ro = page.add(std::make_unique<ParamSlider>("Abfall", 3, 12, 0.5, "dB", 1, 3), 32);
+        auto* ro = page.add(std::make_unique<ParamSlider>(tr("Abfall"), 3, 12, 0.5, "dB", 1, 3), 32);
+        ro->setTooltip(tr("Wie stark der Pegel mit doppeltem Abstand abnimmt."));
         ro->setValue(s.dbapRolloffDb);
         ro->onChange = [ctx](double v) { ctx.scene->dbapRolloffDb = (float)v; ctx.changed(true); };
         ro->onCommit = ctx.commit;
-        auto* bl = page.add(std::make_unique<ParamSlider>(juce::String(juce::CharPointer_UTF8("Unsch\xc3\xa4rfe")), 0.05, 3, 0.05, "m", 2, 0.05), 32);
+        auto* bl = page.add(std::make_unique<ParamSlider>(tr("Unschärfe"), 0.05, 3, 0.05, "m", 2, 0.05), 32);
+        bl->setTooltip(tr("Verhindert, dass eine Quelle direkt an einem Lautsprecher zu laut wird."));
         bl->setValue(s.dbapBlur);
         bl->onChange = [ctx](double v) { ctx.scene->dbapBlur = (float)v; ctx.changed(true); };
         bl->onCommit = ctx.commit;
-        auto* di = page.add(std::make_unique<ParamSlider>("Richtwirkung", 0, 100, 1, "%", 0, 0), 32);
+        auto* di = page.add(std::make_unique<ParamSlider>(tr("Richtwirkung"), 0, 100, 1, "%", 0, 0), 32);
+        di->setTooltip(tr("Lautsprecher, die von der Quelle wegzeigen, tragen weniger bei. Wichtig für den Donut."));
         di->setValue(s.dbapDirectivity * 100.0);
         di->onChange = [ctx](double v) { ctx.scene->dbapDirectivity = (float)v / 100.0f; ctx.changed(true); };
         di->onCommit = ctx.commit;
@@ -129,7 +133,6 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
 
     // Selected speaker.
     if (sel >= 0 && sel < (int)s.layout.speakers.size()) {
-        page.addSpace(6);
         page.add(std::make_unique<SectionHeader>(tr("Lautsprecher") + " " + juce::String(sel + 1)), 26);
         auto toCustom = [ctx] { ctx.scene->presetId = "custom"; };
         auto* name = page.add(std::make_unique<TextRow>(tr("Name")), 34);
@@ -169,25 +172,42 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         di->onChange = [setPolar](double v) { setPolar(2, v); };
         di->onCommit = ctx.commit;
 
-        auto* aim = page.add(std::make_unique<ChoiceRow>(tr("Ausrichtung"), juce::StringArray{tr("Zur Mitte"), tr("Nach außen"), tr("Nach innen")}), 36);
+        // Direction: "Drehung" 0 deg = towards the centre, 180 deg = outwards (inner donut ring);
+        // "Neigung" tilts up or down. Presets set both.
+        const auto angles = aimAngles(s.layout.speakers[(size_t)sel]);
+        auto* aim = page.add(std::make_unique<ChoiceRow>(tr("Ausrichtung"), juce::StringArray{tr("Zur Mitte"), tr("Nach außen"), tr("Eigener Winkel")}), 36);
         {
             const auto& sp = s.layout.speakers[(size_t)sel];
-            int idx = 0;
-            if (rk::length(sp.aim) > 1e-6f) {
-                const rk::Vec3 radial = rk::normalized({sp.position.x, sp.position.y, 0.0f});
-                idx = rk::dot(sp.aimDirection(), radial) > 0 ? 1 : 2;
-            }
+            const int idx = rk::length(sp.aim) < 1e-6f ? 0 : (std::abs(std::abs(angles.first) - 180.0f) < 0.5f && std::abs(angles.second) < 0.5f ? 1 : 2);
             aim->box().setSelectedItemIndex(idx, juce::dontSendNotification);
         }
         aim->onChange = [ctx, sel, toCustom](int i) {
-            if (sel >= (int)ctx.scene->layout.speakers.size()) return;
+            if (sel >= (int)ctx.scene->layout.speakers.size() || i == 2) return;
             auto& sp = ctx.scene->layout.speakers[(size_t)sel];
-            const rk::Vec3 radial = rk::normalized({sp.position.x, sp.position.y, 0.0f});
-            sp.aim = i == 0 ? rk::Vec3{} : (i == 1 ? radial : -radial);
+            if (i == 0) sp.aim = {};
+            else setAimAngles(sp, 180.0f, 0.0f);
             toCustom();
             ctx.changed(true);
             ctx.commit();
+            ctx.rebuild();
         };
+        const juce::String deg = juce::String(juce::CharPointer_UTF8("\xc2\xb0"));
+        auto* rot = page.add(std::make_unique<ParamSlider>(tr("Drehung"), -180, 180, 0.5, deg, 1, 0), 32);
+        rot->setTooltip(tr("0° zeigt zur Mitte, 180° nach außen. Positive Werte drehen nach links."));
+        rot->setValue(angles.first);
+        auto* tilt = page.add(std::make_unique<ParamSlider>(tr("Neigung"), -90, 90, 0.5, deg, 1, 0), 32);
+        tilt->setTooltip(tr("Positive Werte neigen den Lautsprecher nach oben."));
+        tilt->setValue(angles.second);
+        auto applyAim = [ctx, sel, rot, tilt, aim] {
+            if (sel >= (int)ctx.scene->layout.speakers.size()) return;
+            setAimAngles(ctx.scene->layout.speakers[(size_t)sel], (float)rot->getValue(), (float)tilt->getValue());
+            aim->box().setSelectedItemIndex(2, juce::dontSendNotification);
+            ctx.changed(true);
+        };
+        rot->onChange = [applyAim](double) { applyAim(); };
+        tilt->onChange = [applyAim](double) { applyAim(); };
+        rot->onCommit = [ctx, toCustom] { toCustom(); ctx.commit(); };
+        tilt->onCommit = [ctx, toCustom] { toCustom(); ctx.commit(); };
         auto* gain = page.add(std::make_unique<ParamSlider>(tr("Pegel"), -40, 12, 0.1, "dB", 1, 0), 32);
         gain->setValue(s.layout.speakers[(size_t)sel].gainDb);
         gain->onChange = [ctx, sel](double v) {
@@ -234,8 +254,8 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         };
     }
 
-    page.addSpace(6);
-    auto* add = page.add(makeButton("+ " + tr("Lautsprecher hinzufügen")), 32);
+    auto* add = page.add(makeButton("+ " + tr("Lautsprecher")), 32);
+    add->setTooltip(tr("Lautsprecher hinzufügen"));
     add->onClick = [ctx, selectSpeaker] {
         auto& v = ctx.scene->layout.speakers;
         if ((int)v.size() >= rk::kMaxSpeakers) return;
@@ -248,20 +268,32 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         ctx.commit();
         selectSpeaker((int)v.size() - 1);
     };
-    auto* align = page.add(makeButton(juce::String(juce::CharPointer_UTF8("Abst\xc3\xa4nde ausgleichen"))), 32);
-    align->setTooltip(u8("Gleicht Laufzeit und Pegel aus, als st\xc3\xbcnden alle Lautsprecher so weit weg wie der fernste."));
+    auto* align = page.add(makeButton(tr("Abstände ausgleichen")), 32);
+    // Order matters: buttons fill a row from the right, so the main action ends up rightmost.
+    align->setTooltip(tr("Gleicht Laufzeit und Pegel aus, als stünden alle Lautsprecher so weit weg wie der fernste."));
     align->onClick = [ctx] {
         alignDistances(ctx.scene->layout);
         ctx.changed(true);
         ctx.commit();
         ctx.rebuild();
     };
+    page.addDetails(tr("Die Nummer eines Lautsprechers ist sein Ausgang am Audio-Interface. Lautsprecher 1 spielt auf Ausgang 1 und so weiter.\n\n"
+                       "Abstand und Azimut zählen vom Hörplatz aus, 0° ist vorne, positive Winkel liegen links.\n\n"
+                       "Beim Donut zeigt der Innenring nach außen und der Außenring nach innen. Die Ausrichtung jedes Lautsprechers lässt sich einzeln ändern."));
 }
 
 void buildRoomPage(FormPage& page, PageContext ctx) {
     page.clear();
     Scene& s = *ctx.scene;
-    page.add(std::make_unique<SectionHeader>(tr("Raum")), 26);
+    auto* view = page.add(std::make_unique<ReverbView>(), 170);
+    view->setTooltip(tr("Farbig: was die Lautsprecher gerade spielen, tief links, hoch rechts. Die Linie zeigt, wie lange der Hall je Tonhöhe nachklingt."));
+    view->setParams(s.reverb, s.reverbWetDb);
+    if (ctx.reverbView) ctx.reverbView(view);
+    ctx.changed = [orig = ctx.changed, view, sc = ctx.scene](bool structural) {
+        if (orig) orig(structural);
+        view->setParams(sc->reverb, sc->reverbWetDb);
+    };
+    page.add(std::make_unique<SectionHeader>(tr("Raum"), tr("Der Hall kommt aus allen Lautsprechern, jeweils leicht verschieden. Wie viel jede Quelle abgibt, steht unter Quellen beim Hallanteil.")), 26);
     auto* preset = page.add(std::make_unique<Segmented>(juce::StringArray{tr("Trocken"), tr("Studio"), tr("Saal"), tr("Kirche")}, false), 32);
     preset->setSelected(s.reverbWetDb <= -79.0f ? 0 : (s.reverb.decaySec < 1.0f ? 1 : (s.reverb.decaySec < 3.0f ? 2 : 3)));
     preset->onChange = [ctx](int i) {
@@ -276,6 +308,7 @@ void buildRoomPage(FormPage& page, PageContext ctx) {
         ctx.commit();
         ctx.rebuild();
     };
+    page.add(std::make_unique<SectionHeader>(tr("Hall")), 26);
     auto* decay = page.add(std::make_unique<ParamSlider>(tr("Nachhallzeit"), 0.2, 12, 0.05, "s", 2, 0.2), 32);
     decay->setSkewForCentre(2.0);
     decay->setValue(s.reverb.decaySec);
@@ -302,11 +335,28 @@ void buildRoomPage(FormPage& page, PageContext ctx) {
     wet->setValue(s.reverbWetDb);
     wet->onChange = [ctx](double v) { ctx.scene->reverbWetDb = (float)v; ctx.changed(false); };
     wet->onCommit = ctx.commit;
-    page.addSpace(8);
-    auto card = std::make_unique<StatusCard>();
-    card->set(StatusCard::Kind::Info, tr("Hall"),
-              juce::String(juce::CharPointer_UTF8("Der Hall kommt aus allen Lautsprechern, jeweils leicht verschieden. Wie viel jede Quelle abgibt, stellst du unter Quellen \xe2\x86\x92 Hallanteil ein.")));
-    page.add(std::move(card), 84);
+    page.addDetails(tr("Nachhallzeit: wie lange der Hall braucht, um um 60 dB abzuklingen.\n\n"
+                       "Höhendämpfung: oberhalb dieser Frequenz klingt der Hall schneller ab, wie in einem Raum mit Vorhängen und Publikum.\n\n"
+                       "Vorverzögerung: Zeit zwischen dem direkten Klang und dem Einsetzen des Halls. Größere Werte lassen den Raum größer wirken."));
+}
+
+/// Speaker direction as (rotation from "towards the centre", tilt), in degrees.
+std::pair<float, float> aimAngles(const rk::Speaker& sp) {
+    const rk::Vec3 d = sp.aimDirection();
+    const rk::Vec3 ref = rk::normalized({-sp.position.x, -sp.position.y, 0.0f}, {0.0f, 1.0f, 0.0f});
+    const float tilt = juce::radiansToDegrees(std::asin(juce::jlimit(-1.0f, 1.0f, d.z)));
+    const float hx = d.x, hy = d.y;
+    if (std::hypot(hx, hy) < 1e-5f) return {0.0f, tilt};
+    // Positive rotation = counter-clockwise seen from above (to the left).
+    const float rot = juce::radiansToDegrees(std::atan2(ref.x * hy - ref.y * hx, ref.x * hx + ref.y * hy));
+    return {rot, tilt};
+}
+
+void setAimAngles(rk::Speaker& sp, float rotDeg, float tiltDeg) {
+    const rk::Vec3 ref = rk::normalized({-sp.position.x, -sp.position.y, 0.0f}, {0.0f, 1.0f, 0.0f});
+    const float a = juce::degreesToRadians(rotDeg), t = juce::degreesToRadians(juce::jlimit(-90.0f, 90.0f, tiltDeg));
+    const float hx = ref.x * std::cos(a) - ref.y * std::sin(a), hy = ref.x * std::sin(a) + ref.y * std::cos(a);
+    sp.aim = {hx * std::cos(t), hy * std::cos(t), std::sin(t)};
 }
 
 } // namespace rkui

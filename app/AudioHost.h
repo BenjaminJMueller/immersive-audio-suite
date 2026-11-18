@@ -4,6 +4,7 @@
 #pragma once
 
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <rk/bridge.hpp>
 #include <rk/dsp.hpp>
 #include <rk/engine.hpp>
 
@@ -17,6 +18,12 @@ public:
     static constexpr int kMaxDeviceInputs = 64;
     static constexpr int kMaxGenerated = 64; // one generator per source
     static constexpr int kGeneratorBase = kMaxDeviceInputs;
+    /// Tracks from the DAW plugin "Raumklang Quelle": slot k uses inputs kBridgeInputBase + 2k (+1)
+    /// and engine sources kBridgeSourceBase + 2k (+1). The scene keeps sources below kBridgeSourceBase.
+    static constexpr int kBridgeInputBase = kGeneratorBase + kMaxGenerated;
+    static constexpr int kBridgeSourceBase = 64;
+    static constexpr int kTotalInputs = kBridgeInputBase + rk::bridge::kSlots * 2;
+    static_assert(kBridgeSourceBase + rk::bridge::kSlots * 2 <= rk::kMaxSources, "bridge sources must fit the engine");
 
     AudioHost();
     ~AudioHost() override;
@@ -35,6 +42,20 @@ public:
     double sampleRate() const noexcept { return sampleRate_.load(); }
     juce::String takeError();
 
+    /// Plugin bridge (message thread): announce the app and list the connected DAW tracks.
+    bool bridgeAvailable() const noexcept { return receiver_.isOpen(); }
+    std::vector<rk::bridge::TrackInfo> scanBridge();
+    uint32_t takeBridgeDropouts() noexcept { return receiver_.takeDropouts(); }
+    /// Latest parameters of a DAW track, as the audio thread applied them.
+    rk::bridge::TrackParams bridgeParams(int slot) const noexcept;
+    /// Newest `n` (<= kScopeSize) samples of the summed output, for the visualisation (any thread).
+    static constexpr int kScopeSize = 4096;
+    void readScope(float* dst, int n) const noexcept;
+    /// Off: DAW tracks are ignored (they fall back to playing in the DAW).
+    std::atomic<bool> bridgeEnabled{true};
+    /// Return path (app -> DAW): true while a "Raumklang Rückweg" plugin is listening.
+    bool returnListening() const noexcept { return returnSender_.listening(); }
+
     void audioDeviceIOCallbackWithContext(const float* const* inputs, int numInputs, float* const* outputs,
                                           int numOutputs, int numSamples,
                                           const juce::AudioIODeviceCallbackContext&) override;
@@ -47,6 +68,16 @@ private:
     void generate(int source, int type, float* out, int n) noexcept;
 
     std::vector<float> genBuffers_; // kMaxGenerated x kGenBlock
+    std::vector<float> bridgeBuffers_; // kSlots x 2 x kGenBlock
+    rk::bridge::Receiver receiver_;
+    rk::bridge::ReturnSender returnSender_;
+    std::vector<float> returnBuffers_; // kMaxSpeakers x kGenBlock, used while a return plugin listens
+    struct BridgeParamsAtomic {
+        std::atomic<float> az{0.0f}, el{0.0f}, dist{2.0f}, spread{0.0f}, gain{0.0f}, send{-12.0f}, width{60.0f}, amount{1.0f};
+    };
+    std::array<BridgeParamsAtomic, rk::bridge::kSlots> bridgeParams_{};
+    std::array<std::atomic<float>, kScopeSize> scope_{};
+    std::atomic<uint32_t> scopeWrite_{0};
     std::array<rk::PinkNoise, kMaxGenerated> pink_;
     std::array<double, kMaxGenerated> phase_{};
     std::array<long long, kMaxGenerated> clickCounter_{};

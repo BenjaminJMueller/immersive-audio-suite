@@ -10,6 +10,7 @@
 #include <rk_ui/Pages.h>
 #include <rk_ui/StageView.h>
 #include <rk_ui/Strings.h>
+#include <rk_ui/Visuals.h>
 #include <rk_ui/Widgets.h>
 
 namespace rkapp {
@@ -43,6 +44,14 @@ private:
     void rebuildInspector();
     void buildSourcesPage();
     void buildOutputPage();
+    void addDeviceRows();
+    void buildDawTrackPage(int track);
+    void refreshDawValues();
+    void scanDaw();
+    /// The scene plus the DAW tracks (locked, after the scene's own sources) for the stage.
+    rkui::Scene stageScene() const;
+    void showStage();
+    int dawTrackLevelIndex(int track) const;
     void selectSource(int i);
     void selectSpeaker(int i);
     void addSource();
@@ -52,6 +61,9 @@ private:
     void saveProjectAs();
     void showHelpMenu();
     void applyTheme();
+    void updateCoach();
+    void updateTooltips();
+    void showIntro();
     rkui::PageContext pageContext();
     juce::String sourceSubtitle(int i) const;
 
@@ -73,14 +85,26 @@ private:
 
     rkui::LookAndFeel lnf_;
     rkui::Segmented steps_;
-    std::unique_ptr<juce::TextButton> undoBtn_, redoBtn_, openBtn_, saveBtn_, helpBtn_, addBtn_;
+    rkui::IconButton undoBtn_{rkui::Icon::Undo, {}}, redoBtn_{rkui::Icon::Redo, {}}, openBtn_{rkui::Icon::Open, {}},
+        saveBtn_{rkui::Icon::Save, {}}, helpBtn_{rkui::Icon::Help, {}};
+    std::unique_ptr<juce::TextButton> addBtn_;
     rkui::SidebarList sidebar_;
     juce::Viewport sidebarView_;
     rkui::StageView stage_;
     rkui::FormPage inspector_;
     std::unique_ptr<IntroOverlay> intro_;
-    std::unique_ptr<juce::AudioDeviceSelectorComponent> deviceSelector_;
+    juce::String deviceError_;
+    std::vector<rk::bridge::TrackInfo> dawTracks_; // tracks from "Raumklang Quelle" in the DAW
+    juce::String dawKey_;
+    double lastDawScan_ = 0.0;
+    int dawPageTrack_ = -1;                       // DAW track the inspector shows, -1 none
+    std::vector<rkui::ParamSlider*> dawSliders_;  // owned by inspector_, valid while dawPageTrack_ >= 0
+    rkui::StatusCard* dawCard_ = nullptr;
+    rkui::ReverbView* reverbView_ = nullptr; // owned by inspector_, only on the room page
+    rkui::SpectrumAnalyzer analyzer_;
     juce::String statusText_;
+    std::array<bool, rk::kMaxSources> sourceHasSignal_{};
+    std::array<double, rk::kMaxSources> signalSeen_{};
     juce::TooltipWindow tooltips_{this, 600};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

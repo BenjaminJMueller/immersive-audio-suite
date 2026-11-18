@@ -5,7 +5,8 @@ add_library(rk_core STATIC
     src/reverb.cpp
     src/binaural.cpp
     src/engine.cpp
-    src/speaker_processor.cpp)
+    src/speaker_processor.cpp
+    src/bridge.cpp)
 add_library(rk::core ALIAS rk_core)
 
 target_include_directories(rk_core PUBLIC include)
@@ -17,4 +18,8 @@ if(MSVC)
 else()
     target_compile_options(rk_core PRIVATE -Wall -Wextra -Wpedantic -Wshadow
         $<$<BOOL:${RK_WERROR}>:-Werror>)
+endif()
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(rk_core PUBLIC rt) # shm_open on older glibc
 endif()

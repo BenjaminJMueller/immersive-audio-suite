@@ -1,9 +1,12 @@
-// Raumklang UI: top view of the room with speakers and sources.
+// Raumklang UI: view of the room with speakers and sources, from above (azimuth),
+// from the front or from the side (elevation).
 #pragma once
 
 #include "Scene.h"
 #include "Theme.h"
+#include "Widgets.h"
 
+#include <array>
 #include <functional>
 
 namespace rkui {
@@ -11,6 +14,8 @@ namespace rkui {
 class StageView : public juce::Component {
 public:
     enum class EditTarget { Sources, Speakers, None };
+    /// Top: x right, y front (azimuth). Front: x right, z up. Side: y front (to the right), z up (elevation).
+    enum class Projection { Top = 0, Front = 1, Side = 2 };
 
     StageView();
     void setScene(const Scene& s);
@@ -18,8 +23,17 @@ public:
     void setSelectedSource(int i) { selSource_ = i; repaint(); }
     void setSelectedSpeaker(int i) { selSpeaker_ = i; repaint(); }
     void setSpeakerLevels(const std::vector<float>& l) { speakerLevels_ = l; repaint(); }
-    void setSourceLevels(const std::vector<float>& l) { sourceLevels_ = l; repaint(); }
-    void setHint(juce::String h) { hint_ = std::move(h); repaint(); }
+    /// 0..1 per source. Rising levels send out a ripple from the source.
+    void setSourceLevels(const std::vector<float>& l);
+    /// 0..1: how much reverb fills the room right now (a soft glow over the stage).
+    void setAmbience(float a) { ambience_ = a; }
+    /// Coach bar at the bottom centre: the next step in plain words (Projection Studio style).
+    /// `badge` is a step number or empty; `ok` turns the badge green.
+    void setCoach(juce::String badge, juce::String title, juce::String text, bool ok = false);
+    /// Sources from this index on are shown but cannot be dragged (e.g. tracks from the DAW).
+    void setFirstLockedSource(int i) { firstLocked_ = i; repaint(); }
+    void setProjection(Projection p);
+    Projection projection() const noexcept { return proj_; }
 
     std::function<void(int, rk::Vec3)> onSourceMoved;
     std::function<void(int, rk::Vec3)> onSpeakerMoved;
@@ -28,17 +42,25 @@ public:
     std::function<void()> onDragEnd;
 
     void paint(juce::Graphics& g) override;
-    void resized() override { updateScale(); }
+    void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
+    void mouseMove(const juce::MouseEvent& e) override;
 
     juce::Point<float> toScreen(rk::Vec3 p) const;
-    rk::Vec3 toWorld(juce::Point<float> s, float z) const;
+    /// Screen point to world position: the two coordinates of the view plane come from
+    /// the screen, the third is kept from `keep`.
+    rk::Vec3 toWorld(juce::Point<float> s, rk::Vec3 keep) const;
 
 private:
     void updateScale();
+    void paintLegend(juce::Graphics& g);
+    void paintCoach(juce::Graphics& g);
+    void paintGrid(juce::Graphics& g, float step);
+    void paintField(juce::Graphics& g, const std::function<juce::Colour(int)>& speakerColour);
+    juce::Point<float> plane(rk::Vec3 p) const; // view-plane coordinates in metres
     int hitSource(juce::Point<float> p) const;
     int hitSpeaker(juce::Point<float> p) const;
 
@@ -51,8 +73,16 @@ private:
     float scale_ = 40.0f; // pixels per metre
     float zoom_ = 1.0f;
     juce::Point<float> centre_;
-    std::vector<float> speakerLevels_, sourceLevels_;
-    juce::String hint_;
+    std::vector<float> speakerLevels_, sourceLevels_, prevSourceLevels_;
+    struct Ripple { int source; double start; };
+    std::vector<Ripple> ripples_;
+    float ambience_ = 0.0f;
+    juce::String coachBadge_, coachTitle_, coachText_;
+    bool coachOk_ = false;
+    int firstLocked_ = 1 << 30;
+    IconButton fit_{Icon::Fit, "Alles zeigen"};
+    Projection proj_ = Projection::Top;
+    Segmented views_;
 };
 
 } // namespace rkui

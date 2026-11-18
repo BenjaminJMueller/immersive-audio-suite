@@ -284,3 +284,19 @@ TEST_CASE("engine: speaker test plays noise on exactly one speaker") {
     r.engine.speakerTest = 99; // out of range: ignored
     r.run(512);
 }
+
+TEST_CASE("engine: inputs and sources beyond 128 work (app: device, test signals, DAW tracks)") {
+    // The app feeds 64 device inputs, 64 test signals and the DAW tracks after them.
+    Rig r(260, 2);
+    r.noReverb();
+    r.setLayout(presets::stereo(), PannerKind::VBAP);
+    auto& s = r.engine.source(200);
+    s.active = true;
+    s.inputChannel = 250;
+    s.setPosition({0, 2, 0});
+    long long ph = 0;
+    for (int i = 0; i < 10; ++i) { fillSine(r.in[250], 440, 0.5f, 48000, ph); r.run(512); r.engine.collectGarbage(); }
+    CHECK(r.rms(0, 512) > 0.05);
+    CHECK(r.rms(1, 512) > 0.05);
+    CHECK(r.engine.takeSourcePeak(200) > 0.1f);
+}
