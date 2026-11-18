@@ -285,7 +285,7 @@ rkui::PageContext MainComponent::pageContext() {
     c.scene = &scene_;
     c.changed = [this](bool structural) {
         applyScene(structural);
-        stage_.setScene(scene_);
+        showStage();
         refreshSidebar();
     };
     c.commit = [this] { commit(); };
@@ -370,7 +370,7 @@ void MainComponent::loadScene(const rkui::Scene& s, bool resetHistory) {
 
 void MainComponent::refreshAll() {
     steps_.setSelected(step_);
-    stage_.setScene(scene_);
+    showStage();
     stage_.setSelectedSource(selSource_);
     stage_.setSelectedSpeaker(selSpeaker_);
     stage_.setEditTarget(step_ == StepSpeakers ? rkui::StageView::EditTarget::Speakers : rkui::StageView::EditTarget::Sources);
@@ -395,6 +395,104 @@ juce::String MainComponent::sourceSubtitle(int i) const {
     }
     const rk::Polar p = rk::toPolar(s.position);
     return in + u8(" \xc2\xb7 ") + rkui::num(p.azimuthDeg, 0) + degree() + u8(" \xc2\xb7 ") + rkui::num(p.distance, 1) + " m";
+}
+
+rkui::Scene MainComponent::stageScene() const {
+    if (dawTracks_.empty()) return scene_;
+    rkui::Scene s = scene_;
+    for (const auto& t : dawTracks_) {
+        const auto p = host_.bridgeParams(t.slot);
+        rkui::SourceInfo info;
+        info.name = juce::String::fromUTF8(t.name.c_str());
+        info.position = rk::toCartesian({p.azimuthDeg, p.elevationDeg, p.distance});
+        info.spread = juce::jlimit(0.0f, 1.0f, p.spread + (t.channels == 2 ? p.stereoWidthDeg / 360.0f : 0.0f));
+        info.mute = !t.sending || t.sampleRateMismatch;
+        s.sources.push_back(info);
+    }
+    return s;
+}
+
+void MainComponent::showStage() {
+    stage_.setFirstLockedSource((int)scene_.sources.size());
+    stage_.setScene(stageScene());
+}
+
+int MainComponent::dawTrackLevelIndex(int track) const {
+    if (track < 0 || track >= (int)dawTracks_.size()) return -1;
+    return AudioHost::kBridgeSourceBase + 2 * dawTracks_[(size_t)track].slot;
+}
+
+void MainComponent::scanDaw() {
+    auto tracks = host_.scanBridge();
+    juce::String key;
+    for (const auto& t : tracks)
+        key << t.slot << ':' << juce::String::fromUTF8(t.name.c_str()) << ':' << t.channels << ':' << (int)t.sending << ':'
+            << (int)t.sampleRateMismatch << ';';
+    if (key == dawKey_) return;
+    const bool hadSelection = selSource_ >= (int)scene_.sources.size();
+    int selectedSlot = -1;
+    if (hadSelection && selSource_ - (int)scene_.sources.size() < (int)dawTracks_.size())
+        selectedSlot = dawTracks_[(size_t)(selSource_ - (int)scene_.sources.size())].slot;
+    dawKey_ = key;
+    dawTracks_ = std::move(tracks);
+    if (hadSelection) {
+        // Keep the same track selected when others come or go.
+        int found = -1;
+        for (int j = 0; j < (int)dawTracks_.size(); ++j)
+            if (dawTracks_[(size_t)j].slot == selectedSlot) found = j;
+        selSource_ = found >= 0 ? (int)scene_.sources.size() + found : (scene_.sources.empty() ? -1 : 0);
+        stage_.setSelectedSource(selSource_);
+    }
+    if (step_ == StepSources || step_ == StepRoom) refreshSidebar();
+    showStage();
+    if (step_ == StepSources) rebuildInspector();
+    repaint(0, getHeight() - 52, kSidebar, 52);
+}
+
+void MainComponent::buildDawTrackPage(int j) {
+    const auto& t = dawTracks_[(size_t)j];
+    dawPageTrack_ = j;
+    juce::String name = juce::String::fromUTF8(t.name.c_str());
+    if (name.isEmpty()) name = tr("Spur") + " " + juce::String(j + 1);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(name, tr("Diese Spur kommt über das Plugin „Raumklang Quelle“ aus der DAW. Position und Klang stellst du im Plugin ein, dort lassen sie sich automatisieren.")), 26);
+    dawCard_ = inspector_.add(std::make_unique<rkui::StatusCard>(), 72);
+    if (t.sampleRateMismatch)
+        dawCard_->set(rkui::StatusCard::Kind::Warn, tr("Abtastrate passt nicht"),
+                      tr("Die DAW läuft mit") + " " + rkui::num(t.sampleRate / 1000.0, 1) + " kHz, " + tr("die App mit") + " " +
+                          rkui::num(host_.sampleRate() / 1000.0, 1) + " kHz. " + tr("Stelle beide gleich ein."));
+    else if (t.sending)
+        dawCard_->set(rkui::StatusCard::Kind::Ok, tr("Verbunden"), (t.channels == 2 ? juce::String("Stereo") : juce::String("Mono")) + u8(" \xc2\xb7 ") +
+                                                                     tr("Routing ist nicht nötig."));
+    else
+        dawCard_->set(rkui::StatusCard::Kind::Info, tr("Wartet auf Wiedergabe"), tr("Sobald die DAW abspielt, ist die Spur hier zu hören."));
+    inspector_.setRowHeight(dawCard_, dawCard_->idealHeight(juce::jmax(200, inspector_.getWidth() - 24)));
+
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Position")), 26);
+    auto add = [this](const juce::String& label, double lo, double hi, const juce::String& unit, int dec) {
+        auto* sl = inspector_.add(std::make_unique<rkui::ParamSlider>(label, lo, hi, 0.01, unit, dec, 0.0), 32);
+        sl->setEnabledState(false);
+        sl->setTooltip(tr("Im Plugin in der DAW einstellen."));
+        dawSliders_.push_back(sl);
+    };
+    add(tr("Azimut"), -180, 180, degree(), 1);
+    add(tr("Elevation"), -90, 90, degree(), 1);
+    add(tr("Abstand"), 0, 50, "m", 2);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Klang")), 26);
+    add(tr("Pegel"), -60, 12, "dB", 1);
+    add(tr("Breite"), 0, 100, "%", 0);
+    add(tr("Hallanteil"), -80, 6, "dB", 1);
+    if (dawSliders_.size() > 2) dawSliders_[2]->setSkewForCentre(5.0);
+    refreshDawValues();
+    inspector_.addDetails(tr("Ein Plugin „Raumklang Quelle“ pro Spur in der DAW. Steht sein Ziel auf „Automatisch“ oder „An die App“, spielt die App die Spur über ihr Audiogerät, die Spur in der DAW bleibt still.\n\n"
+                             "DAW und App müssen mit derselben Abtastrate laufen. Bis zu 32 Spuren gleichzeitig."));
+}
+
+void MainComponent::refreshDawValues() {
+    if (dawPageTrack_ < 0 || dawPageTrack_ >= (int)dawTracks_.size() || dawSliders_.size() < 6) return;
+    const auto p = host_.bridgeParams(dawTracks_[(size_t)dawPageTrack_].slot);
+    const double v[6] = {p.azimuthDeg, p.elevationDeg, p.distance, p.gainDb, p.spread * 100.0, p.reverbSendDb};
+    for (int i = 0; i < 6; ++i)
+        if (std::abs(dawSliders_[(size_t)i]->getValue() - v[i]) > 1e-4) dawSliders_[(size_t)i]->setValue(v[i]);
 }
 
 void MainComponent::refreshSidebar() {
@@ -429,6 +527,25 @@ void MainComponent::refreshSidebar() {
             r.subtitle = sourceSubtitle(i);
             r.trailing = s.solo ? "Solo" : (s.mute ? tr("Stumm") : (s.orbit ? u8("\xe2\x9f\xb3") : juce::String()));
             r.dim = s.mute;
+            r.group = dawTracks_.empty() ? juce::String() : tr("Im Projekt");
+            rows.push_back(r);
+        }
+        const int n = (int)scene_.sources.size();
+        for (int j = 0; j < (int)dawTracks_.size(); ++j) {
+            const auto& t = dawTracks_[(size_t)j];
+            const auto p = host_.bridgeParams(t.slot);
+            rkui::SidebarList::Row r;
+            r.group = tr("Aus der DAW");
+            r.number = n + j + 1;
+            r.colour = rkui::itemColour(n + j);
+            r.title = juce::String::fromUTF8(t.name.c_str());
+            if (r.title.isEmpty()) r.title = tr("Spur") + " " + juce::String(j + 1);
+            const juce::String kind = t.channels == 2 ? "Stereo" : "Mono";
+            if (t.sampleRateMismatch) r.subtitle = tr("Abtastrate passt nicht");
+            else if (!t.sending) r.subtitle = kind + u8(" \xc2\xb7 ") + tr("wartet auf Wiedergabe");
+            else r.subtitle = kind + u8(" \xc2\xb7 ") + rkui::num(p.azimuthDeg, 0) + degree() + u8(" \xc2\xb7 ") + rkui::num(p.distance, 1) + " m";
+            r.trailing = "DAW";
+            r.dim = !t.sending || t.sampleRateMismatch;
             rows.push_back(r);
         }
         sidebar_.setRows(rows);
@@ -447,7 +564,7 @@ void MainComponent::selectSource(int i) {
 void MainComponent::selectSpeaker(int i) {
     selSpeaker_ = i;
     stage_.setSelectedSpeaker(i);
-    stage_.setScene(scene_);
+    showStage();
     refreshSidebar();
     rebuildInspector();
 }
@@ -462,6 +579,9 @@ void MainComponent::setStep(int step) {
 }
 
 void MainComponent::rebuildInspector() {
+    dawPageTrack_ = -1;
+    dawSliders_.clear();
+    dawCard_ = nullptr;
     switch (step_) {
     case StepSpeakers:
         rkui::buildLayoutPage(inspector_, pageContext(), selSpeaker_, [this](int i) {
@@ -476,6 +596,11 @@ void MainComponent::rebuildInspector() {
 
 void MainComponent::buildSourcesPage() {
     inspector_.clear();
+    const int nScene = (int)scene_.sources.size();
+    if (selSource_ >= nScene && selSource_ < nScene + (int)dawTracks_.size()) {
+        buildDawTrackPage(selSource_ - nScene);
+        return;
+    }
     auto ctx = pageContext();
     if (selSource_ < 0 || selSource_ >= (int)scene_.sources.size()) {
         auto card = std::make_unique<rkui::StatusCard>();
@@ -526,7 +651,7 @@ void MainComponent::buildSourcesPage() {
         if (which == 2) p.distance = (float)v;
         src.position = rk::toCartesian(p);
         applyScene(false);
-        stage_.setScene(scene_);
+        showStage();
         refreshSidebar();
     };
     const rk::Polar pol = rk::toPolar(s.position);
@@ -553,7 +678,7 @@ void MainComponent::buildSourcesPage() {
             if (i >= (int)scene_.sources.size()) return;
             set(scene_.sources[(size_t)i], v);
             applyScene(false);
-            stage_.setScene(scene_);
+            showStage();
         };
         p->onCommit = [this] { commit(); };
         return p;
@@ -589,7 +714,7 @@ void MainComponent::buildSourcesPage() {
         applyScene(false);
         commit();
         refreshSidebar();
-        stage_.setScene(scene_);
+        showStage();
     };
     auto* solo = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Solo")), 28);
     solo->setToggleState(s.solo, juce::dontSendNotification);
@@ -920,25 +1045,34 @@ void MainComponent::timerCallback() {
         host_.engine.source(i).setPosition(s.position);
         moved = true;
     }
-    if (moved) {
-        stage_.setScene(scene_);
-        if (step_ == StepSources || step_ == StepRoom) refreshSidebar();
+    if (now - lastDawScan_ > 250.0) {
+        lastDawScan_ = now;
+        scanDaw();
+        if (!dawTracks_.empty() && (step_ == StepSources || step_ == StepRoom)) refreshSidebar();
     }
+    if (moved || !dawTracks_.empty()) showStage();
+    if (moved && (step_ == StepSources || step_ == StepRoom)) refreshSidebar();
+    refreshDawValues();
 
     // Meters.
     static std::vector<float> spk(rk::kMaxSpeakers, 0.0f), src(rk::kMaxSources, 0.0f);
     const int nOut = scene_.headphones ? 2 : (int)scene_.layout.speakers.size();
     for (int c = 0; c < rk::kMaxSpeakers; ++c) spk[(size_t)c] = std::max(levelToUnit(host_.engine.takeOutputPeak(c)), spk[(size_t)c] * 0.85f);
-    for (int s = 0; s < rkui::kMaxSceneSources; ++s) {
+    for (int s = 0; s < rk::kMaxSources; ++s) {
         src[(size_t)s] = std::max(levelToUnit(host_.engine.takeSourcePeak(s)), src[(size_t)s] * 0.85f);
         if (src[(size_t)s] > 0.05f) signalSeen_[(size_t)s] = now;
         sourceHasSignal_[(size_t)s] = now - signalSeen_[(size_t)s] < 2000.0;
     }
     std::vector<float> spkView(spk.begin(), spk.begin() + juce::jmax(0, scene_.headphones ? 0 : nOut));
     stage_.setSpeakerLevels(spkView);
-    stage_.setSourceLevels(std::vector<float>(src.begin(), src.begin() + (long)scene_.sources.size()));
+    std::vector<float> srcView(src.begin(), src.begin() + (long)scene_.sources.size());
+    for (int j = 0; j < (int)dawTracks_.size(); ++j) {
+        const int e = dawTrackLevelIndex(j);
+        srcView.push_back(std::max(src[(size_t)e], src[(size_t)e + 1]));
+    }
+    stage_.setSourceLevels(srcView);
     if (step_ == StepSpeakers || step_ == StepOutput) sidebar_.setLevels(spkView);
-    else sidebar_.setLevels(std::vector<float>(src.begin(), src.begin() + (long)scene_.sources.size()));
+    else sidebar_.setLevels(srcView);
 
     // Speaker test: 1.5 s per speaker, in order.
     if (speakerTestRunning_ && now >= speakerTestNext_) {
@@ -1003,6 +1137,11 @@ void MainComponent::paint(juce::Graphics& g) {
     } else {
         total = (int)scene_.sources.size();
         for (int i = 0; i < total; ++i) done += sourceHasSignal_[(size_t)i] ? 1 : 0;
+        for (int j = 0; j < (int)dawTracks_.size(); ++j) {
+            const int e = dawTrackLevelIndex(j);
+            done += (sourceHasSignal_[(size_t)e] || sourceHasSignal_[(size_t)e + 1]) ? 1 : 0;
+        }
+        total += (int)dawTracks_.size();
         what = tr("mit Signal");
     }
     g.setColour(p.text2);

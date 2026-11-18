@@ -33,7 +33,7 @@ SourceEditor::SourceEditor(SourceProcessor& p) : AudioProcessorEditor(p), proc_(
                 if (auto* prm = proc_.params.getParameter(id)) prm->beginChangeGesture();
             dragGesture_ = true;
         }
-        proc_.setSourcePosition({pos.x, pos.y, proc_.sourcePosition().z});
+        proc_.setSourcePosition(pos);
     };
     stage_.onDragEnd = [this] {
         if (!dragGesture_) return;
@@ -111,7 +111,7 @@ void SourceEditor::buildPage() {
                        "One plugin per track. When the Raumklang app runs, the track appears there under \"From the DAW\". "
                        "The app plays it through its own audio device and the DAW track stays silent. Nothing needs to be routed.\n\n"
                        "Without the app the track outputs one channel per speaker. Set the track to as many channels as the setup has speakers "
-                       "and put \"Raumklang Room\" on the master.\n\n"
+                       "and put \"Raumklang Raum\" on the master.\n\n"
                        "The DAW and the app must run at the same sample rate."));
 }
 

@@ -102,7 +102,7 @@ private:
 };
 
 /// Horizontal segmented control (also used for the numbered workflow steps).
-class Segmented : public juce::Component {
+class Segmented : public juce::Component, public juce::SettableTooltipClient {
 public:
     Segmented(const juce::StringArray& items, bool numbered);
     void setSelected(int index);

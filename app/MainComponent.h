@@ -44,6 +44,13 @@ private:
     void buildSourcesPage();
     void buildOutputPage();
     void addDeviceRows();
+    void buildDawTrackPage(int track);
+    void refreshDawValues();
+    void scanDaw();
+    /// The scene plus the DAW tracks (locked, after the scene's own sources) for the stage.
+    rkui::Scene stageScene() const;
+    void showStage();
+    int dawTrackLevelIndex(int track) const;
     void selectSource(int i);
     void selectSpeaker(int i);
     void addSource();
@@ -86,6 +93,12 @@ private:
     rkui::FormPage inspector_;
     std::unique_ptr<IntroOverlay> intro_;
     juce::String deviceError_;
+    std::vector<rk::bridge::TrackInfo> dawTracks_; // tracks from "Raumklang Quelle" in the DAW
+    juce::String dawKey_;
+    double lastDawScan_ = 0.0;
+    int dawPageTrack_ = -1;                       // DAW track the inspector shows, -1 none
+    std::vector<rkui::ParamSlider*> dawSliders_;  // owned by inspector_, valid while dawPageTrack_ >= 0
+    rkui::StatusCard* dawCard_ = nullptr;
     juce::String statusText_;
     std::array<bool, rk::kMaxSources> sourceHasSignal_{};
     std::array<double, rk::kMaxSources> signalSeen_{};

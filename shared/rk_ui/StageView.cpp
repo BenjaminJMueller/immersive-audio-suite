@@ -4,8 +4,11 @@
 
 namespace rkui {
 
-StageView::StageView() {
+StageView::StageView() : views_(juce::StringArray{tr("Oben"), tr("Vorne"), tr("Seite")}, false) {
     setOpaque(true);
+    views_.setTooltip(tr("Ansicht: von oben für den Azimut, von vorne oder von der Seite für die Elevation"));
+    views_.onChange = [this](int i) { setProjection(static_cast<Projection>(i)); };
+    addAndMakeVisible(views_);
     fit_.setTooltip(tr("Alles zeigen"));
     fit_.onClick = [this] { zoom_ = 1.0f; updateScale(); repaint(); };
     addAndMakeVisible(fit_);
@@ -13,7 +16,25 @@ StageView::StageView() {
 
 void StageView::resized() {
     fit_.setBounds(getWidth() - 40, 10, 30, 26);
+    const int vw = juce::jmin(views_.idealWidth(), getWidth() / 2);
+    views_.setBounds(getWidth() - 48 - vw, 8, vw, 30);
     updateScale();
+}
+
+void StageView::setProjection(Projection p) {
+    proj_ = p;
+    views_.setSelected(static_cast<int>(p));
+    zoom_ = 1.0f;
+    updateScale();
+    repaint();
+}
+
+juce::Point<float> StageView::plane(rk::Vec3 p) const {
+    switch (proj_) {
+    case Projection::Front: return {p.x, p.z};
+    case Projection::Side: return {p.y, p.z};
+    default: return {p.x, p.y};
+    }
 }
 
 void StageView::setCoach(juce::String badge, juce::String title, juce::String text, bool ok) {
@@ -114,38 +135,101 @@ void StageView::setScene(const Scene& s) {
 
 void StageView::updateScale() {
     float maxR = 2.0f;
-    for (const auto& sp : scene_.layout.speakers) maxR = std::max(maxR, std::hypot(sp.position.x, sp.position.y));
+    for (const auto& sp : scene_.layout.speakers) {
+        const auto q = plane(sp.position);
+        maxR = std::max(maxR, proj_ == Projection::Top ? std::hypot(q.x, q.y) : std::max(std::abs(q.x), std::abs(q.y)));
+    }
     const float extent = maxR * 1.2f + 0.6f;
     const auto b = getLocalBounds().toFloat().reduced(24.0f);
     scale_ = std::max(4.0f, std::min(b.getWidth(), b.getHeight()) * 0.5f / extent) * zoom_;
     centre_ = getLocalBounds().toFloat().getCentre();
+    if (proj_ != Projection::Top) {
+        // Front and side: most setups sit at or above ear height, so give the space above more room.
+        float minZ = 0.0f;
+        for (const auto& sp : scene_.layout.speakers) minZ = std::min(minZ, sp.position.z);
+        if (minZ > -0.3f) centre_.y = (float)getHeight() * 0.68f;
+    }
 }
 
-juce::Point<float> StageView::toScreen(rk::Vec3 p) const { return {centre_.x + p.x * scale_, centre_.y - p.y * scale_}; }
+juce::Point<float> StageView::toScreen(rk::Vec3 p) const {
+    const auto q = plane(p);
+    return {centre_.x + q.x * scale_, centre_.y - q.y * scale_};
+}
 
-rk::Vec3 StageView::toWorld(juce::Point<float> s, float z) const {
-    return {(s.x - centre_.x) / scale_, (centre_.y - s.y) / scale_, z};
+rk::Vec3 StageView::toWorld(juce::Point<float> s, rk::Vec3 keep) const {
+    const float h = (s.x - centre_.x) / scale_, v = (centre_.y - s.y) / scale_;
+    switch (proj_) {
+    case Projection::Front: return {h, keep.y, v};
+    case Projection::Side: return {keep.x, h, v};
+    default: return {h, v, keep.z};
+    }
+}
+
+void StageView::paintGrid(juce::Graphics& g, float step) {
+    const Palette& p = palette();
+    g.setFont(uiFont(11.5f));
+    if (proj_ == Projection::Top) {
+        // Distance rings every metre (every 5 m when zoomed out) and axes.
+        const float maxDist = std::hypot((float)getWidth(), (float)getHeight()) / scale_;
+        for (float r = step; r < maxDist; r += step) {
+            const bool major = std::fmod(r, step * 5.0f) < 0.01f;
+            g.setColour(major ? p.lineStrong : p.line);
+            g.drawEllipse(centre_.x - r * scale_, centre_.y - r * scale_, 2 * r * scale_, 2 * r * scale_, 1.0f);
+        }
+        g.setColour(p.line);
+        g.drawLine(0, centre_.y, (float)getWidth(), centre_.y, 1.0f);
+        g.drawLine(centre_.x, 0, centre_.x, (float)getHeight(), 1.0f);
+        g.setColour(p.text3);
+        g.drawText(tr("vorne"), juce::Rectangle<float>(centre_.x - 40, 8, 80, 16), juce::Justification::centred);
+        g.drawText(num(step, 0) + " m", juce::Rectangle<float>(centre_.x + step * scale_ + 4, centre_.y + 2, 60, 14), juce::Justification::left);
+        return;
+    }
+    // Front and side: a metre grid, the floor of the listening plane and the elevation arcs.
+    const float w = (float)getWidth(), h = (float)getHeight();
+    g.setColour(p.line);
+    for (float x = std::fmod(centre_.x, step * scale_); x < w; x += step * scale_) g.drawVerticalLine(juce::roundToInt(x), 0.0f, h);
+    for (float y = std::fmod(centre_.y, step * scale_); y < h; y += step * scale_) g.drawHorizontalLine(juce::roundToInt(y), 0.0f, w);
+    g.setColour(p.lineStrong);
+    g.drawLine(0, centre_.y, w, centre_.y, 1.2f); // ear height
+    g.drawLine(centre_.x, 0, centre_.x, h, 1.0f);
+    // Elevation guides every 30 degrees on the circle through the farthest speaker.
+    float r = 0.0f;
+    for (const auto& sp : scene_.layout.speakers) r = std::max(r, rk::length(sp.position));
+    if (r > 0.1f) {
+        g.setColour(p.lineStrong.withAlpha(0.6f));
+        juce::Path arc;
+        arc.addCentredArc(centre_.x, centre_.y, r * scale_, r * scale_, 0.0f, -juce::MathConstants<float>::halfPi * 1.0f,
+                          juce::MathConstants<float>::halfPi * 1.0f, true);
+        g.strokePath(arc, juce::PathStrokeType(1.0f));
+        g.setColour(p.text3);
+        g.setFont(uiFont(10.5f));
+        for (int deg : {30, 60}) {
+            const float a = juce::degreesToRadians((float)deg);
+            for (float side : {-1.0f, 1.0f}) {
+                const juce::Point<float> q{centre_.x + side * std::cos(a) * r * scale_, centre_.y - std::sin(a) * r * scale_};
+                g.setColour(p.line);
+                g.drawLine(juce::Line<float>(centre_, q), 1.0f);
+                g.setColour(p.text3);
+                g.drawText(juce::String(deg) + juce::String::fromUTF8("\xc2\xb0"),
+                           juce::Rectangle<float>(q.x - 20 + side * 18, q.y - 16, 40, 14), juce::Justification::centred);
+            }
+        }
+    }
+    g.setColour(p.text3);
+    g.setFont(uiFont(11.5f));
+    const bool side = proj_ == Projection::Side;
+    g.drawText(side ? tr("hinten") : tr("rechts"), juce::Rectangle<float>(12, centre_.y + 4, 80, 16), juce::Justification::left);
+    g.drawText(side ? tr("vorne") : tr("links"), juce::Rectangle<float>(w - 92, centre_.y + 4, 80, 16), juce::Justification::right);
+    g.drawText(tr("oben"), juce::Rectangle<float>(centre_.x - 40, 44, 80, 16), juce::Justification::centred);
+    g.drawText(num(step, 0) + " m", juce::Rectangle<float>(centre_.x + step * scale_ + 4, centre_.y + 2, 60, 14), juce::Justification::left);
 }
 
 void StageView::paint(juce::Graphics& g) {
     const Palette& p = palette();
     g.fillAll(p.stage);
 
-    // Distance rings every metre (every 5 m when zoomed out) and axes.
     const float step = scale_ < 12.0f ? 5.0f : 1.0f;
-    const float maxDist = std::hypot((float)getWidth(), (float)getHeight()) / scale_;
-    for (float r = step; r < maxDist; r += step) {
-        const bool major = std::fmod(r, step * 5.0f) < 0.01f;
-        g.setColour(major ? p.lineStrong : p.line);
-        g.drawEllipse(centre_.x - r * scale_, centre_.y - r * scale_, 2 * r * scale_, 2 * r * scale_, 1.0f);
-    }
-    g.setColour(p.line);
-    g.drawLine(0, centre_.y, (float)getWidth(), centre_.y, 1.0f);
-    g.drawLine(centre_.x, 0, centre_.x, (float)getHeight(), 1.0f);
-    g.setColour(p.text3);
-    g.setFont(uiFont(11.5f));
-    g.drawText(language() == Language::German ? "vorne" : "front", juce::Rectangle<float>(centre_.x - 40, 8, 80, 16), juce::Justification::centred);
-    g.drawText(num(step, 0) + " m", juce::Rectangle<float>(centre_.x + step * scale_ + 4, centre_.y + 2, 60, 14), juce::Justification::left);
+    paintGrid(g, step);
 
     // Listener.
     {
@@ -154,7 +238,9 @@ void StageView::paint(juce::Graphics& g) {
         g.drawEllipse(centre_.x - hr, centre_.y - hr, 2 * hr, 2 * hr, 1.5f);
         juce::Path nose;
         nose.addTriangle(centre_.x - 3.5f, centre_.y - hr + 1, centre_.x + 3.5f, centre_.y - hr + 1, centre_.x, centre_.y - hr - 5);
-        g.fillPath(nose);
+        // Top: the nose points to the front. Side: front is to the right. Front: we look at the face.
+        if (proj_ == Projection::Side) g.fillPath(nose, juce::AffineTransform::rotation(juce::MathConstants<float>::halfPi, centre_.x, centre_.y));
+        else if (proj_ == Projection::Top) g.fillPath(nose);
     }
 
     // Lines from the selected (or each) source to the speakers it plays on.
@@ -193,7 +279,8 @@ void StageView::paint(juce::Graphics& g) {
             g.setFont(uiFont(11.0f, true));
             g.drawText("S", juce::Rectangle<float>(c.x - 11, c.y - 11, 22, 22), juce::Justification::centred);
         } else {
-            const rk::Vec3 aim = spk.aimDirection();
+            const auto aim = plane(spk.aimDirection());
+            const bool showCone = std::hypot(aim.x, aim.y) > 0.2f; // aimed into the screen: no cone
             const float ang = std::atan2(aim.x, aim.y); // screen rotation, 0 = pointing up
             juce::Path body;
             body.addRoundedRectangle(-10.0f, -8.0f, 20.0f, 16.0f, 4.0f);
@@ -201,7 +288,7 @@ void StageView::paint(juce::Graphics& g) {
             cone.addTriangle(-7.0f, -8.0f, 7.0f, -8.0f, 0.0f, -15.0f);
             const auto tf = juce::AffineTransform::rotation(ang).translated(c.x, c.y);
             g.setColour(col.withAlpha(0.35f));
-            g.fillPath(cone, tf);
+            if (showCone) g.fillPath(cone, tf);
             g.setColour(col);
             g.fillPath(body, tf);
             g.setColour(juce::Colours::white);
@@ -231,7 +318,7 @@ void StageView::paint(juce::Graphics& g) {
         }
         const bool sel = target_ != EditTarget::Speakers && s == selSource_;
         drawNumberBadge(g, {c.x - 11, c.y - 11, 22, 22}, s + 1, src.mute ? p.text3 : itemColour(s), sel);
-        if (std::abs(src.position.z) > 0.05f) {
+        if (proj_ == Projection::Top && std::abs(src.position.z) > 0.05f) {
             g.setColour(p.text2);
             g.setFont(uiFont(10.5f));
             g.drawText((src.position.z > 0 ? "+" : "") + num(src.position.z, 1) + " m",
@@ -278,25 +365,23 @@ void StageView::mouseDown(const juce::MouseEvent& e) {
 
 void StageView::mouseDrag(const juce::MouseEvent& e) {
     if (!dragging_) return;
+    auto snap = [this](juce::Point<float> q) {
+        const float h = std::round((q.x - centre_.x) / scale_ * 2.0f) * 0.5f, v = std::round((centre_.y - q.y) / scale_ * 2.0f) * 0.5f;
+        return juce::Point<float>{centre_.x + h * scale_, centre_.y - v * scale_};
+    };
     juce::Point<float> pt = e.position;
     pt.x = juce::jlimit(0.0f, (float)getWidth(), pt.x);
     pt.y = juce::jlimit(0.0f, (float)getHeight(), pt.y);
     if (dragSource_ >= 0 && dragSource_ < (int)scene_.sources.size()) {
         auto& src = scene_.sources[(size_t)dragSource_];
-        rk::Vec3 w = toWorld(pt, src.position.z);
-        if (e.mods.isShiftDown()) { // snap to 0.5 m grid
-            w.x = std::round(w.x * 2.0f) * 0.5f;
-            w.y = std::round(w.y * 2.0f) * 0.5f;
-        }
+        rk::Vec3 w = toWorld(pt, src.position);
+        if (e.mods.isShiftDown()) w = toWorld(snap(pt), src.position); // 0.5 m grid
         src.position = w;
         if (onSourceMoved) onSourceMoved(dragSource_, w);
     } else if (dragSpeaker_ >= 0 && dragSpeaker_ < (int)scene_.layout.speakers.size()) {
         auto& spk = scene_.layout.speakers[(size_t)dragSpeaker_];
-        rk::Vec3 w = toWorld(pt, spk.position.z);
-        if (e.mods.isShiftDown()) {
-            w.x = std::round(w.x * 2.0f) * 0.5f;
-            w.y = std::round(w.y * 2.0f) * 0.5f;
-        }
+        rk::Vec3 w = toWorld(pt, spk.position);
+        if (e.mods.isShiftDown()) w = toWorld(snap(pt), spk.position);
         spk.position = w;
         if (onSpeakerMoved) onSpeakerMoved(dragSpeaker_, w);
     }

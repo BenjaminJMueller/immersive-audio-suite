@@ -1,4 +1,5 @@
-// Raumklang UI: top view of the room with speakers and sources.
+// Raumklang UI: view of the room with speakers and sources, from above (azimuth),
+// from the front or from the side (elevation).
 #pragma once
 
 #include "Scene.h"
@@ -12,6 +13,8 @@ namespace rkui {
 class StageView : public juce::Component {
 public:
     enum class EditTarget { Sources, Speakers, None };
+    /// Top: x right, y front (azimuth). Front: x right, z up. Side: y front (to the right), z up (elevation).
+    enum class Projection { Top = 0, Front = 1, Side = 2 };
 
     StageView();
     void setScene(const Scene& s);
@@ -25,6 +28,8 @@ public:
     void setCoach(juce::String badge, juce::String title, juce::String text, bool ok = false);
     /// Sources from this index on are shown but cannot be dragged (e.g. tracks from the DAW).
     void setFirstLockedSource(int i) { firstLocked_ = i; repaint(); }
+    void setProjection(Projection p);
+    Projection projection() const noexcept { return proj_; }
 
     std::function<void(int, rk::Vec3)> onSourceMoved;
     std::function<void(int, rk::Vec3)> onSpeakerMoved;
@@ -41,12 +46,16 @@ public:
     void mouseMove(const juce::MouseEvent& e) override;
 
     juce::Point<float> toScreen(rk::Vec3 p) const;
-    rk::Vec3 toWorld(juce::Point<float> s, float z) const;
+    /// Screen point to world position: the two coordinates of the view plane come from
+    /// the screen, the third is kept from `keep`.
+    rk::Vec3 toWorld(juce::Point<float> s, rk::Vec3 keep) const;
 
 private:
     void updateScale();
     void paintLegend(juce::Graphics& g);
     void paintCoach(juce::Graphics& g);
+    void paintGrid(juce::Graphics& g, float step);
+    juce::Point<float> plane(rk::Vec3 p) const; // view-plane coordinates in metres
     int hitSource(juce::Point<float> p) const;
     int hitSpeaker(juce::Point<float> p) const;
 
@@ -64,6 +73,8 @@ private:
     bool coachOk_ = false;
     int firstLocked_ = 1 << 30;
     IconButton fit_{Icon::Fit, "Alles zeigen"};
+    Projection proj_ = Projection::Top;
+    Segmented views_;
 };
 
 } // namespace rkui
