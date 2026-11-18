@@ -1027,7 +1027,7 @@ std::vector<Vec3> suggestPoints(const SpeakerLayout& layout, int count) {
         if (r > 0.2f) minR = std::min(minR, r);
     }
     if (minR > 1.0e8f) minR = 2.0f;
-    const float d = std::clamp(0.35f * minR, 0.4f, 1.5f);
+    const float d = std::clamp(0.5f * minR, 0.4f, 2.0f);
     pts.push_back({0.0f, 0.0f, 0.0f}); // the listening position first: delays and levels refer to it
     for (int k = 1; k < count; ++k) {
         const float az = 360.0f * static_cast<float>(k - 1) / static_cast<float>(std::max(1, count - 1)) + 45.0f;

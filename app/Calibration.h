@@ -18,7 +18,7 @@ namespace rkapp {
 struct CalibrationSettings {
     int micInput = 0;       // index among the active device inputs
     bool positions = true;  // several measuring points: positions too. Otherwise only delay and level.
-    int numPoints = 6;
+    int numPoints = 8;
     float levelDb = -18.0f;
     float temperature = 20.0f;
     float tapeMetres = 0.0f; // optional: measured distance from M1 to speaker 1, 0 = none

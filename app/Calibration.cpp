@@ -310,11 +310,12 @@ bool Calibration::evaluate() {
         if (a.veryQuiet) { q.note = tr("Sehr leise"); q.warn = true; }
         if (geometry && !sp.isSubwoofer) {
             const auto& f = solved.speakers[(size_t)i];
-            q.uncertainty = f.uncertainty;
+            // Shown as about 2 sigma: in simulations the real error stays within that.
+            q.uncertainty = 2.0f * f.uncertainty;
             if (f.solved) {
                 q.hasPosition = true;
                 q.position = f.position;
-                worst = std::max(worst, f.uncertainty);
+                worst = std::max(worst, q.uncertainty);
             } else if (!q.warn) {
                 q.note = tr("Position unsicher");
                 q.warn = true;
@@ -337,9 +338,11 @@ bool Calibration::evaluate() {
     verdict_.total = (int)order_.size();
     if (hasOutput && good == verdict_.total) {
         verdict_.ok = true;
-        verdict_.title = geometry && worst < 0.05f ? tr("Sitzt sehr gut") : tr("Sitzt gut");
+        verdict_.title = !geometry ? tr("Sitzt gut") : worst < 0.10f ? tr("Sitzt sehr gut") : worst < 0.25f ? tr("Sitzt gut") : tr("Sitzt ungefähr");
         verdict_.detail = geometry ? tr("Positionen auf") + u8(" \xc2\xb1 ") + juce::String(juce::jmax(1, juce::roundToInt(worst * 100.0f))) + " cm " + tr("genau")
                                    : tr("Laufzeit und Pegel am Messpunkt 1 ausgeglichen");
+        if (geometry && worst >= 0.25f)
+            verdict_.detail << ". " << tr("Mehr Messpunkte, weiter auseinander, oder ein gemessener Abstand machen es genauer.");
     } else {
         verdict_.title = tr("Bitte prüfen");
         verdict_.detail = juce::String(good) + " " + tr("von") + " " + juce::String(verdict_.total) + " " + tr("Lautsprechern ohne Auffälligkeit");

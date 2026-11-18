@@ -12,6 +12,25 @@ using namespace rk::calib;
 
 namespace {
 
+/// Portable random numbers: std::normal_distribution and friends differ between standard
+/// libraries, so the same seed would give other test data on Windows than on Linux or macOS.
+struct TestRng {
+    explicit TestRng(uint32_t seed) : state(seed * 0x9E3779B97F4A7C15ull + 1) {}
+    uint64_t state;
+    uint64_t next() { // splitmix64
+        uint64_t z = (state += 0x9E3779B97F4A7C15ull);
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+        return z ^ (z >> 31);
+    }
+    double uniform() { return static_cast<double>(next() >> 11) * (1.0 / 9007199254740992.0); } // [0, 1)
+    double uniform(double a, double b) { return a + (b - a) * uniform(); }
+    double normal(double sigma) { // Box-Muller
+        const double u1 = 1.0 - uniform(), u2 = uniform();
+        return sigma * std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * kPi * u2);
+    }
+};
+
 struct Path {
     double seconds;
     double gain;
@@ -42,9 +61,8 @@ std::vector<float> simulate(const std::vector<float>& sweep, int recLen, double 
             }
         }
     }
-    std::mt19937 rng(seed);
-    std::normal_distribution<float> nd(0.0f, noiseRms);
-    for (auto& v : rec) v += nd(rng);
+    TestRng rng(seed);
+    for (auto& v : rec) v += static_cast<float>(rng.normal(noiseRms));
     return rec;
 }
 
@@ -59,8 +77,7 @@ SweepParams testSweep() {
 /// Observations as an ideal (or noisy) measurement would deliver them.
 std::vector<Observation> syntheticObservations(const std::vector<Vec3>& speakers, const std::vector<Vec3>& points,
                                                double latency, float c, double jitter, uint32_t seed) {
-    std::mt19937 rng(seed);
-    std::normal_distribution<double> nd(0.0, jitter);
+    TestRng rng(seed);
     std::vector<Observation> obs;
     for (int i = 0; i < static_cast<int>(speakers.size()); ++i)
         for (int j = 0; j < static_cast<int>(points.size()); ++j) {
@@ -68,7 +85,7 @@ std::vector<Observation> syntheticObservations(const std::vector<Vec3>& speakers
             o.speaker = i;
             o.point = j;
             const float d = length(speakers[static_cast<size_t>(i)] - points[static_cast<size_t>(j)]);
-            o.seconds = latency + d / c + (jitter > 0 ? nd(rng) : 0.0);
+            o.seconds = latency + d / c + (jitter > 0 ? rng.normal(jitter) : 0.0);
             o.levelDb = -20.0f * std::log10(d);
             obs.push_back(o);
         }
@@ -219,36 +236,56 @@ TEST_CASE("calibration: sweep runner plays, records and stops without touching i
     CHECK(r.state() == SweepRunner::State::Idle);
 }
 
-TEST_CASE("calibration: ring of 8 found from 5 measuring points with unknown latency") {
+TEST_CASE("calibration: ring of 8 found with unknown latency, accuracy as reported") {
+    // Many noise realisations, not one lucky seed: the error must stay within what the
+    // solver reports (the app shows 2 sigma), with 8 points (the default) and with only 5.
     const SpeakerLayout truth = presets::ring(8, 3.0f, 0.0f, true);
     std::vector<Vec3> real = positions(truth);
     real[2].z += 0.6f;  // one hangs higher than planned
     real[5].x += 0.3f;  // one stands a bit off
-    const auto points = suggestPoints(truth, 5);
-    REQUIRE(points.size() == 5u);
-    CHECK(pointsSpanVolume(points));
     const float c = 343.0f;
-    SolveInput in;
-    in.speakerGuess = positions(truth); // the plan, not the truth
-    in.pointGuess = points;
-    in.observations = syntheticObservations(real, points, 0.0087, c, 20.0e-6, 7);
-    in.speedOfSound = c;
-    const SolveResult r = solvePositions(in);
-    CHECK(r.latency == doctest::Approx(0.0087).epsilon(0.05));
-    for (int i = 0; i < 8; ++i) {
-        CAPTURE(i);
-        CHECK(r.speakers[static_cast<size_t>(i)].solved);
-        CHECK(length(r.speakers[static_cast<size_t>(i)].position - real[static_cast<size_t>(i)]) < 0.15f);
+    for (const int numPoints : {8, 5}) {
+        const auto points = suggestPoints(truth, numPoints);
+        REQUIRE(points.size() == static_cast<size_t>(numPoints));
+        CHECK(pointsSpanVolume(points));
+        float worst = 0.0f, sum = 0.0f;
+        for (uint32_t seed = 1; seed <= 20; ++seed) {
+            CAPTURE(numPoints);
+            CAPTURE(seed);
+            SolveInput in;
+            in.speakerGuess = positions(truth); // the plan, not the truth
+            in.pointGuess = points;
+            in.observations = syntheticObservations(real, points, 0.0087, c, 20.0e-6, seed);
+            in.speedOfSound = c;
+            const SolveResult r = solvePositions(in);
+            CHECK(r.latency == doctest::Approx(0.0087).epsilon(0.15));
+            CHECK(r.rmsError < 0.02f);
+            for (int i = 0; i < 8; ++i) {
+                CAPTURE(i);
+                const SpeakerFit& f = r.speakers[static_cast<size_t>(i)];
+                const float err = length(f.position - real[static_cast<size_t>(i)]);
+                CHECK(f.solved);
+                CHECK(err < 3.0f * f.uncertainty + 0.02f);
+                worst = std::max(worst, err);
+                sum += err;
+            }
+        }
+        MESSAGE(numPoints << " points: mean error " << sum / 160.0f << " m, worst " << worst << " m");
+        if (numPoints == 8) {
+            CHECK(worst < 0.2f);
+            CHECK(sum / 160.0f < 0.1f);
+        } else {
+            CHECK(worst < 0.45f);
+        }
     }
-    CHECK(r.rmsError < 0.02f);
 }
 
 TEST_CASE("calibration: Benny's donut (4 inside facing out, 8 outside facing in), points round the ring") {
     const SpeakerLayout plan = presets::donut(4, 1.0f, 8, 5.0f, 1.5f);
     std::vector<Vec3> real = positions(plan);
-    std::mt19937 rng(11);
-    std::uniform_real_distribution<float> off(-0.4f, 0.4f);
-    for (auto& p : real) p = p + Vec3{off(rng), off(rng), 0.5f * off(rng)};
+    TestRng rng(11);
+    auto off = [&rng] { return static_cast<float>(rng.uniform(-0.4, 0.4)); };
+    for (auto& p : real) p = p + Vec3{off(), off(), 0.5f * off()};
     const auto points = suggestPoints(plan, 8);
     REQUIRE(points.size() == 8u);
     for (const auto& p : points) {
@@ -259,7 +296,7 @@ TEST_CASE("calibration: Benny's donut (4 inside facing out, 8 outside facing in)
     // Microphone placed only roughly (5 cm), timing noise, inner speakers not heard from
     // the far side of the column, and one reflection mistaken for the direct sound.
     std::vector<Vec3> realPoints = points;
-    for (auto& p : realPoints) p = p + Vec3{0.5f * off(rng) / 4, 0.5f * off(rng) / 4, 0.0f};
+    for (auto& p : realPoints) p = p + Vec3{0.5f * off() / 4, 0.5f * off() / 4, 0.0f};
     auto obs = syntheticObservations(real, realPoints, 0.0213, 343.0f, 30.0e-6, 12);
     std::vector<Observation> kept;
     for (const auto& o : obs) {
@@ -430,9 +467,9 @@ TEST_CASE("calibration end to end: simulated donut room, sweep out, microphone i
     // The real room: Benny's donut, every speaker a bit off the plan, the inner ones higher.
     const SpeakerLayout plan = presets::donut(4, 1.0f, 8, 5.0f, 1.5f);
     std::vector<RoomSimulator::Speaker> real;
-    std::mt19937 rng(21);
-    std::uniform_real_distribution<float> off(-0.3f, 0.3f);
-    for (const auto& s : plan.speakers) real.push_back({s.position + Vec3{off(rng), off(rng), 0.3f * off(rng)}, s.aimDirection()});
+    TestRng rng(21);
+    auto off = [&rng] { return static_cast<float>(rng.uniform(-0.3, 0.3)); };
+    for (const auto& s : plan.speakers) real.push_back({s.position + Vec3{off(), off(), 0.3f * off()}, s.aimDirection()});
     const double sr = 48000.0;
     RoomSimulator room;
     room.prepare(sr, real, 0.0137, -1.2f, 2.0e-5f, 343.0f);
@@ -453,7 +490,7 @@ TEST_CASE("calibration end to end: simulated donut room, sweep out, microphone i
     std::vector<float> mic(kBlock, 0.0f), micPrev(kBlock, 0.0f);
     std::vector<Observation> obs;
     for (int j = 0; j < static_cast<int>(points.size()); ++j) {
-        room.setMicrophone(points[static_cast<size_t>(j)] + Vec3{0.3f * off(rng) / 3, 0.3f * off(rng) / 3, 0.0f}); // placed within ~3 cm
+        room.setMicrophone(points[static_cast<size_t>(j)] + Vec3{0.3f * off() / 3, 0.3f * off() / 3, 0.0f}); // placed within ~3 cm
         for (int i = 0; i < static_cast<int>(plan.speakers.size()); ++i) {
             REQUIRE(runner.start(i, 0));
             int guard = 0;
@@ -551,3 +588,4 @@ TEST_CASE("calibration threads: sweep runner on a real audio thread, start, take
     audio.join();
     CHECK(completed + cancelled >= 150);
 }
+

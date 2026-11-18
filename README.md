@@ -64,7 +64,7 @@ Wo die Lautsprecher wirklich hängen, lässt sich auf zwei Wegen messen. Beide e
 **Mit Mikrofon** (Schritt *Lautsprecher → Mit Mikrofon einmessen*). Ein Messmikrofon steht auf Ohrhöhe. Jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. Aus der Laufzeit folgt der Abstand, aus dem Pegel die Lautstärke.
 
 - *Schnell*: ein Messpunkt. Laufzeit und Pegel werden dort angeglichen.
-- *Mit Positionen*: 4 bis 12 Messpunkte, einer davon 50 cm höher. Raumklang berechnet daraus die Position jedes Lautsprechers (Multilateration) und rechnet die Verzögerung des Audio-Interfaces von selbst heraus. Beim Donut sieht nicht jeder Punkt jeden Lautsprecher, deshalb beginnt die Messung dort mit 8 Punkten.
+- *Mit Positionen*: 4 bis 12 Messpunkte (Standard 8), abwechselnd auf Ohrhöhe und 50 cm höher. Raumklang berechnet daraus die Position jedes Lautsprechers (Multilateration) und rechnet die Verzögerung des Audio-Interfaces von selbst heraus. Beim Donut sieht nicht jeder Punkt jeden Lautsprecher, deshalb beginnt die Messung dort mit 8 Punkten.
 
 Raumklang zeigt, wo das Mikrofon als Nächstes hin muss. Ein fehlendes Mikrofon, ein stummer Lautsprecher oder ein übersteuerter Eingang ergeben eine Meldung in Klartext statt eines falschen Ergebnisses. Vertauschte Kabel erkennt die Messung ebenfalls („Vertauscht mit A3?“).
 
@@ -136,7 +136,7 @@ Bekannte Grenzen:
 - Bei Layoutwechseln während der Wiedergabe gibt es eine kurze Blende (20 ms). Beim Ziehen von Lautsprechern während der Wiedergabe ist das hörbar.
 - Kopfhörer-Vorschau ohne individuelle HRTF, Elevation wird kaum abgebildet.
 - Keine OSC-Fernsteuerung, keine Ambisonics-Eingänge, keine Entzerrung (EQ) beim Einmessen (siehe Roadmap).
-- Das Einmessen mit Mikrofon misst Position, Laufzeit und Pegel, nicht die Ausrichtung. Die Genauigkeit hängt davon ab, wie weit die Messpunkte auseinander liegen: typisch wenige Zentimeter, Raumklang zeigt sie je Lautsprecher an. Die iPhone-App ist noch nicht auf einem echten Gerät erprobt.
+- Das Einmessen mit Mikrofon misst Position, Laufzeit und Pegel, nicht die Ausrichtung. Die Genauigkeit hängt von Zahl und Abstand der Messpunkte ab. In der Simulation eines Rings mit 3 m Radius liegen 8 Messpunkte im Mittel 4 cm daneben, höchstens etwa 15 cm, mit 5 Punkten etwa doppelt so viel. Ein gemessener Abstand (Zollstock, Laser) macht es genauer. Raumklang zeigt die Genauigkeit je Lautsprecher an. Die iPhone-App ist noch nicht auf einem echten Gerät erprobt.
 - Mac-App und Plugins sind nicht von Apple signiert. Beim ersten Start *Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen*, oder im Terminal `xattr -dr com.apple.quarantine "/Applications/Raumklang.app"`. Unter Windows bei SmartScreen *Weitere Informationen → Trotzdem ausführen*.
 
 ## Selbst bauen
