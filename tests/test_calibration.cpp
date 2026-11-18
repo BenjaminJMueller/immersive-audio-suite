@@ -423,3 +423,131 @@ TEST_CASE("calibration: matching measured positions to speakers") {
     CHECK(sw[1] == std::make_pair(3, 1));
     CHECK(suspectedSwaps(planned, planned, {}).empty());
 }
+
+#include <rk/room_sim.hpp>
+
+TEST_CASE("calibration end to end: simulated donut room, sweep out, microphone in, positions back") {
+    // The real room: Benny's donut, every speaker a bit off the plan, the inner ones higher.
+    const SpeakerLayout plan = presets::donut(4, 1.0f, 8, 5.0f, 1.5f);
+    std::vector<RoomSimulator::Speaker> real;
+    std::mt19937 rng(21);
+    std::uniform_real_distribution<float> off(-0.3f, 0.3f);
+    for (const auto& s : plan.speakers) real.push_back({s.position + Vec3{off(rng), off(rng), 0.3f * off(rng)}, s.aimDirection()});
+    const double sr = 48000.0;
+    RoomSimulator room;
+    room.prepare(sr, real, 0.0137, -1.2f, 2.0e-5f, 343.0f);
+
+    SweepParams p;
+    p.sampleRate = sr;
+    p.seconds = 0.5;
+    p.tailSeconds = 0.4;
+    const auto sweep = makeSweep(p);
+    SweepRunner runner;
+    runner.prepare(sweep, recordLength(p));
+
+    const auto points = suggestPoints(plan, 8);
+    constexpr int kBlock = 256;
+    std::vector<std::vector<float>> outBufs(plan.speakers.size(), std::vector<float>(kBlock));
+    std::vector<float*> outs;
+    for (auto& b : outBufs) outs.push_back(b.data());
+    std::vector<float> mic(kBlock, 0.0f), micPrev(kBlock, 0.0f);
+    std::vector<Observation> obs;
+    for (int j = 0; j < static_cast<int>(points.size()); ++j) {
+        room.setMicrophone(points[static_cast<size_t>(j)] + Vec3{0.3f * off(rng) / 3, 0.3f * off(rng) / 3, 0.0f}); // placed within ~3 cm
+        for (int i = 0; i < static_cast<int>(plan.speakers.size()); ++i) {
+            REQUIRE(runner.start(i, 0));
+            int guard = 0;
+            while (runner.busy()) {
+                const float* ins[1] = {micPrev.data()};
+                runner.process(ins, 1, outs.data(), static_cast<int>(outs.size()), kBlock);
+                room.process(outs.data(), static_cast<int>(outs.size()), mic.data(), kBlock);
+                std::swap(mic, micPrev);
+                REQUIRE(++guard < 10000);
+            }
+            std::vector<float> rec, loop;
+            REQUIRE(runner.take(rec, loop));
+            const Measurement m = analyse(rec, sweep, p);
+            CHECK_FALSE(m.clipped);
+            if (!m.arrival.valid) continue;
+            Observation o;
+            o.speaker = i;
+            o.point = j;
+            o.seconds = m.arrival.seconds;
+            o.levelDb = m.arrival.levelDb;
+            o.weight = std::clamp((m.arrival.snrDb - 15.0f) / 20.0f, 0.2f, 1.0f) * std::clamp(m.arrival.directness * 1.5f, 0.3f, 1.0f);
+            obs.push_back(o);
+        }
+    }
+    CHECK(obs.size() >= 90u); // 96 sweeps, nearly all heard
+
+    SolveInput in;
+    for (const auto& s : plan.speakers) in.speakerGuess.push_back(s.position);
+    in.pointGuess = points;
+    in.observations = obs;
+    const SolveResult r = solvePositions(in);
+    int solved = 0;
+    for (size_t i = 0; i < real.size(); ++i) {
+        CAPTURE(i);
+        if (!r.speakers[i].solved) continue;
+        ++solved;
+        CHECK(length(r.speakers[i].position - real[i].position) < 0.10f);
+    }
+    CHECK(solved >= 11);
+    // Latency of the interface plus one audio block.
+    CHECK(r.latency == doctest::Approx(0.0137 + kBlock / sr).epsilon(0.03));
+
+    AlignInput ai;
+    ai.numSpeakers = static_cast<int>(plan.speakers.size());
+    ai.observations = obs;
+    ai.geometry = &r;
+    ai.referencePosition = r.points[0];
+    const auto a = align(ai);
+    // The farthest speaker gets no delay, nearer ones wait for it.
+    float maxD = 0.0f;
+    for (size_t i = 0; i < real.size(); ++i) maxD = std::max(maxD, length(real[i].position - points[0]));
+    for (size_t i = 0; i < real.size(); ++i) {
+        CAPTURE(i);
+        REQUIRE(a[i].measured);
+        const float expect = (maxD - length(real[i].position - points[0])) / 343.0f * 1000.0f;
+        CHECK(std::fabs(a[i].delayMs - expect) < 0.5f); // half a millisecond = 17 cm
+        CHECK(a[i].gainDb <= 6.0f);
+        CHECK(a[i].gainDb >= -30.0f);
+    }
+}
+
+#include <thread>
+
+TEST_CASE("calibration threads: sweep runner on a real audio thread, start, take and cancel from another") {
+    SweepRunner r;
+    std::vector<float> sweep(2000, 0.1f);
+    r.prepare(sweep, 3000);
+    std::atomic<bool> stop{false};
+    std::thread audio([&] {
+        float o[2][64], in[64];
+        float* outs[2] = {o[0], o[1]};
+        const float* ins[1] = {in};
+        for (float& v : in) v = 0.01f;
+        while (!stop.load()) {
+            r.process(ins, 1, outs, 2, 64);
+            std::this_thread::yield();
+        }
+    });
+    int completed = 0, cancelled = 0;
+    for (int k = 0; k < 200; ++k) {
+        while (r.busy()) std::this_thread::yield();
+        std::vector<float> rec, loop;
+        if (r.take(rec, loop)) {
+            CHECK(rec.size() == 3000u);
+            ++completed;
+        }
+        REQUIRE(r.start(k % 2, 0));
+        if (k % 3 == 0) {
+            r.cancel();
+            ++cancelled;
+        }
+    }
+    while (r.busy()) std::this_thread::yield();
+    stop.store(true);
+    audio.join();
+    CHECK(completed + cancelled >= 150);
+}

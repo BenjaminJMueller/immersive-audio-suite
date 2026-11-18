@@ -1,0 +1,45 @@
+# Xcode project for "Raumklang Messen", generated with XcodeGen:
+#   brew install xcodegen && xcodegen generate && open RaumklangMessen.xcodeproj
+name: RaumklangMessen
+options:
+  bundleIdPrefix: io.github.benjaminjmueller
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  SurveyKit:
+    path: ../SurveyKit
+targets:
+  RaumklangMessen:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    dependencies:
+      - package: SurveyKit
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Raumklang Messen
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSCameraUsageDescription: Die Kamera zeigt den Raum, damit du die Lautsprecher antippen kannst. Bilder werden nicht gespeichert.
+        UIRequiredDeviceCapabilities: [arkit]
+        UILaunchScreen: {}
+        UIUserInterfaceStyle: Dark
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: io.github.benjaminjmueller.raumklang.survey
+            UTTypeDescription: Raumklang-Messung
+            UTTypeConformsTo: [public.json]
+            UTTypeTagSpecification:
+              public.filename-extension: [raumklang-messung]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.benjaminjmueller.raumklang.messen
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_PREVIEWS: YES

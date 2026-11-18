@@ -6,6 +6,7 @@
 #pragma once
 
 #include "AudioHost.h"
+#include "Calibration.h"
 
 #include <rk_ui/Pages.h>
 #include <rk_ui/StageView.h>
@@ -17,7 +18,7 @@ namespace rkapp {
 
 class IntroOverlay;
 
-class MainComponent : public juce::Component, private juce::Timer {
+class MainComponent : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer {
 public:
     MainComponent();
     ~MainComponent() override;
@@ -28,6 +29,11 @@ public:
 
     /// Called on quit: writes the autosave immediately.
     void saveNow();
+
+    /// A measurement file from "Raumklang Messen" (iPhone) dropped on the window.
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
+    void loadSurvey(const juce::File& file);
 
 private:
     enum Step { StepSpeakers = 0, StepSources = 1, StepRoom = 2, StepOutput = 3 };
@@ -65,6 +71,18 @@ private:
     void updateTooltips();
     void showIntro();
     rkui::PageContext pageContext();
+
+    // Speaker calibration (microphone) and phone measurements.
+    void startCalibration();
+    void restartCalibration();
+    void endCalibration();
+    void buildCalibrationPage();
+    void buildPhonePage();
+    void evaluateCalibration();
+    void acceptProposal();
+    void chooseSurveyFile();
+    void updateCalibrationOverlay();
+    juce::String calibrationSubtitle(int speaker) const;
     juce::String sourceSubtitle(int i) const;
 
     AudioHost host_;
@@ -106,6 +124,16 @@ private:
     std::array<bool, rk::kMaxSources> sourceHasSignal_{};
     std::array<double, rk::kMaxSources> signalSeen_{};
     juce::TooltipWindow tooltips_{this, 600};
+
+    bool calibrating_ = false;
+    bool phoneMode_ = false;
+    std::unique_ptr<Calibration> calib_;
+    CalibrationSettings calibSettings_;
+    rkui::Survey survey_;
+    int surveyMatch_ = 0;
+    std::optional<rkui::Proposal> proposal_;
+    rkui::ProposalOptions proposalOpts_;
+    int calibSeen_ = -1; // phase, point and progress last shown in the inspector
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

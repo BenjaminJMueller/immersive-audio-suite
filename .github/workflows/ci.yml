@@ -41,7 +41,7 @@ jobs:
           TSAN_OPTIONS: halt_on_error=1
         run: |
           if [ "${{ matrix.name }}" = "thread" ]; then
-            setarch -R ./build/tests/rk_tests -tc="RtSwap*,stress*,engine*,speaker processor*"
+            setarch -R ./build/tests/rk_tests -tc="RtSwap*,stress*,engine*,speaker processor*,calibration threads*"
           else
             ./build/tests/rk_tests
           fi
