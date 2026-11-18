@@ -268,3 +268,19 @@ TEST_CASE("engine: process() never allocates or frees memory") {
     }
     CHECK(allocations == 0);
 }
+
+TEST_CASE("engine: speaker test plays noise on exactly one speaker") {
+    Rig r(1, 8);
+    r.noReverb();
+    r.setLayout(presets::ring(8, 3.0f), PannerKind::VBAP);
+    r.engine.speakerTest = 5;
+    r.settle();
+    r.run(2048);
+    for (int c = 0; c < 8; ++c) {
+        CAPTURE(c);
+        if (c == 5) CHECK(r.rms(c, 2048) > 0.01);
+        else CHECK(r.rms(c, 2048) == 0.0);
+    }
+    r.engine.speakerTest = 99; // out of range: ignored
+    r.run(512);
+}

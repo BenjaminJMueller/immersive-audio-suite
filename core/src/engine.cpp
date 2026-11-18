@@ -33,11 +33,6 @@ struct Engine::Runtime {
     Panner panner;
     int numSpeakers = 0;
     std::array<float, kMaxSpeakers> speakerGain{};
-    struct DelayLine {
-        std::vector<float> buf;
-        int pos = 0;
-        int delay = 0;
-    };
     std::vector<DelayLine> delays;
     std::vector<int> mains;
     std::vector<int> subs;
@@ -59,10 +54,8 @@ std::unique_ptr<Engine::Runtime> Engine::buildRuntime(const EngineConfig& cfg) c
     for (int m = 0; m < rt->numSpeakers; ++m) {
         const Speaker& s = cfg.layout.speakers[static_cast<size_t>(m)];
         rt->speakerGain[static_cast<size_t>(m)] = s.enabled ? dbToGain(s.gainDb) : 0.0f;
-        auto& d = rt->delays[static_cast<size_t>(m)];
-        d.delay = static_cast<int>(std::lround(s.delayMs * 0.001 * sampleRate_));
-        d.delay = std::clamp(d.delay, 0, static_cast<int>(0.5 * sampleRate_) + 1);
-        if (d.delay > 0) d.buf.assign(static_cast<size_t>(d.delay + 1), 0.0f);
+        const int delay = static_cast<int>(std::lround(s.delayMs * 0.001 * sampleRate_));
+        rt->delays[static_cast<size_t>(m)].prepare(std::clamp(delay, 0, static_cast<int>(0.5 * sampleRate_) + 1));
         if (!s.enabled) continue;
         if (s.isSubwoofer) {
             rt->subs.push_back(m);
@@ -115,7 +108,7 @@ void Engine::prepare(double sampleRate, int maxBlockSize) {
     reverb_.prepare(sampleRate_);
     reverb_.setParams(reverb());
     reverbSeen_ = reverbVersion_.load();
-    limiterGain_.fill(1.0f);
+    for (auto& l : limiter_) l.prepare(sampleRate_);
     std::memset(subLp_, 0, sizeof(subLp_));
     masterCur_ = dbToGain(masterGainDb.load());
     wetCur_ = 0.0f;
@@ -197,7 +190,7 @@ void Engine::resetSourceState() noexcept {
         st.subCur = 0.0f;
         st.hadSignal = false;
     }
-    limiterGain_.fill(1.0f);
+    for (auto& l : limiter_) l.reset();
 }
 
 namespace {
@@ -461,21 +454,18 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
         }
     }
 
-    // ---- 8. speaker calibration: gain and delay -----------------------------------
+    // ---- 8. speaker test signal, calibration gain and delay -----------------------
+    const int test = speakerTest.load(std::memory_order_relaxed);
+    if (test >= 0 && test < numSpk) {
+        float* buf = mixPtr_[static_cast<size_t>(test)];
+        for (int i = 0; i < n; ++i) buf[i] += testNoise_.next();
+    }
     for (int m = 0; m < numSpk; ++m) {
         float* buf = mixPtr_[static_cast<size_t>(m)];
+        rt->delays[static_cast<size_t>(m)].process(buf, n);
         const float g = rt->speakerGain[static_cast<size_t>(m)];
-        auto& d = rt->delays[static_cast<size_t>(m)];
-        if (d.delay > 0) {
-            const int size = static_cast<int>(d.buf.size());
-            for (int i = 0; i < n; ++i) {
-                d.buf[static_cast<size_t>(d.pos)] = buf[i];
-                d.pos = (d.pos + 1) % size; // now points at the oldest sample == delay ago
-                buf[i] = d.buf[static_cast<size_t>(d.pos)] * g;
-            }
-        } else if (g != 1.0f) {
+        if (g != 1.0f)
             for (int i = 0; i < n; ++i) buf[i] *= g;
-        }
     }
 
     // ---- 9. master gain, fade, limiter, sanitise ----------------------------------
@@ -512,32 +502,15 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
     }
 
     const bool limit = limiterEnabled.load(std::memory_order_relaxed);
-    const float release = 1.0f - std::exp(-1.0f / static_cast<float>(0.08 * sampleRate_));
-    constexpr float kThreshold = 0.989f; // -0.1 dBFS
-    uint32_t limiterEvents = 0;
+    bool limited = false;
     for (int c = 0; c < numFinal; ++c) {
         float* buf = finalPtr[c];
-        float lg = limiterGain_[static_cast<size_t>(c)];
+        for (int i = 0; i < n; ++i) buf[i] *= curve[i];
         float peak = 0.0f;
-        for (int i = 0; i < n; ++i) {
-            float v = sanitizeSample(buf[i] * curve[i]);
-            if (limit) {
-                const float a = std::fabs(v);
-                if (a * lg > kThreshold) {
-                    lg = kThreshold / a;
-                    ++limiterEvents;
-                } else {
-                    lg += (1.0f - lg) * release;
-                }
-                v = std::clamp(v * lg, -kThreshold, kThreshold);
-            }
-            buf[i] = v;
-            peak = std::max(peak, std::fabs(v));
-        }
-        limiterGain_[static_cast<size_t>(c)] = lg;
+        limited |= limiter_[static_cast<size_t>(c)].process(buf, n, limit, peak);
         storeMax(outPeak_[static_cast<size_t>(c)], peak);
     }
-    if (limiterEvents > 0) limiterEvents_.fetch_add(1, std::memory_order_relaxed);
+    if (limited) limiterEvents_.fetch_add(1, std::memory_order_relaxed);
 
     // ---- 10. write outputs ---------------------------------------------------------
     for (int c = 0; c < numOutputs; ++c) {

@@ -9,6 +9,7 @@
 #pragma once
 
 #include "rk/binaural.hpp"
+#include "rk/dsp.hpp"
 #include "rk/layout.hpp"
 #include "rk/panners.hpp"
 #include "rk/reverb.hpp"
@@ -77,6 +78,8 @@ public:
     std::atomic<float> reverbWetDb{-6.0f};
     std::atomic<bool> limiterEnabled{true};
     std::atomic<float> subLevelDb{-6.0f};
+    /// Plays pink noise on one speaker (index into the layout) for setup checks. -1 = off.
+    std::atomic<int> speakerTest{-1};
     void setReverb(const ReverbParams& p) noexcept;
     ReverbParams reverb() const noexcept;
 
@@ -149,7 +152,8 @@ private:
     std::array<float*, kMaxSpeakers> mixPtr_{};
 
     // Output stage state.
-    std::array<float, kMaxSpeakers> limiterGain_{};
+    std::array<PeakLimiter, kMaxSpeakers> limiter_{};
+    PinkNoise testNoise_;
     float masterCur_ = 1.0f;
     float wetCur_ = 0.0f;
     enum class Fade { Running, Out, In } fade_ = Fade::Running;

@@ -18,7 +18,8 @@ if(RK_BUILD_TESTS)
         test_binaural.cpp
         test_rt_swap.cpp
         test_engine.cpp
-        test_stress.cpp)
+        test_stress.cpp
+        test_speaker_processor.cpp)
     target_link_libraries(rk_tests PRIVATE rk::core doctest::doctest)
     if(NOT MSVC)
         target_compile_options(rk_tests PRIVATE -Wall -Wextra)

@@ -4,7 +4,8 @@ add_library(rk_core STATIC
     src/panners.cpp
     src/reverb.cpp
     src/binaural.cpp
-    src/engine.cpp)
+    src/engine.cpp
+    src/speaker_processor.cpp)
 add_library(rk::core ALIAS rk_core)
 
 target_include_directories(rk_core PUBLIC include)
