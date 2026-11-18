@@ -4,20 +4,45 @@ Deutsch · [English](README.en.md)
 
 Raumklang ist ein freies Werkzeug für räumlichen Klang auf macOS und Windows. Es verteilt Klangquellen frei im Raum auf beliebig viele Lautsprecher, vom Stereopaar über Ring, Kuppel und 7.1.4 bis zum *Donut*, bei dem sich zwei Lautsprecherringe gegenüberstehen. Dazu gibt es Hall, eine Kopfhörer-Vorschau und zwei Plugins für die DAW. Ein Audio-Interface genügt: Die App spricht es direkt an, zusätzliche Programme für das Routing sind nicht nötig.
 
-> **Frühe Version (0.1).** Raumklang ist neu. Die Klangberechnung ist ausführlich automatisch getestet, an echten Lautsprecheraufbauten aber noch kaum. Fehler und Lücken sind wahrscheinlich, siehe [Funktionsumfang und Grenzen](#funktionsumfang-und-grenzen).
+![Lautsprecher](docs/screenshots/01-lautsprecher.png)
+
+> **Frühe Version (0.1).** Raumklang ist neu. Die Klangberechnung ist ausführlich automatisch getestet, an echten Lautsprecheraufbauten aber noch kaum. Fehler und Lücken sind wahrscheinlich, siehe [Funktionsumfang und Grenzen](#funktionsumfang-und-grenzen). Wenn es trotzdem jemandem bei einem eigenen Projekt weiterhilft, freue ich mich.
 
 **Herunterladen:** Noch keine Releases. Fertige Builds für macOS, Windows und Linux entstehen bei jedem Lauf der [CI](../../actions) und liegen dort unter *Artifacts*.
 
 ## Hintergrund
 
-Für räumlichen Klang gibt es gute Werkzeuge, unter anderem:
+Raumklang ist im Rahmen der Lehre entstanden. In Seminaren und Installationen wird mit Mehrkanal-Aufbauten gearbeitet, die sich von Projekt zu Projekt ändern: ein Ring im Seminarraum, eine Kuppel, Lautsprecher um eine Mittelsäule herum. Studierende sollen damit Klang im Raum gestalten, meist ohne Vorerfahrung in Mehrkanal-Technik und auf ihren eigenen Rechnern.
+
+Eine Besonderheit ist der *Donut*: zwei Lautsprecherringe, die sich gegenüberstehen, ein innerer nach außen und ein äußerer nach innen gerichtet, das Publikum dazwischen. Ein solcher Aufbau hat keinen zentralen Hörplatz, gängige Verfahren wie VBAP gehen aber genau davon aus.
+
+## Bestehende Werkzeuge
+
+Für räumlichen Klang gibt es eine Reihe etablierter Werkzeuge, unter anderem:
 
 - **FLUX Spat Revolution** und **IRCAM Spat** als vollständige Raumklang-Umgebungen
-- **SpatGRIS / ControlGRIS** (Université de Montréal), frei, braucht aber ein virtuelles Audiogerät wie BlackHole oder JACK für das Routing
+- **SpatGRIS / ControlGRIS** (Groupe de Recherche en Immersion Spatiale, Université de Montréal), frei, mit VBAP, MBAP, Kopfhörer-Ausgabe und Plugins für die DAW
 - **IEM Plug-in Suite** und **SPARTA** für Ambisonics in der DAW
 - **d&b Soundscape**, **L-ISA** und **Holoplot** als Systeme der Lautsprecherhersteller
 
-Raumklang will das Wichtigste davon frei und einfach anbieten: plug and play, verständlich auch ohne Vorerfahrung, und so stabil, dass es im Betrieb nicht abstürzt.
+## Warum ein eigenes Werkzeug
+
+Für die Lehre passte keine dieser Lösungen gut. Spat Revolution kann alles Nötige, kostet aber pro Arbeitsplatz eine Lizenz und ist für Einsteiger umfangreich. Die Systeme der Hersteller sind an deren Hardware gebunden. Die Ambisonics-Suiten sind stark, setzen aber Fachwissen voraus und decken Aufbauten ohne zentralen Hörplatz nicht ab.
+
+SpatGRIS kommt dem Ziel am nächsten und bietet im Prinzip den nötigen Funktionsumfang. Im Einsatz zeigten sich aber drei Probleme:
+
+- **Abstürze.** Im Betrieb stürzte SpatGRIS immer wieder ab. Bei einer Installation oder in einer Lehrveranstaltung mit voller Lautstärke ist das nicht hinnehmbar.
+- **Routing über Zusatzprogramme.** Die DAW schickt ihren Ton über ein virtuelles Audiogerät an SpatGRIS, unter macOS über BlackHole, unter Windows über JACK und ASIO4ALL. Das ist eine weitere Fehlerquelle, schwer zu erklären und auf jedem Rechner neu einzurichten.
+- **Bedienung.** Die Oberfläche ist schwer zu durchschauen. Für Studierende ohne Vorerfahrung ist der Einstieg mühsam.
+
+Daraus ergaben sich die Anforderungen an dieses Werkzeug:
+
+- stabil: kein Absturz im Betrieb, auch nicht bei unsinnigen Eingaben, fehlerhaften Plugins oder Gerätewechseln, mit automatischen Tests auf allen Systemen
+- keine Zusatzprogramme: die App spricht das Audio-Interface direkt an, die Plugins arbeiten in der DAW
+- flexible Lautsprecher-Aufbauten bis zum Donut, mit einer verständlichen Rückmeldung, ob das Layout passt
+- Hall und Kopfhörer-Vorschau an einem Ort, damit auch ohne Lautsprecher gearbeitet werden kann
+- lauffähig auf einem normalen Rechner unter macOS und Windows, verständlich auch für Studierende ohne Vorerfahrung
+- frei und quelloffen, ohne Lizenzkosten
 
 ## Arbeitsablauf
 
@@ -25,6 +50,11 @@ Raumklang will das Wichtigste davon frei und einfach anbieten: plug and play, ve
 2. **Quellen.** Jede Quelle ist ein Eingang des Audio-Interfaces oder ein eingebautes Testsignal (rosa Rauschen, Sinuston, Klicks). Quellen werden in der Draufsicht gezogen oder über Azimut, Elevation und Abstand gesetzt, dazu Pegel, Breite, Hallanteil und Entfernungswirkung. *Kreisen* bewegt eine Quelle von selbst um den Hörplatz.
 3. **Raum.** Hall mit Vorlagen (Trocken, Studio, Saal, Kirche) und Reglern für Nachhallzeit, Raumgröße, Höhendämpfung und Vorverzögerung.
 4. **Ausgabe.** Audiogerät, Abtastrate und Puffer wählen. Gesamtpegel, Schutzbegrenzer, Kopfhörer-Vorschau und *Lautsprecher einzeln anspielen* zum Prüfen der Verkabelung.
+
+<p>
+  <img src="docs/screenshots/02-quellen.png" width="49%" alt="Quellen">
+  <img src="docs/screenshots/03-raum.png" width="49%" alt="Raum">
+</p>
 
 Projekte werden automatisch gesichert, alle Schritte lassen sich rückgängig machen (⌘Z / Strg+Z). Beim ersten Start bietet eine Einführung an, mit einer Demo zu beginnen. Hat das Audiogerät weniger Ausgänge als das Layout Lautsprecher, schaltet die Demo von selbst die Kopfhörer-Vorschau ein. Die Oberfläche ist auf Deutsch, Englisch lässt sich unter *Hilfe* (?) umstellen.
 
