@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LINUX_DEPS: >-
+    libasound2-dev libjack-jackd2-dev libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev
+    libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libxi-dev libgl1-mesa-dev xvfb ninja-build
+
+jobs:
+  # Fast feedback: the realtime engine with every sanitizer and the fuzzer.
+  core:
+    name: Core (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: release
+            flags: -DCMAKE_BUILD_TYPE=Release
+          - name: address+undefined
+            flags: -DCMAKE_BUILD_TYPE=Debug -DRK_SANITIZE=address,undefined
+          - name: thread
+            flags: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DRK_SANITIZE=thread
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: cmake -S . -B build -G Ninja -DRK_BUILD_APP=OFF -DRK_BUILD_PLUGINS=OFF -DRK_WERROR=ON ${{ matrix.flags }}
+      - run: cmake --build build
+      - name: Tests
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          TSAN_OPTIONS: halt_on_error=1
+        run: |
+          if [ "${{ matrix.name }}" = "thread" ]; then
+            setarch -R ./build/tests/rk_tests -tc="RtSwap*,stress*,engine*,speaker processor*"
+          else
+            ./build/tests/rk_tests
+          fi
+
+  fuzz:
+    name: Fuzz engine (5 min)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang
+      - run: cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DRK_BUILD_APP=OFF -DRK_BUILD_PLUGINS=OFF -DRK_BUILD_TESTS=OFF -DRK_FUZZ=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - run: cmake --build build
+      - run: mkdir -p corpus && ./build/tests/rk_fuzz_engine -max_total_time=300 -max_len=4096 corpus
+
+  # App, plugins, all tests and pluginval on every platform.
+  build:
+    name: Build and validate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - name: Configure
+        shell: bash
+        run: |
+          EXTRA=""
+          if [ "$RUNNER_OS" = "macOS" ]; then EXTRA="-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"; fi
+          if [ "$RUNNER_OS" = "Linux" ]; then EXTRA="-G Ninja"; fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release $EXTRA
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+      - name: Tests
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
+          find build -type f \( -name rk_tests -o -name rk_tests.exe \) -not -path "*CMakeFiles*" | head -1 | xargs -I{} $RUN {}
+          find build -type f \( -name rk_shared_tests -o -name rk_shared_tests.exe \) -path "*artefacts*" | head -1 | xargs -I{} $RUN {}
+          find build -type f \( -name rk_plugin_tests -o -name rk_plugin_tests.exe \) -path "*artefacts*" | head -1 | xargs -I{} $RUN {}
+      - name: pluginval (strictness 10)
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   curl -sSL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip; unzip -q pv.zip; PV=pluginval.app/Contents/MacOS/pluginval; RUN="";;
+            Windows) curl -sSL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip; 7z x -y pv.zip > /dev/null; PV=./pluginval.exe; RUN="";;
+            Linux)   curl -sSL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip; unzip -q pv.zip; PV=./pluginval; RUN="xvfb-run -a";;
+          esac
+          status=0
+          while IFS= read -r -d '' plugin; do
+            echo "::group::$plugin"
+            $RUN $PV --strictness-level 10 --validate-in-process --timeout-ms 900000 --validate "$plugin" || status=1
+            echo "::endgroup::"
+          done < <(find build -path "*Release*" \( -name "*.vst3" -o -name "*.component" \) -maxdepth 6 -prune -print0)
+          exit $status
+      - name: Collect builds
+        shell: bash
+        run: |
+          mkdir -p dist
+          find build -path "*Release*" \( -name "*.vst3" -o -name "*.component" -o -name "*.app" -o -name "Raumklang.exe" -o -name "Raumklang" \) -maxdepth 6 -prune -exec cp -R {} dist/ \;
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Raumklang-${{ runner.os }}
+          path: dist
+          if-no-files-found: warn
