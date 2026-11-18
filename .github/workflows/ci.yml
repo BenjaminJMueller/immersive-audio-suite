@@ -92,6 +92,16 @@ jobs:
           run_test rk_tests
           run_test rk_shared_tests
           run_test rk_plugin_tests
+      - name: Install Audio Units (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # macOS only finds Audio Units in the Components folder (pluginval and Logic alike).
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          find build -path "*Release*" -name "*.component" -maxdepth 6 -prune -exec cp -R {} ~/Library/Audio/Plug-Ins/Components/ \;
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          auval -a | grep -i Rmkl || true
       - name: pluginval (strictness 10)
         shell: bash
         run: |
@@ -105,18 +115,14 @@ jobs:
             echo "::group::$plugin"
             $RUN $PV --strictness-level 10 --validate-in-process --timeout-ms 900000 --validate "$plugin" || status=1
             echo "::endgroup::"
-          done < <(find build -path "*Release*" \( -name "*.vst3" -o -name "*.component" \) -maxdepth 6 -prune -print0)
+          done < <(find build -path "*Release*" -name "*.vst3" -maxdepth 6 -prune -print0; \
+                   [ "$RUNNER_OS" = "macOS" ] && find ~/Library/Audio/Plug-Ins/Components -maxdepth 1 -name "Raumklang*.component" -print0)
           exit $status
       - name: auval (Logic Pro, GarageBand)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           # Logic only loads Audio Units that pass Apple's validator.
-          mkdir -p ~/Library/Audio/Plug-Ins/Components
-          find build -path "*Release*" -name "*.component" -maxdepth 6 -prune -exec cp -R {} ~/Library/Audio/Plug-Ins/Components/ \;
-          killall -9 AudioComponentRegistrar 2>/dev/null || true
-          sleep 2
-          auval -a | grep -i Rmkl || true
           status=0
           for code in Rkq1 Rkr1 Rkb1; do
             echo "::group::auval $code"
