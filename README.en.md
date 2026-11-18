@@ -29,11 +29,10 @@ There are a number of established tools for spatial audio, among them:
 
 None of these fitted teaching well. Spat Revolution can do everything needed, but costs a licence per seat and is a lot to take in for beginners. The manufacturers' systems are tied to their hardware. The Ambisonics suites are powerful but assume expert knowledge and do not cover setups without a central listening spot.
 
-SpatGRIS comes closest and in principle offers the required features. In use, however, three problems showed up:
+SpatGRIS comes closest and in principle offers the required features. In teaching, however, two hurdles stood out:
 
-- **Crashes.** SpatGRIS crashed again and again during operation. In an installation or a class at full volume that is not acceptable.
-- **Routing through extra software.** The DAW sends its audio to SpatGRIS through a virtual audio device, BlackHole on macOS, JACK and ASIO4ALL on Windows. That is another source of failure, hard to explain and has to be set up again on every computer.
-- **Usability.** The interface is hard to understand. For students without prior experience, getting started is tedious.
+- **Routing through extra software.** The DAW does not send its audio to SpatGRIS directly but through a virtual audio device. On macOS that is BlackHole, often combined with a multi-output or aggregate device in *Audio MIDI Setup*. On Windows, JACK and ASIO4ALL come on top, because an ASIO driver can only be opened by one program at a time. JACK has to be installed separately, started with matching sample rate and buffer size, and has to run before the DAW and SpatGRIS. ASIO4ALL sits on top of the interface's drivers and behaves differently from device to device. Every link of this chain has to be set up again on every computer, and when nothing is heard in the end, it is hard to find out where the chain breaks.
+- **Usability.** In seminars, students work on their own computers, with macOS and Windows, and usually without prior experience in multichannel audio. A session should start with sound in the room, not with setting up drivers. The SpatGRIS interface is hard to grasp for that: speaker setup, sources and methods are spread across several windows and programs, and there is little feedback on whether a setup works. Getting started therefore takes up a good part of the time meant for the creative work.
 
 This led to the requirements for this tool:
 

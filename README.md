@@ -29,11 +29,10 @@ Für räumlichen Klang gibt es eine Reihe etablierter Werkzeuge, unter anderem:
 
 Für die Lehre passte keine dieser Lösungen gut. Spat Revolution kann alles Nötige, kostet aber pro Arbeitsplatz eine Lizenz und ist für Einsteiger umfangreich. Die Systeme der Hersteller sind an deren Hardware gebunden. Die Ambisonics-Suiten sind stark, setzen aber Fachwissen voraus und decken Aufbauten ohne zentralen Hörplatz nicht ab.
 
-SpatGRIS kommt dem Ziel am nächsten und bietet im Prinzip den nötigen Funktionsumfang. Im Einsatz zeigten sich aber drei Probleme:
+SpatGRIS kommt dem Ziel am nächsten und bietet im Prinzip den nötigen Funktionsumfang. In der Lehre zeigten sich aber vor allem zwei Hürden:
 
-- **Abstürze.** Im Betrieb stürzte SpatGRIS immer wieder ab. Bei einer Installation oder in einer Lehrveranstaltung mit voller Lautstärke ist das nicht hinnehmbar.
-- **Routing über Zusatzprogramme.** Die DAW schickt ihren Ton über ein virtuelles Audiogerät an SpatGRIS, unter macOS über BlackHole, unter Windows über JACK und ASIO4ALL. Das ist eine weitere Fehlerquelle, schwer zu erklären und auf jedem Rechner neu einzurichten.
-- **Bedienung.** Die Oberfläche ist schwer zu durchschauen. Für Studierende ohne Vorerfahrung ist der Einstieg mühsam.
+- **Routing über Zusatzprogramme.** Die DAW schickt ihren Ton nicht direkt an SpatGRIS, sondern über ein virtuelles Audiogerät. Unter macOS ist das BlackHole, oft zusammen mit einem Gerät mit mehreren Ausgängen oder einem Aggregatgerät in *Audio-MIDI-Setup*. Unter Windows kommen JACK und ASIO4ALL dazu, weil ein ASIO-Treiber nur von einem Programm zur Zeit geöffnet werden kann. JACK muss eigens installiert, mit passender Abtastrate und Puffergröße gestartet und vor DAW und SpatGRIS laufen. ASIO4ALL legt sich über die Treiber des Interfaces und verhält sich je nach Gerät anders. Jedes dieser Glieder ist auf jedem Rechner neu einzurichten, und klingt es am Ende nicht, ist schwer herauszufinden, an welcher Stelle der Kette es hängt.
+- **Bedienung.** In Seminaren arbeiten Studierende auf ihren eigenen Rechnern, mit macOS und Windows, und meist ohne Vorerfahrung in Mehrkanal-Technik. Eine Sitzung soll mit Klang im Raum beginnen, nicht mit der Einrichtung von Treibern. Die Oberfläche von SpatGRIS ist dafür schwer zu durchschauen: Lautsprecher-Setup, Quellen und Verfahren verteilen sich auf mehrere Fenster und Programme, und Rückmeldungen, ob ein Aufbau passt, fehlen weitgehend. Der Einstieg kostet so einen guten Teil der Zeit, die eigentlich für die gestalterische Arbeit gedacht ist.
 
 Daraus ergaben sich die Anforderungen an dieses Werkzeug:
 
