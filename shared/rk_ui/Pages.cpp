@@ -105,15 +105,15 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
 
     if (ctx.calibrate || ctx.importSurvey) {
         page.add(std::make_unique<SectionHeader>(tr("Einmessen"), tr("Mit Mikrofon: Raumklang spielt über jeden Lautsprecher einen kurzen Messton und berechnet daraus Laufzeit, Pegel und, mit mehreren Messpunkten, die genaue Position.\n\nMit dem iPhone: In der App „Raumklang Messen“ jeden Lautsprecher antippen und die Messung hier laden oder auf das Fenster ziehen.")), 26);
-        if (ctx.importSurvey) {
-            auto* phone = page.add(makeButton(tr("iPhone-Messung laden")), 32);
-            phone->setTooltip(tr("Datei aus der App „Raumklang Messen“ laden. Sie lässt sich auch auf das Fenster ziehen."));
-            phone->onClick = ctx.importSurvey;
-        }
         if (ctx.calibrate) {
             auto* mic = page.add(makeButton(tr("Mit Mikrofon einmessen"), true), 32);
             mic->setTooltip(tr("Laufzeit, Pegel und Position jedes Lautsprechers automatisch messen."));
             mic->onClick = ctx.calibrate;
+        }
+        if (ctx.importSurvey) {
+            auto* phone = page.add(makeButton(tr("iPhone-Messung laden")), 32);
+            phone->setTooltip(tr("Datei aus der App „Raumklang Messen“ laden. Sie lässt sich auch auf das Fenster ziehen."));
+            phone->onClick = ctx.importSurvey;
         }
     }
 

@@ -1338,6 +1338,8 @@ void MainComponent::startCalibration() {
     proposal_.reset();
     proposalOpts_ = {};
     calibSettings_.micInput = juce::jlimit(0, juce::jmax(0, host_.numDeviceInputs() - 1), calibSettings_.micInput);
+    // In a donut not every point hears every speaker: start with at least 8 points there.
+    if (rk::analyze(scene_.layout).facesInwardAndOutward) calibSettings_.numPoints = juce::jmax(calibSettings_.numPoints, 8);
     calib_ = std::make_unique<Calibration>(host_, scene_.layout, calibSettings_);
     calibSeen_ = -1;
     refreshAll();
@@ -1416,6 +1418,11 @@ juce::String MainComponent::calibrationSubtitle(int m) const {
         if (m >= (int)proposal_->speakers.size()) return {};
         const auto& q = proposal_->speakers[(size_t)m];
         juce::String t = q.note;
+        if (t.isEmpty() && q.hasPosition && m < (int)scene_.layout.speakers.size()) {
+            // e.g. after an iPhone survey: how far the speaker moves.
+            const float d = rk::length(q.position - scene_.layout.speakers[(size_t)m].position);
+            t = d < 0.01f ? tr("Unverändert") : tr("Verschoben um") + " " + juce::String(juce::roundToInt(d * 100.0f)) + " cm";
+        }
         if (q.measured && q.hasGain) t << dot << rkui::num(q.gainDb, 1) << " dB";
         return t;
     }
@@ -1461,18 +1468,18 @@ void MainComponent::buildCalibrationPage() {
         toggle(tr("Positionen"), proposalOpts_.positions, proposal_->canPositions);
         toggle(tr("Laufzeit angleichen"), proposalOpts_.delays, proposal_->canDelays);
         toggle(tr("Pegel angleichen"), proposalOpts_.levels, proposal_->canLevels);
-        auto* discard = inspector_.add(rkui::makeButton(tr("Verwerfen"), false, true), 32);
-        discard->onClick = [this] {
-            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
-        };
+        auto* ok = inspector_.add(rkui::makeButton(tr("Übernehmen"), true), 32);
+        ok->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->acceptProposal(); }); };
         auto* more = inspector_.add(rkui::makeButton(tr("Weiter messen"), false, true), 32);
         more->onClick = [this] {
             proposal_.reset();
             if (calib_ != nullptr) calib_->reopen();
             juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
         };
-        auto* ok = inspector_.add(rkui::makeButton(tr("Übernehmen"), true), 32);
-        ok->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->acceptProposal(); }); };
+        auto* discard = inspector_.add(rkui::makeButton(tr("Verwerfen"), false, true), 32);
+        discard->onClick = [this] {
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
+        };
         inspector_.addDetails(tr("Gestrichelt ist, wo die Lautsprecher bisher standen. Positionen werden nur übernommen, wenn sie von mindestens vier Messpunkten bestätigt sind.\n\n"
                                  "Laufzeit: alle Lautsprecher klingen am Messpunkt 1 gleichzeitig. Pegel: alle gleich laut, leiser gestellt wird nur, was zu laut ist.\n\n"
                                  "Die Ausrichtung bleibt, wie sie war (zur Mitte, nach außen oder nach innen). Für die genaue Richtung jedes Lautsprechers die iPhone-Messung verwenden."));
@@ -1530,22 +1537,13 @@ void MainComponent::buildCalibrationPage() {
     const int h = card->idealHeight(juce::jmax(200, inspector_.getWidth() - 24));
     inspector_.add(std::move(card), h);
 
-    // Actions: leave | evaluate | measure next point (rightmost = main action).
+    // Actions, added main action first: it ends up rightmost (measure, evaluate, leave).
     if (calib_->phase() == Calibration::Phase::Measuring) {
         auto* stop = inspector_.add(rkui::makeButton(tr("Abbrechen"), false, true), 32);
         stop->onClick = [this] { if (calib_ != nullptr) calib_->cancel(); calibSeen_ = -1; };
     } else {
-        auto* leave = inspector_.add(rkui::makeButton(tr("Beenden"), false, true), 32);
-        leave->onClick = [this] {
-            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
-        };
         const int next = calib_->nextPoint();
         const int needed = calibSettings_.positions ? 4 : 1;
-        if (calib_->measuredPoints() >= 1) {
-            auto* eval = inspector_.add(rkui::makeButton(tr("Ergebnis zeigen"), next < 0 || calib_->measuredPoints() >= total), 32);
-            if (calib_->measuredPoints() < needed) eval->setTooltip(tr("Für Positionen mindestens 4 Messpunkte. Mit weniger nur Laufzeit und Pegel."));
-            eval->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->evaluateCalibration(); }); };
-        }
         if (next >= 0) {
             const bool repeat = calib_->pointState()[(size_t)next] == 2;
             auto* go = inspector_.add(rkui::makeButton((repeat ? tr("Wiederholen") : tr("Messen")) + u8(" \xc2\xb7 M") + juce::String(next + 1), true), 32);
@@ -1555,6 +1553,15 @@ void MainComponent::buildCalibrationPage() {
                 calibSeen_ = -1;
             };
         }
+        if (calib_->measuredPoints() >= 1) {
+            auto* eval = inspector_.add(rkui::makeButton(tr("Ergebnis zeigen"), next < 0 || calib_->measuredPoints() >= total), 32);
+            if (calib_->measuredPoints() < needed) eval->setTooltip(tr("Für Positionen mindestens 4 Messpunkte. Mit weniger nur Laufzeit und Pegel."));
+            eval->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->evaluateCalibration(); }); };
+        }
+        auto* leave = inspector_.add(rkui::makeButton(tr("Beenden"), false, true), 32);
+        leave->onClick = [this] {
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
+        };
     }
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Genauer"), tr("Mit einem gemessenen Abstand (Zollstock oder Laser) von Messpunkt 1 zu Lautsprecher 1 wird die Messung auch mit wenigen Punkten genau. "
@@ -1601,12 +1608,12 @@ void MainComponent::buildPhonePage() {
         proposal_ = rkui::proposalFromSurvey(scene_.layout, survey_, (rkui::SurveyMatch)i);
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
     };
+    auto* ok = inspector_.add(rkui::makeButton(tr("Übernehmen"), true), 32);
+    ok->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->acceptProposal(); }); };
     auto* discard = inspector_.add(rkui::makeButton(tr("Verwerfen"), false, true), 32);
     discard->onClick = [this] {
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
     };
-    auto* ok = inspector_.add(rkui::makeButton(tr("Übernehmen"), true), 32);
-    ok->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->acceptProposal(); }); };
     inspector_.addDetails(tr("Die App misst mit LiDAR, wo jeder Lautsprecher hängt und wohin er zeigt. Der Hörplatz und die Richtung „vorne“ werden in der App festgelegt.\n\n"
                              "Die Datei kommt per AirDrop, Mail oder Cloud auf den Rechner und lässt sich einfach auf das Raumklang-Fenster ziehen."));
 }
