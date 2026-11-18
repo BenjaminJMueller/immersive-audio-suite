@@ -8,7 +8,7 @@ Raumklang is a free tool for spatial audio on macOS and Windows. It places sound
 
 > **Early version (0.1).** Raumklang is new. The audio processing is extensively tested automatically, but hardly on real speaker setups yet. Bugs and gaps are likely, see [Features and limits](#features-and-limits). If it still helps someone with their own project, I'm glad.
 
-**Download:** No releases yet. Ready-made builds for macOS, Windows and Linux are produced by every [CI](../../actions) run and can be found there under *Artifacts*.
+**Download:** [macOS (.dmg)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-mac.dmg) · [Windows (.zip)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-Windows.zip) · [Installation notes](#installation)
 
 ## Background
 
@@ -113,6 +113,13 @@ Known limits:
 - No OSC remote control, no Ambisonics inputs, no EQ in the speaker calibration yet (see roadmap).
 - Speaker calibration: with a measuring microphone (sweeps, multilateration over 4 to 12 points: position, delay and level) or with the iPhone app *Raumklang Messen* (LiDAR: position and aim), see the German README. The iPhone app has not been tried on a real device yet.
 - The Mac app and plugins are not signed by Apple. On first start use *System Settings → Privacy & Security → Open Anyway*, or run `xattr -dr com.apple.quarantine "/Applications/Raumklang.app"` in Terminal. On Windows, for SmartScreen click *More info → Run anyway*.
+
+## Installation
+
+- **macOS (11 or later, Apple silicon and Intel):** open `Raumklang-mac.dmg`, drag *Raumklang.app* to *Applications* and double-click *Plugins installieren.command*. It copies the plugins (AU for Logic and GarageBand, VST3) into your user folder. The app is not notarised yet: on first launch use *System Settings → Privacy & Security → Open Anyway* (up to macOS 14: right-click → Open).
+- **Windows (10 or later):** unzip `Raumklang-Windows.zip`, start *Raumklang.exe* and double-click *Plugins installieren.bat* (asks for administrator rights; the VST3 plugins go to `C:\Program Files\Common Files\VST3`). If SmartScreen says "Windows protected your PC": *More info → Run anyway*.
+
+The DAW and the app must run at the same sample rate. Every change on `main` replaces the download with the newest version.
 
 ## Building
 
