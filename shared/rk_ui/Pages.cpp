@@ -1,4 +1,5 @@
 #include "Pages.h"
+#include "Visuals.h"
 
 #include "Strings.h"
 
@@ -267,6 +268,14 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
 void buildRoomPage(FormPage& page, PageContext ctx) {
     page.clear();
     Scene& s = *ctx.scene;
+    auto* view = page.add(std::make_unique<ReverbView>(), 150);
+    view->setTooltip(tr("Farbig: was die Lautsprecher gerade spielen, tief links, hoch rechts. Die Linie zeigt, wie lange der Hall je Tonhöhe nachklingt."));
+    view->setParams(s.reverb, s.reverbWetDb);
+    if (ctx.reverbView) ctx.reverbView(view);
+    ctx.changed = [orig = ctx.changed, view, sc = ctx.scene](bool structural) {
+        if (orig) orig(structural);
+        view->setParams(sc->reverb, sc->reverbWetDb);
+    };
     page.add(std::make_unique<SectionHeader>(tr("Raum"), tr("Der Hall kommt aus allen Lautsprechern, jeweils leicht verschieden. Wie viel jede Quelle abgibt, steht unter Quellen beim Hallanteil.")), 26);
     auto* preset = page.add(std::make_unique<Segmented>(juce::StringArray{tr("Trocken"), tr("Studio"), tr("Saal"), tr("Kirche")}, false), 32);
     preset->setSelected(s.reverbWetDb <= -79.0f ? 0 : (s.reverb.decaySec < 1.0f ? 1 : (s.reverb.decaySec < 3.0f ? 2 : 3)));

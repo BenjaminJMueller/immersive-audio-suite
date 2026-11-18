@@ -52,6 +52,13 @@ rk::bridge::TrackParams AudioHost::bridgeParams(int slot) const noexcept {
     return p;
 }
 
+void AudioHost::readScope(float* dst, int n) const noexcept {
+    n = juce::jlimit(0, kScopeSize, n);
+    const uint32_t end = scopeWrite_.load(std::memory_order_acquire);
+    for (int i = 0; i < n; ++i)
+        dst[i] = scope_[(end - (uint32_t)n + (uint32_t)i) % kScopeSize].load(std::memory_order_relaxed);
+}
+
 juce::String AudioHost::takeError() {
     const juce::ScopedLock sl(errorLock_);
     juce::String e = error_;
@@ -156,6 +163,18 @@ void AudioHost::audioDeviceIOCallbackWithContext(const float* const* inputs, int
         }
         for (int c = 0; c < numOutputs; ++c) out[c] = outputs[c] != nullptr ? outputs[c] + off : nullptr;
         engine.process(in, kTotalInputs, out, numOutputs, n);
+
+        // Summed output for the visualisation (lock-free ring, newest samples win).
+        uint32_t w = scopeWrite_.load(std::memory_order_relaxed);
+        const float norm = numOutputs > 0 ? 1.0f / std::sqrt((float)numOutputs) : 0.0f;
+        for (int i = 0; i < n; ++i) {
+            float sum = 0.0f;
+            for (int c = 0; c < numOutputs; ++c)
+                if (out[c] != nullptr) sum += out[c][i];
+            scope_[w % kScopeSize].store(sum * norm, std::memory_order_relaxed);
+            ++w;
+        }
+        scopeWrite_.store(w, std::memory_order_release);
     }
 }
 

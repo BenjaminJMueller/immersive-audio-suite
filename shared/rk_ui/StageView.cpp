@@ -21,6 +21,19 @@ void StageView::resized() {
     updateScale();
 }
 
+void StageView::setSourceLevels(const std::vector<float>& l) {
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    prevSourceLevels_.resize(l.size(), 0.0f);
+    for (size_t s = 0; s < l.size(); ++s) {
+        // An onset (level jumps up) sends a ring outwards, like a drop in water.
+        if (l[s] > 0.35f && l[s] - prevSourceLevels_[s] > 0.12f && ripples_.size() < 48) ripples_.push_back({(int)s, now});
+        prevSourceLevels_[s] = l[s];
+    }
+    ripples_.erase(std::remove_if(ripples_.begin(), ripples_.end(), [now](const Ripple& r) { return now - r.start > 1400.0; }), ripples_.end());
+    sourceLevels_ = l;
+    repaint();
+}
+
 void StageView::setProjection(Projection p) {
     proj_ = p;
     views_.setSelected(static_cast<int>(p));
@@ -243,20 +256,49 @@ void StageView::paint(juce::Graphics& g) {
         else if (proj_ == Projection::Top) g.fillPath(nose);
     }
 
-    // Lines from the selected (or each) source to the speakers it plays on.
+    // The sound in the room: reverb as a soft glow, beams from each sounding source to the
+    // speakers it plays on, speakers lit in the colours of the sources they carry.
     const int nSpk = (int)scene_.layout.speakers.size();
+    if (ambience_ > 0.01f) {
+        float r = 2.0f;
+        for (const auto& sp : scene_.layout.speakers) r = std::max(r, rk::length(sp.position));
+        const float rr = r * scale_ * 1.15f;
+        juce::ColourGradient amb(juce::Colour(0xff7d5cff).withAlpha(0.16f * ambience_), centre_.x, centre_.y,
+                                 juce::Colour(0xff2bb3ff).withAlpha(0.0f), centre_.x + rr, centre_.y, true);
+        amb.addColour(0.6, juce::Colour(0xff2bb3ff).withAlpha(0.07f * ambience_));
+        g.setGradientFill(amb);
+        g.fillEllipse(centre_.x - rr, centre_.y - rr, 2 * rr, 2 * rr);
+    }
+    std::vector<float> mixR((size_t)nSpk, 0.0f), mixG((size_t)nSpk, 0.0f), mixB((size_t)nSpk, 0.0f), mixE((size_t)nSpk, 0.0f);
     float gains[rk::kMaxSpeakers];
     for (int s = 0; s < (int)scene_.sources.size(); ++s) {
         const auto& src = scene_.sources[(size_t)s];
         if (src.mute) continue;
-        const bool sel = s == selSource_;
-        if (!sel && selSource_ >= 0) continue;
+        const float lvl = s < (int)sourceLevels_.size() ? sourceLevels_[(size_t)s] : 0.0f;
+        const bool sel = target_ != EditTarget::Speakers && s == selSource_;
+        if (lvl < 0.02f && !sel) continue;
         panner_.compute({src.position, src.spread}, gains);
         const auto sp = toScreen(src.position);
+        const juce::Colour col = itemColour(s);
         for (int m = 0; m < nSpk; ++m) {
-            if (gains[m] < 0.08f) continue;
-            g.setColour(itemColour(s).withAlpha(juce::jlimit(0.08f, 0.7f, gains[m] * gains[m] * (sel ? 0.9f : 0.4f))));
-            g.drawLine(juce::Line<float>(sp, toScreen(scene_.layout.speakers[(size_t)m].position)), sel ? 1.6f : 1.0f);
+            const float gm = gains[m];
+            if (gm < 0.06f) continue;
+            const auto line = juce::Line<float>(sp, toScreen(scene_.layout.speakers[(size_t)m].position));
+            const float e = gm * gm * lvl;
+            mixR[(size_t)m] += col.getFloatRed() * e;
+            mixG[(size_t)m] += col.getFloatGreen() * e;
+            mixB[(size_t)m] += col.getFloatBlue() * e;
+            mixE[(size_t)m] += e;
+            if (lvl > 0.02f) { // glowing beam
+                g.setColour(col.withAlpha(juce::jlimit(0.0f, 0.22f, 0.22f * e)));
+                g.drawLine(line, 7.0f);
+                g.setColour(col.withAlpha(juce::jlimit(0.0f, 0.8f, 0.85f * gm * lvl)));
+                g.drawLine(line, 1.3f);
+            }
+            if (sel) {
+                g.setColour(col.withAlpha(juce::jlimit(0.08f, 0.7f, gm * gm * 0.9f)));
+                g.drawLine(line, 1.6f);
+            }
         }
     }
 
@@ -268,8 +310,15 @@ void StageView::paint(juce::Graphics& g) {
         const bool sel = target_ == EditTarget::Speakers && m == selSpeaker_;
         const float lvl = m < (int)speakerLevels_.size() ? speakerLevels_[(size_t)m] : 0.0f;
         if (lvl > 0.01f) {
-            const float gr = 13.0f + 10.0f * lvl;
-            g.setColour((lvl > 0.95f ? p.bad : p.ok).withAlpha(0.18f + 0.3f * lvl));
+            // Lit in the mixed colours of the sources it carries (green when only reverb or tests play).
+            juce::Colour glow = p.ok;
+            if (mixE[(size_t)m] > 1e-4f)
+                glow = juce::Colour::fromFloatRGBA(mixR[(size_t)m] / mixE[(size_t)m], mixG[(size_t)m] / mixE[(size_t)m],
+                                                   mixB[(size_t)m] / mixE[(size_t)m], 1.0f);
+            if (lvl > 0.97f) glow = p.bad; // clipping
+            const float gr = 14.0f + 30.0f * lvl;
+            juce::ColourGradient grad(glow.withAlpha(0.55f * lvl + 0.1f), c.x, c.y, glow.withAlpha(0.0f), c.x + gr, c.y, true);
+            g.setGradientFill(grad);
             g.fillEllipse(c.x - gr, c.y - gr, 2 * gr, 2 * gr);
         }
         if (spk.isSubwoofer) {
@@ -301,6 +350,20 @@ void StageView::paint(juce::Graphics& g) {
         }
     }
 
+    // Ripples from onsets.
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        for (const auto& rp : ripples_) {
+            if (rp.source >= (int)scene_.sources.size()) continue;
+            const float t = (float)((now - rp.start) / 1400.0);
+            if (t < 0.0f || t > 1.0f) continue;
+            const auto c = toScreen(scene_.sources[(size_t)rp.source].position);
+            const float rad = 12.0f + t * 140.0f;
+            g.setColour(itemColour(rp.source).withAlpha(0.45f * (1.0f - t) * (1.0f - t)));
+            g.drawEllipse(c.x - rad, c.y - rad, 2 * rad, 2 * rad, 1.6f * (1.0f - t) + 0.4f);
+        }
+    }
+
     // Sources.
     for (int s = 0; s < (int)scene_.sources.size(); ++s) {
         const auto& src = scene_.sources[(size_t)s];
@@ -311,9 +374,10 @@ void StageView::paint(juce::Graphics& g) {
             g.setColour(itemColour(s).withAlpha(0.15f));
             g.fillEllipse(c.x - r, c.y - r, 2 * r, 2 * r);
         }
-        if (lvl > 0.01f) {
-            const float gr = 12.0f + 6.0f * lvl;
-            g.setColour(itemColour(s).withAlpha(0.35f * lvl));
+        if (lvl > 0.01f && !src.mute) {
+            const float gr = 14.0f + 26.0f * lvl;
+            juce::ColourGradient grad(itemColour(s).withAlpha(0.6f * lvl), c.x, c.y, itemColour(s).withAlpha(0.0f), c.x + gr, c.y, true);
+            g.setGradientFill(grad);
             g.fillEllipse(c.x - gr, c.y - gr, 2 * gr, 2 * gr);
         }
         const bool sel = target_ != EditTarget::Speakers && s == selSource_;

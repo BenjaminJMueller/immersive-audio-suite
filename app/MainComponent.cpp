@@ -582,13 +582,19 @@ void MainComponent::rebuildInspector() {
     dawPageTrack_ = -1;
     dawSliders_.clear();
     dawCard_ = nullptr;
+    reverbView_ = nullptr;
     switch (step_) {
     case StepSpeakers:
         rkui::buildLayoutPage(inspector_, pageContext(), selSpeaker_, [this](int i) {
             juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this), i] { if (sp) sp->selectSpeaker(i); });
         });
         break;
-    case StepRoom: rkui::buildRoomPage(inspector_, pageContext()); break;
+    case StepRoom: {
+        auto ctx = pageContext();
+        ctx.reverbView = [this](rkui::ReverbView* v) { reverbView_ = v; };
+        rkui::buildRoomPage(inspector_, ctx);
+        break;
+    }
     case StepOutput: buildOutputPage(); break;
     default: buildSourcesPage(); break;
     }
@@ -1065,6 +1071,19 @@ void MainComponent::timerCallback() {
     }
     std::vector<float> spkView(spk.begin(), spk.begin() + juce::jmax(0, scene_.headphones ? 0 : nOut));
     stage_.setSpeakerLevels(spkView);
+    {
+        float sum = 0.0f;
+        for (float v : spkView) sum += v;
+        const float mean = spkView.empty() ? 0.0f : sum / (float)spkView.size();
+        const float wet = scene_.reverbWetDb <= -79.0f ? 0.0f : juce::jlimit(0.0f, 1.0f, (scene_.reverbWetDb + 40.0f) / 40.0f);
+        stage_.setAmbience(juce::jlimit(0.0f, 1.0f, mean * 1.6f) * wet);
+    }
+    if (reverbView_ != nullptr) {
+        std::array<float, rkui::SpectrumAnalyzer::kSize> buf;
+        host_.readScope(buf.data(), (int)buf.size());
+        analyzer_.process(buf.data(), host_.sampleRate());
+        reverbView_->setBands(analyzer_.bandsDb());
+    }
     std::vector<float> srcView(src.begin(), src.begin() + (long)scene_.sources.size());
     for (int j = 0; j < (int)dawTracks_.size(); ++j) {
         const int e = dawTrackLevelIndex(j);

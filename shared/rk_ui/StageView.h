@@ -22,7 +22,10 @@ public:
     void setSelectedSource(int i) { selSource_ = i; repaint(); }
     void setSelectedSpeaker(int i) { selSpeaker_ = i; repaint(); }
     void setSpeakerLevels(const std::vector<float>& l) { speakerLevels_ = l; repaint(); }
-    void setSourceLevels(const std::vector<float>& l) { sourceLevels_ = l; repaint(); }
+    /// 0..1 per source. Rising levels send out a ripple from the source.
+    void setSourceLevels(const std::vector<float>& l);
+    /// 0..1: how much reverb fills the room right now (a soft glow over the stage).
+    void setAmbience(float a) { ambience_ = a; }
     /// Coach bar at the bottom centre: the next step in plain words (Projection Studio style).
     /// `badge` is a step number or empty; `ok` turns the badge green.
     void setCoach(juce::String badge, juce::String title, juce::String text, bool ok = false);
@@ -68,7 +71,10 @@ private:
     float scale_ = 40.0f; // pixels per metre
     float zoom_ = 1.0f;
     juce::Point<float> centre_;
-    std::vector<float> speakerLevels_, sourceLevels_;
+    std::vector<float> speakerLevels_, sourceLevels_, prevSourceLevels_;
+    struct Ripple { int source; double start; };
+    std::vector<Ripple> ripples_;
+    float ambience_ = 0.0f;
     juce::String coachBadge_, coachTitle_, coachText_;
     bool coachOk_ = false;
     int firstLocked_ = 1 << 30;

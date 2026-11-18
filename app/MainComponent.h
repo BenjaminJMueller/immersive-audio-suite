@@ -10,6 +10,7 @@
 #include <rk_ui/Pages.h>
 #include <rk_ui/StageView.h>
 #include <rk_ui/Strings.h>
+#include <rk_ui/Visuals.h>
 #include <rk_ui/Widgets.h>
 
 namespace rkapp {
@@ -99,6 +100,8 @@ private:
     int dawPageTrack_ = -1;                       // DAW track the inspector shows, -1 none
     std::vector<rkui::ParamSlider*> dawSliders_;  // owned by inspector_, valid while dawPageTrack_ >= 0
     rkui::StatusCard* dawCard_ = nullptr;
+    rkui::ReverbView* reverbView_ = nullptr; // owned by inspector_, only on the room page
+    rkui::SpectrumAnalyzer analyzer_;
     juce::String statusText_;
     std::array<bool, rk::kMaxSources> sourceHasSignal_{};
     std::array<double, rk::kMaxSources> signalSeen_{};

@@ -14,6 +14,8 @@ struct PageContext {
     std::function<void()> commit;
     /// The page must be rebuilt (e.g. different controls are needed now).
     std::function<void()> rebuild;
+    /// Optional: receives the reverb visualisation of the room page (to feed it a live spectrum).
+    std::function<void(class ReverbView*)> reverbView;
 };
 
 /// Preset, analysis card, panning method and the selected speaker.
