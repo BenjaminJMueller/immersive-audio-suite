@@ -136,8 +136,63 @@ jobs:
           mkdir -p dist
           find build -path "*Release*" \( -name "*.vst3" -o -name "*.component" -o -name "*.app" -o -name "Raumklang.exe" -o -name "Raumklang" \) -maxdepth 6 -prune -exec cp -R {} dist/ \;
           ls -la dist
+      - name: Package (macOS disk image, Windows zip)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          mkdir -p pkg/Raumklang/Plugins out
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            cp -R dist/Raumklang.app pkg/Raumklang/
+            cp -R dist/*.component dist/*.vst3 pkg/Raumklang/Plugins/
+            cp packaging/mac/* pkg/Raumklang/
+            chmod +x "pkg/Raumklang/Plugins installieren.command"
+            ln -s /Applications pkg/Raumklang/Programme
+            hdiutil create -volname Raumklang -srcfolder pkg/Raumklang -ov -format UDZO out/Raumklang-mac.dmg
+          else
+            cp dist/Raumklang.exe pkg/Raumklang/
+            cp -R dist/*.vst3 pkg/Raumklang/Plugins/
+            cp packaging/windows/* pkg/Raumklang/
+            (cd pkg && 7z a -tzip ../out/Raumklang-Windows.zip Raumklang > /dev/null)
+          fi
+          ls -la out
       - uses: actions/upload-artifact@v4
         with:
           name: Raumklang-${{ runner.os }}
           path: dist
           if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: runner.os != 'Linux'
+        with:
+          name: Download-${{ runner.os }}
+          path: out
+          if-no-files-found: error
+
+  # Direct download: every push to main replaces the release "latest" (linked at the
+  # top of the README); a tag v* also creates a fixed release with that version.
+  release:
+    needs: [core, build]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: Download-*, path: out, merge-multiple: true }
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la out
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="$GITHUB_REF_NAME"; TITLE="Raumklang ${GITHUB_REF_NAME#v}"
+          else
+            TAG="latest"; TITLE="Raumklang (neueste Version, Build ${{ github.run_number }})"
+            gh release delete latest --yes --cleanup-tag || true
+          fi
+          SUBJECT="$(git log -1 --format='%s')"
+          NOTES="${SUBJECT}
+
+          **macOS**: Raumklang-mac.dmg öffnen, Raumklang.app in Programme ziehen und *Plugins installieren.command* doppelklicken. Die App ist noch nicht beglaubigt: beim ersten Start Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen.
+          **Windows**: Raumklang-Windows.zip entpacken, Raumklang.exe starten und *Plugins installieren.bat* doppelklicken."
+          gh release create "$TAG" out/Raumklang-mac.dmg out/Raumklang-Windows.zip --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES" --latest
