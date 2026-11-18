@@ -221,29 +221,30 @@ uint64_t randomToken() {
 
 void writeName(Slot& s, const std::string& name) {
     const uint32_t seq = s.nameSeq.load(std::memory_order_relaxed);
-    s.nameSeq.store(seq | 1u, std::memory_order_relaxed);
-    std::atomic_thread_fence(std::memory_order_release);
+    // Seqlock without fences (TSan cannot model fences): every access is
+    // seq_cst, so the odd marker is ordered before the words and the reader's
+    // second sequence load after them. Names change rarely; the cost is nil.
+    s.nameSeq.store(seq | 1u);
     char buf[kNameWords * 4] = {};
     std::memcpy(buf, name.data(), std::min(name.size(), sizeof(buf) - 1));
     for (int i = 0; i < kNameWords; ++i) {
         uint32_t w = 0;
         std::memcpy(&w, buf + i * 4, 4);
-        s.name[i].store(w, std::memory_order_relaxed);
+        s.name[i].store(w);
     }
-    s.nameSeq.store((seq | 1u) + 1u, std::memory_order_release);
+    s.nameSeq.store((seq | 1u) + 1u);
 }
 
 std::string readName(const Slot& s) {
     for (int attempt = 0; attempt < 8; ++attempt) {
-        const uint32_t a = s.nameSeq.load(std::memory_order_acquire);
+        const uint32_t a = s.nameSeq.load();
         if (a & 1u) continue;
         char buf[kNameWords * 4 + 1] = {};
         for (int i = 0; i < kNameWords; ++i) {
-            const uint32_t w = s.name[i].load(std::memory_order_relaxed);
+            const uint32_t w = s.name[i].load();
             std::memcpy(buf + i * 4, &w, 4);
         }
-        std::atomic_thread_fence(std::memory_order_acquire);
-        if (s.nameSeq.load(std::memory_order_relaxed) != a) continue;
+        if (s.nameSeq.load() != a) continue;
         buf[kNameWords * 4] = 0;
         std::string r(buf);
         // Drop control characters; the UI shows whatever remains.
