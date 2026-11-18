@@ -8,7 +8,8 @@ target_sources(rk_shared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Widgets.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/StageView.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Visuals.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Pages.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Pages.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Survey.cpp)
 target_include_directories(rk_shared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(rk_shared INTERFACE rk::core)
 

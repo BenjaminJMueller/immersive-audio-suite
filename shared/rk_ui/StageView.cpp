@@ -58,8 +58,117 @@ void StageView::setCoach(juce::String badge, juce::String title, juce::String te
     repaint();
 }
 
+void StageView::setCalibration(CalibrationOverlay o) {
+    calib_ = std::move(o);
+    repaint();
+}
+
+void StageView::clearCalibration() {
+    calib_.reset();
+    repaint();
+}
+
+void StageView::paintCalibrationBelow(juce::Graphics& g) {
+    if (!calib_) return;
+    const Palette& p = palette();
+    const int n = (int)std::min(calib_->before.size(), scene_.layout.speakers.size());
+    for (int m = 0; m < n; ++m) {
+        if (m >= (int)calib_->moved.size() || !calib_->moved[(size_t)m]) continue;
+        const auto a = toScreen(calib_->before[(size_t)m]);
+        const auto b = toScreen(scene_.layout.speakers[(size_t)m].position);
+        juce::Path line;
+        line.startNewSubPath(a);
+        line.lineTo(b);
+        juce::Path dashed;
+        const float dash[] = {3.0f, 3.0f};
+        juce::PathStrokeType(1.0f).createDashedStroke(dashed, line, dash, 2);
+        g.setColour(p.text2.withAlpha(0.7f));
+        g.fillPath(dashed);
+        juce::Path box;
+        box.addRoundedRectangle(a.x - 10.0f, a.y - 8.0f, 20.0f, 16.0f, 4.0f);
+        juce::Path dashedBox;
+        juce::PathStrokeType(1.0f).createDashedStroke(dashedBox, box, dash, 2);
+        g.fillPath(dashedBox);
+    }
+}
+
+void StageView::paintCalibrationAbove(juce::Graphics& g) {
+    if (!calib_) return;
+    const Palette& p = palette();
+    // Speaker that plays the sweep: expanding rings.
+    if (calib_->playingSpeaker >= 0 && calib_->playingSpeaker < (int)scene_.layout.speakers.size()) {
+        const auto c = toScreen(scene_.layout.speakers[(size_t)calib_->playingSpeaker].position);
+        const double t = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        for (int k = 0; k < 3; ++k) {
+            const float ph = (float)std::fmod(t * 0.9 + k / 3.0, 1.0);
+            const float r = 14.0f + ph * 34.0f;
+            g.setColour(p.accent.withAlpha(0.55f * (1.0f - ph)));
+            g.drawEllipse(c.x - r, c.y - r, 2 * r, 2 * r, 1.4f);
+        }
+    }
+    for (int j = 0; j < (int)calib_->points.size(); ++j) {
+        const auto c = toScreen(calib_->points[(size_t)j]);
+        const int st = j < (int)calib_->pointState.size() ? calib_->pointState[(size_t)j] : 0;
+        const bool active = j == calib_->activePoint;
+        const juce::Colour col = st == 1 ? p.ok : (st == 2 ? p.warn : (active ? p.accent : p.text2));
+        // Crosshair in a ring: where the microphone goes.
+        const float r = 9.0f;
+        g.setColour(p.stage.withAlpha(0.85f));
+        g.fillEllipse(c.x - r, c.y - r, 2 * r, 2 * r);
+        g.setColour(col);
+        g.drawEllipse(c.x - r, c.y - r, 2 * r, 2 * r, active ? 2.0f : 1.4f);
+        g.drawLine(c.x - r - 4, c.y, c.x - 3, c.y, 1.2f);
+        g.drawLine(c.x + 3, c.y, c.x + r + 4, c.y, 1.2f);
+        g.drawLine(c.x, c.y - r - 4, c.x, c.y - 3, 1.2f);
+        g.drawLine(c.x, c.y + 3, c.x, c.y + r + 4, 1.2f);
+        if (active) {
+            const double t = juce::Time::getMillisecondCounterHiRes() * 0.001;
+            const float ph = (float)std::fmod(t * 0.6, 1.0);
+            const float rr = r + 4.0f + ph * 10.0f;
+            g.setColour(p.accent.withAlpha(0.6f * (1.0f - ph)));
+            g.drawEllipse(c.x - rr, c.y - rr, 2 * rr, 2 * rr, 1.2f);
+        }
+        g.setFont(uiFont(10.5f, true));
+        g.setColour(col);
+        juce::String label = "M" + juce::String(j + 1);
+        if (proj_ == Projection::Top && std::abs(calib_->points[(size_t)j].z) > 0.05f)
+            label << "  " << (calib_->points[(size_t)j].z > 0 ? "+" : "") << num(calib_->points[(size_t)j].z, 1) << " m";
+        g.drawText(label, juce::Rectangle<float>(c.x + r + 3, c.y - r - 12, 80, 12), juce::Justification::centredLeft);
+    }
+}
+
 void StageView::paintLegend(juce::Graphics& g) {
     const Palette& p = palette();
+    if (calib_) {
+        // While calibrating: what the markers mean.
+        const juce::String a = tr("Messpunkt"), b = tr("Vorher");
+        const juce::Font f = uiFont(11.5f);
+        auto tw = [&f](const juce::String& t) { return juce::GlyphArrangement::getStringWidth(f, t); };
+        const float w = 14 + 16 + 6 + tw(a) + 14 + 20 + 6 + tw(b) + 14;
+        auto r = juce::Rectangle<float>(10.0f, 10.0f, w, 26.0f);
+        g.setColour(p.bar.withAlpha(0.85f));
+        g.fillRoundedRectangle(r, 8.0f);
+        g.setColour(p.line);
+        g.drawRoundedRectangle(r.reduced(0.25f), 8.0f, 0.75f);
+        float x = r.getX() + 14.0f;
+        const float cy = r.getCentreY();
+        g.setColour(p.accent);
+        g.drawEllipse(x + 2, cy - 6.0f, 12.0f, 12.0f, 1.4f);
+        x += 22.0f;
+        g.setColour(p.text2);
+        g.setFont(f);
+        g.drawText(a, juce::Rectangle<float>(x, r.getY(), tw(a) + 2, r.getHeight()), juce::Justification::centredLeft);
+        x += tw(a) + 14.0f;
+        juce::Path box;
+        box.addRoundedRectangle(x, cy - 5.0f, 16.0f, 10.0f, 3.0f);
+        juce::Path dashed;
+        const float dash[] = {3.0f, 3.0f};
+        juce::PathStrokeType(1.0f).createDashedStroke(dashed, box, dash, 2);
+        g.fillPath(dashed);
+        x += 22.0f;
+        g.drawText(b, juce::Rectangle<float>(x, r.getY(), tw(b) + 2, r.getHeight()), juce::Justification::centredLeft);
+        return;
+    }
     const juce::String a = tr("Lautsprecher"), b = tr("Quelle"), c = tr("Anteil");
     const juce::Font f = uiFont(11.5f);
     auto tw = [&f](const juce::String& t) { return juce::GlyphArrangement::getStringWidth(f, t); };
@@ -305,6 +414,8 @@ void StageView::paint(juce::Graphics& g) {
         }
     }
 
+    paintCalibrationBelow(g);
+
     // ---- Speakers ------------------------------------------------------------------------
     for (int m = 0; m < nSpk; ++m) {
         const auto& spk = scene_.layout.speakers[(size_t)m];
@@ -411,6 +522,7 @@ void StageView::paint(juce::Graphics& g) {
         }
     }
 
+    paintCalibrationAbove(g);
     paintLegend(g);
     paintCoach(g);
 }

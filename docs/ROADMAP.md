@@ -37,7 +37,7 @@ Was SpatGRIS kann und Raumklang noch fehlt:
 
 - Mehrere Räume / Hall-Zonen, Frühreflexionen abhängig von der Quellposition
 
-- Raumeinmessung mit Messmikrofon: Laufzeit, Pegel und Entzerrung je Lautsprecher automatisch
+- Entzerrung (EQ) je Lautsprecher beim Einmessen. Position, Laufzeit und Pegel werden schon gemessen (Mikrofon oder iPhone).
 - Szenen und Übergänge für Theater und Installationen
 - Bass-Management mit mehreren Subwoofern
 
