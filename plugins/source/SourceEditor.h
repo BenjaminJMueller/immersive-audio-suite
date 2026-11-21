@@ -31,6 +31,8 @@ private:
     rkui::FormPage page_;
     rkui::StatusCard* card_ = nullptr;     // owned by page_
     rkui::ChoiceRow* routeRow_ = nullptr;  // owned by page_
+    rkui::TextRow* nameRow_ = nullptr;     // owned by page_
+    juce::String shownDawName_;
     juce::String cardKey_;
     // Declared after page_ so the bindings go first (they point at sliders in the page).
     std::vector<std::unique_ptr<ParamBinding>> bindings_;

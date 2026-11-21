@@ -41,6 +41,9 @@ private:
     void timerCallback() override;
     void setStep(int step);
     void applyScene(bool structural);
+    /// Opens the interface inputs once something needs them (asks for microphone access on macOS once).
+    void ensureInputs();
+    bool micRequested_ = false;
     void commit();
     void undo();
     void redo();

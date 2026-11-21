@@ -17,13 +17,50 @@ AudioHost::AudioHost() {
 
 AudioHost::~AudioHost() { stop(); }
 
-juce::String AudioHost::start(const juce::XmlElement* savedState) {
-    juce::String err = devices.initialise(kMaxDeviceInputs, rk::kMaxSpeakers, savedState, true);
+juce::String AudioHost::start(const juce::XmlElement* savedState, bool withInputs) {
+    inputsEnabled_ = withInputs;
+    std::unique_ptr<juce::XmlElement> state;
+    if (savedState != nullptr) {
+        state = std::make_unique<juce::XmlElement>(*savedState);
+        if (!withInputs) {
+            state->setAttribute("audioInputDeviceName", juce::String());
+            state->setAttribute("audioDeviceInChans", "0");
+        }
+    }
+    juce::String err = devices.initialise(withInputs ? kMaxDeviceInputs : 0, rk::kMaxSpeakers, state.get(), true);
     if (err.isNotEmpty()) {
         // Fall back to outputs only (e.g. microphone permission denied).
+        inputsEnabled_ = false;
         err = devices.initialise(0, rk::kMaxSpeakers, nullptr, true);
     }
     devices.addAudioCallback(this);
+    return err;
+}
+
+juce::String AudioHost::setInputsEnabled(bool on) {
+    if (on == inputsEnabled_) return {};
+    auto setup = devices.getAudioDeviceSetup();
+    setup.useDefaultInputChannels = false;
+    setup.inputChannels.clear();
+    if (on) {
+        if (setup.inputDeviceName.isEmpty()) {
+            auto* type = devices.getCurrentDeviceTypeObject();
+            if (type != nullptr && type->hasSeparateInputsAndOutputs()) {
+                // Prefer the input side of the same interface, else the system default input.
+                const auto names = type->getDeviceNames(true);
+                setup.inputDeviceName = names.contains(setup.outputDeviceName)
+                                            ? setup.outputDeviceName
+                                            : names[juce::jmax(0, type->getDefaultDeviceIndex(true))];
+            } else {
+                setup.inputDeviceName = setup.outputDeviceName;
+            }
+        }
+        setup.inputChannels.setRange(0, kMaxDeviceInputs, true);
+    } else {
+        setup.inputDeviceName = {};
+    }
+    const juce::String err = devices.setAudioDeviceSetup(setup, true);
+    inputsEnabled_ = on && err.isEmpty();
     return err;
 }
 

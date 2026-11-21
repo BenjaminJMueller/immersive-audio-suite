@@ -66,6 +66,12 @@ void SourceEditor::buildPage() {
     page_.clear();
     card_ = page_.add(std::make_unique<rkui::StatusCard>(), 72);
 
+    // Name in the app: follows the DAW track unless one is typed here.
+    nameRow_ = page_.add(std::make_unique<rkui::TextRow>(tr("Name")), 34);
+    nameRow_->editor().setText(proc_.customName(), false);
+    nameRow_->onCommit = [this](const juce::String& t) { proc_.setCustomName(t); };
+    shownDawName_ = "\x01"; // forces the placeholder update in the timer
+
     page_.add(std::make_unique<rkui::SectionHeader>(
                   tr("Ausgabe"),
                   L("Automatisch: L\xc3\xa4uft die Raumklang-App, spielt sie diese Spur, ganz ohne Routing. Sonst klingt die Spur in der DAW, "
@@ -223,6 +229,14 @@ void SourceEditor::timerCallback() {
     }
     refreshStage();
     refreshStatus();
+    if (nameRow_ != nullptr) {
+        const juce::String daw = proc_.dawTrackName();
+        if (daw != shownDawName_) {
+            shownDawName_ = daw;
+            nameRow_->editor().setTextToShowWhenEmpty(daw.isNotEmpty() ? daw : juce::String("Raumklang Quelle"), rkui::palette().text3);
+            nameRow_->editor().repaint();
+        }
+    }
     const bool inDaw = !proc_.linkStatus().sending;
     levels_.resize(shown_.layout.speakers.size());
     for (size_t c = 0; c < levels_.size(); ++c) {

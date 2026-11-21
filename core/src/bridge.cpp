@@ -421,7 +421,8 @@ bool driftRead(DriftState& st, uint64_t w, int block, int numFrames, double samp
     };
     const double target = std::clamp(2.0 * block + numFrames + 64.0, 256.0, kRingFrames / 2.0);
     if (!st.running) {
-        if ((double)w < target) {
+        if (w < st.resumeFrom) st.resumeFrom = 0; // the writer started over (new owner)
+        if ((double)(w - st.resumeFrom) < target) {
             silence();
             return false;
         }
@@ -448,6 +449,7 @@ bool driftRead(DriftState& st, uint64_t w, int block, int numFrames, double samp
         if (w != st.lastWrite) dropouts.fetch_add(1, std::memory_order_relaxed);
         st.lastWrite = w;
         st.running = false;
+        st.resumeFrom = w;
         silence();
         return false;
     }
@@ -544,6 +546,7 @@ int Receiver::read(int slot, float* const* out, int numFrames, TrackParams& para
     }
     // Different sample rates would play at the wrong pitch: stay silent, the UI says why.
     if (owner == 0 || rate == 0 || std::abs((double)rate - sampleRate_) > 0.5) {
+        if (st.running) st.resumeFrom = s.writePos.load(std::memory_order_acquire);
         st.running = false;
         silence();
         return 0;
@@ -637,6 +640,7 @@ int ReturnReceiver::read(int firstChannel, float* const* out, int numOut, int nu
         state_ = DriftState{};
     }
     if (shared_ == nullptr || !appRunning() || std::abs(appSampleRate() - sampleRate) > 0.5) {
+        if (state_.running && shared_ != nullptr) state_.resumeFrom = shared_->writePos.load(std::memory_order_acquire);
         state_.running = false;
         silence();
         return 0;

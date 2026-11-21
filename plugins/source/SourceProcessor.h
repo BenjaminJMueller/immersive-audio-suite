@@ -51,6 +51,12 @@ public:
         Route route = Route::Automatic;
     };
     LinkStatus linkStatus() const;
+    /// Name shown in the app: the own name if set, else the DAW track's name.
+    juce::String displayName() const;
+    juce::String customName() const;
+    juce::String dawTrackName() const;
+    /// Message thread. Empty: follow the DAW track's name again.
+    void setCustomName(const juce::String& name);
 
     juce::AudioProcessorValueTreeState params;
     rk::Engine engine;
@@ -92,6 +98,7 @@ private:
     std::atomic<double> appSampleRate_{0.0};
     juce::CriticalSection nameLock_;
     juce::String trackName_;
+    juce::String customName_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SourceProcessor)
 };
