@@ -278,6 +278,8 @@ MainComponent::MainComponent()
         statusText_ = tr("Testraum ohne Audiogerät");
     }
 
+    updater_.checkInBackgroundIfDue(this, *settings_);
+
     setWantsKeyboardFocus(true);
     setSize(1320, 820);
     startTimerHz(30);
@@ -1074,6 +1076,7 @@ void MainComponent::showHelpMenu() {
     m.addItem(12, cmd + "O / " + cmd + "S   " + tr("Öffnen / Sichern unter"), false);
     m.addItem(13, u8("\xe2\x87\xa7 ") + tr("beim Ziehen   Position rastet ein"), false);
     m.addItem(6, rkui::language() == rkui::Language::German ? "Projektseite auf GitHub" : "Project page on GitHub");
+    m.addItem(7, tr("Nach Updates suchen …"));
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&helpBtn_), [this](int r) {
         if (r == 1 || r == 2) {
             rkui::setLanguage(r == 1 ? rkui::Language::German : rkui::Language::English);
@@ -1090,6 +1093,8 @@ void MainComponent::showHelpMenu() {
             applyTheme();
         } else if (r == 5) {
             showIntro();
+        } else if (r == 7) {
+            updater_.check(this, true);
         } else if (r == 6) {
             juce::URL("https://github.com/BenjaminJMueller/immersive-audio-suite").launchInDefaultBrowser();
         }

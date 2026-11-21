@@ -119,7 +119,7 @@ Known limits:
 - **macOS (11 or later, Apple silicon and Intel):** open `Raumklang-mac.dmg`, drag *Raumklang.app* to *Applications* and double-click *Plugins installieren.command*. It copies the plugins (AU for Logic and GarageBand, VST3) into your user folder. The app is not notarised yet: on first launch use *System Settings → Privacy & Security → Open Anyway* (up to macOS 14: right-click → Open).
 - **Windows (10 or later):** unzip `Raumklang-Windows.zip`, start *Raumklang.exe* and double-click *Plugins installieren.bat* (asks for administrator rights; the VST3 plugins go to `C:\Program Files\Common Files\VST3`). If SmartScreen says "Windows protected your PC": *More info → Run anyway*.
 
-The DAW and the app must run at the same sample rate. Every change on `main` replaces the download with the newest version.
+The DAW and the app must run at the same sample rate. Every change on `main` replaces the download with the newest version. The app checks for a new version once a day and, after asking, updates itself and the plugins (*Help → Check for updates*). This works once the repository is public.
 
 ## Building
 

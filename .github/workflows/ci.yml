@@ -75,7 +75,7 @@ jobs:
           EXTRA=""
           if [ "$RUNNER_OS" = "macOS" ]; then EXTRA="-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"; fi
           if [ "$RUNNER_OS" = "Linux" ]; then EXTRA="-G Ninja"; fi
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release $EXTRA
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRK_BUILD_NUMBER=${{ github.run_number }} $EXTRA
       - name: Build
         run: cmake --build build --config Release --parallel 4
       - name: Tests
@@ -162,6 +162,9 @@ jobs:
             cp packaging/mac/* pkg/Raumklang/
             chmod +x "pkg/Raumklang/Plugins installieren.command"
             ln -s /Applications pkg/Raumklang/Programme
+            # The zip (without the Applications link) is what the app's updater installs.
+            ditto -c -k --sequesterRsrc --keepParent pkg/Raumklang out/Raumklang-mac.zip
+            zip -d out/Raumklang-mac.zip "Raumklang/Programme" > /dev/null || true
             hdiutil create -volname Raumklang -srcfolder pkg/Raumklang -ov -format UDZO out/Raumklang-mac.dmg
           else
             cp dist/Raumklang.exe pkg/Raumklang/
@@ -206,11 +209,23 @@ jobs:
             gh release delete latest --yes --cleanup-tag || true
           fi
           SUBJECT="$(git log -1 --format='%s')"
+          # Update information for the app (app/Updater.cpp).
+          python3 - "$SUBJECT" <<'PY'
+          import hashlib, json, os, sys
+          def f(n):
+              p = os.path.join("out", n)
+              return {"name": n, "sha256": hashlib.sha256(open(p, "rb").read()).hexdigest(), "size": os.path.getsize(p)}
+          build = int(os.environ["GITHUB_RUN_NUMBER"])
+          json.dump({"version": "0.1.%d" % build, "build": build, "notes": sys.argv[1],
+                     "files": {"mac": f("Raumklang-mac.zip"), "win": f("Raumklang-Windows.zip")}},
+                    open("out/latest.json", "w"), indent=2)
+          PY
+          cat out/latest.json
           NOTES="${SUBJECT}
 
           **macOS**: Raumklang-mac.dmg öffnen, Raumklang.app in Programme ziehen und *Plugins installieren.command* doppelklicken. Die App ist noch nicht beglaubigt: beim ersten Start Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen.
           **Windows**: Raumklang-Windows.zip entpacken, Raumklang.exe starten und *Plugins installieren.bat* doppelklicken."
-          gh release create "$TAG" out/Raumklang-mac.dmg out/Raumklang-Windows.zip --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES" --latest
+          gh release create "$TAG" out/Raumklang-mac.dmg out/Raumklang-mac.zip out/Raumklang-Windows.zip out/latest.json --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES" --latest
 
   # "Raumklang Messen" for iPhone: geometry tests and a simulator build (no signing needed).
   ios:

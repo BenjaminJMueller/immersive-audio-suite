@@ -144,7 +144,7 @@ Bekannte Grenzen:
 - **macOS (ab 11, Apple Silicon und Intel):** `Raumklang-mac.dmg` öffnen, *Raumklang.app* in *Programme* ziehen und *Plugins installieren.command* doppelklicken. Es kopiert die Plugins (AU für Logic und GarageBand, VST3) in den Benutzerordner. Die App ist noch nicht von Apple beglaubigt: Beim ersten Start *Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen* (bis macOS 14: Rechtsklick → Öffnen).
 - **Windows (ab 10):** `Raumklang-Windows.zip` entpacken, *Raumklang.exe* starten und *Plugins installieren.bat* doppelklicken (fragt nach Administratorrechten, die VST3-Plugins kommen nach `C:\Program Files\Common Files\VST3`). Meldet SmartScreen „Der Computer wurde durch Windows geschützt“: *Weitere Informationen → Trotzdem ausführen*.
 
-DAW und App müssen mit derselben Abtastrate laufen. Jeder Stand auf `main` ersetzt den Download durch die neueste Version.
+DAW und App müssen mit derselben Abtastrate laufen. Jeder Stand auf `main` ersetzt den Download durch die neueste Version. Die App sucht einmal am Tag selbst nach einer neuen Version und aktualisiert sich samt Plugins nach Rückfrage (*Hilfe → Nach Updates suchen*). Das funktioniert, sobald das Repository öffentlich ist.
 
 ## Selbst bauen
 
