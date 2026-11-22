@@ -251,6 +251,16 @@ MainComponent::MainComponent()
     stage_.onDragEnd = [this] { commit(); rebuildInspector(); };
     addAndMakeVisible(stage_);
     addChildComponent(reverbPanel_);
+    addAndMakeVisible(snapBar_);
+    snapBar_.onStore = [this] { storeSnapshot(); };
+    snapBar_.onRecall = [this](int i) { recallSnapshot(i); };
+    snapBar_.onMenu = [this](int i) { snapshotMenu(i); };
+    snapBar_.onUpdate = [this] {
+        if (activeSnapshot_ < 0 || activeSnapshot_ >= (int)scene_.snapshots.size()) return;
+        auto& sn = scene_.snapshots[(size_t)activeSnapshot_];
+        sn = rkui::captureSnapshot(scene_, currentDawStates(), sn.name, sn.fadeSec);
+        commit();
+    };
     reverbPanel_.onChange = [this](const rk::ReverbParams& p) {
         scene_.reverb = p;
         applyScene(false);
@@ -440,6 +450,8 @@ void MainComponent::refreshAll() {
     stage_.setVisible(step_ != StepRoom || calibrating_);
     reverbPanel_.setVisible(step_ == StepRoom && !calibrating_);
     reverbPanel_.setParams(scene_.reverb, scene_.reverbWetDb);
+    snapBar_.setSnapshots(scene_.snapshots);
+    snapBar_.setVisible(!calibrating_);
     refreshSidebar();
     rebuildInspector();
     resized();
@@ -684,6 +696,118 @@ void MainComponent::moveDawTrack(int j, float azimuthDeg, float elevationDeg, fl
     dawMoves_[(size_t)slot] = {rk::toCartesian({azimuthDeg, elevationDeg, distance}), juce::Time::getMillisecondCounterHiRes() + 600.0};
     showStage();
     refreshSidebar();
+}
+
+std::vector<rkui::DawTrackState> MainComponent::currentDawStates() const {
+    std::vector<rkui::DawTrackState> out;
+    for (const auto& t : dawTracks_) {
+        const auto p = host_.bridgeParams(t.slot);
+        rkui::DawTrackState d;
+        d.name = juce::String::fromUTF8(t.name.c_str());
+        d.azimuthDeg = p.azimuthDeg;
+        d.elevationDeg = p.elevationDeg;
+        d.distance = p.distance;
+        if (d.name.isNotEmpty()) out.push_back(d);
+    }
+    return out;
+}
+
+void MainComponent::storeSnapshot() {
+    if ((int)scene_.snapshots.size() >= rkui::kMaxSnapshots) return;
+    const juce::String name = tr("Szene") + " " + juce::String((int)scene_.snapshots.size() + 1);
+    scene_.snapshots.push_back(rkui::captureSnapshot(scene_, currentDawStates(), name, 2.0f));
+    activeSnapshot_ = (int)scene_.snapshots.size() - 1;
+    commit();
+    snapBar_.setSnapshots(scene_.snapshots);
+    snapBar_.setActive(activeSnapshot_, 1.0f);
+}
+
+void MainComponent::recallSnapshot(int i) {
+    if (i < 0 || i >= (int)scene_.snapshots.size()) return;
+    activeSnapshot_ = i;
+    fadeFrom_ = scene_;
+    fadeDawFrom_ = currentDawStates();
+    fadeStart_ = juce::Time::getMillisecondCounterHiRes();
+    fadeMs_ = scene_.snapshots[(size_t)i].fadeSec * 1000.0;
+    fading_ = true;
+    stepSnapshotFade(fadeStart_); // a fade time of 0 lands at once
+}
+
+void MainComponent::stepSnapshotFade(double now) {
+    if (activeSnapshot_ < 0 || activeSnapshot_ >= (int)scene_.snapshots.size()) {
+        fading_ = false;
+        return;
+    }
+    const rkui::Snapshot target = scene_.snapshots[(size_t)activeSnapshot_];
+    const float raw = fadeMs_ <= 1.0 ? 1.0f : (float)juce::jlimit(0.0, 1.0, (now - fadeStart_) / fadeMs_);
+    const float t = rkui::fadeCurve(raw);
+    rkui::blendSnapshot(scene_, fadeFrom_, target, t);
+    applyScene(false);
+    // DAW tracks follow through their plugins (matched by name).
+    for (const auto& to : target.daw)
+        for (int j = 0; j < (int)dawTracks_.size(); ++j) {
+            if (juce::String::fromUTF8(dawTracks_[(size_t)j].name.c_str()) != to.name) continue;
+            rkui::DawTrackState from = to;
+            for (const auto& f : fadeDawFrom_)
+                if (f.name == to.name) from = f;
+            const auto d = rkui::blendDaw(from, to, t);
+            moveDawTrack(j, d.azimuthDeg, d.elevationDeg, d.distance);
+        }
+    showStage();
+    reverbPanel_.setParams(scene_.reverb, scene_.reverbWetDb);
+    snapBar_.setActive(activeSnapshot_, raw);
+    if (raw >= 1.0f) {
+        fading_ = false;
+        commit();
+        refreshSidebar();
+        rebuildInspector();
+    }
+}
+
+void MainComponent::snapshotMenu(int i) {
+    if (i < 0 || i >= (int)scene_.snapshots.size()) return;
+    juce::PopupMenu fade;
+    const float cur = scene_.snapshots[(size_t)i].fadeSec;
+    int id = 100;
+    for (float sec : {0.0f, 1.0f, 2.0f, 5.0f, 10.0f, 30.0f})
+        fade.addItem(id++, sec < 0.5f ? tr("Sofort") : rkui::num(sec, 0) + " s", true, std::abs(cur - sec) < 0.01f);
+    juce::PopupMenu m;
+    m.addItem(2, tr("Umbenennen …"));
+    m.addSubMenu(tr("Überblendzeit"), fade);
+    m.addSeparator();
+    m.addItem(3, tr("Löschen"));
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&snapBar_).withMousePosition(), [this, i](int r) {
+        if (i >= (int)scene_.snapshots.size()) return;
+        auto& sn = scene_.snapshots[(size_t)i];
+        if (r == 2) {
+            auto* w = new juce::AlertWindow(tr("Szene umbenennen"), {}, juce::MessageBoxIconType::NoIcon);
+            w->addTextEditor("name", sn.name);
+            w->addButton(tr("Umbenennen"), 1, juce::KeyPress(juce::KeyPress::returnKey));
+            w->addButton(tr("Abbrechen"), 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            w->enterModalState(true, juce::ModalCallbackFunction::create([this, i, w](int ok) {
+                if (ok == 1 && i < (int)scene_.snapshots.size()) {
+                    const juce::String n = w->getTextEditorContents("name").trim().substring(0, 64);
+                    if (n.isNotEmpty()) scene_.snapshots[(size_t)i].name = n;
+                    commit();
+                    snapBar_.setSnapshots(scene_.snapshots);
+                }
+            }), true);
+            return;
+        } else if (r == 3) {
+            scene_.snapshots.erase(scene_.snapshots.begin() + i);
+            if (activeSnapshot_ == i) activeSnapshot_ = -1;
+            else if (activeSnapshot_ > i) --activeSnapshot_;
+            fading_ = false;
+        } else if (r >= 100 && r < 106) {
+            const float secs[] = {0.0f, 1.0f, 2.0f, 5.0f, 10.0f, 30.0f};
+            sn.fadeSec = secs[r - 100];
+        } else {
+            return;
+        }
+        commit();
+        snapBar_.setSnapshots(scene_.snapshots);
+        snapBar_.setActive(activeSnapshot_, 1.0f);
+    });
 }
 
 void MainComponent::selectRoomPreset(int i) {
@@ -1185,6 +1309,7 @@ void MainComponent::showHelpMenu() {
 
 void MainComponent::timerCallback() {
     const double now = juce::Time::getMillisecondCounterHiRes();
+    if (fading_) stepSnapshotFade(now);
 
     // Moving sources ("Kreisen").
     const double dt = lastOrbitTime_ > 0.0 ? juce::jlimit(0.0, 0.2, (now - lastOrbitTime_) * 0.001) : 0.0;
@@ -1351,6 +1476,7 @@ void MainComponent::resized() {
     sidebarView_.setBounds(side.reduced(0, 4));
     sidebar_.setSize(sidebarView_.getMaximumVisibleWidth(), sidebar_.contentHeight());
     inspector_.setBounds(r.removeFromRight(kInspector).reduced(0, 8));
+    snapBar_.setBounds(r.removeFromBottom(48));
     stage_.setBounds(r);
     reverbPanel_.setBounds(r);
     if (intro_ != nullptr) intro_->setBounds(getLocalBounds());

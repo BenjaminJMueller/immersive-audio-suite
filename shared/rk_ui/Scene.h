@@ -27,6 +27,27 @@ struct SourceInfo {
     float orbitSpeed = 0.1f;        // revolutions per second
 };
 
+/// Position of a DAW track as stored in a snapshot (tracks are matched by name).
+struct DawTrackState {
+    juce::String name;
+    float azimuthDeg = 0.0f, elevationDeg = 0.0f, distance = 2.0f;
+};
+
+/// A stored state of the mix: every source, the room and the master level, plus the
+/// positions of the DAW tracks. Recalling it fades there over `fadeSec`. The speaker
+/// layout is not part of it.
+struct Snapshot {
+    juce::String name;
+    float fadeSec = 2.0f;
+    std::vector<SourceInfo> sources;
+    rk::ReverbParams reverb;
+    float reverbWetDb = -6.0f;
+    float masterGainDb = 0.0f;
+    std::vector<DawTrackState> daw;
+};
+
+constexpr int kMaxSnapshots = 64;
+
 struct Scene {
     juce::String name;              // empty = untitled
     rk::SpeakerLayout layout = rk::presets::ring(8, 3.0f, 0.0f, true);
@@ -50,6 +71,7 @@ struct Scene {
     bool limiter = true;
     bool headphones = false;
     std::vector<SourceInfo> sources;
+    std::vector<Snapshot> snapshots;
 
     /// The panner actually used (resolves "automatic").
     rk::PannerKind effectivePanner() const;

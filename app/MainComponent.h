@@ -12,6 +12,7 @@
 #include <rk_ui/Pages.h>
 #include <rk_ui/ReverbPanel.h>
 #include <rk_ui/RoomView.h>
+#include <rk_ui/Snapshots.h>
 #include <rk_ui/Strings.h>
 #include <rk_ui/Visuals.h>
 #include <rk_ui/Widgets.h>
@@ -121,6 +122,19 @@ private:
     juce::Viewport sidebarView_;
     rkui::RoomView stage_;
     rkui::ReverbPanel reverbPanel_; // replaces the room view in step 3
+    rkui::SnapshotBar snapBar_;      // under the room view
+
+    // Snapshots: storing, recalling with a fade, and the menu of one snapshot.
+    void storeSnapshot();
+    void recallSnapshot(int i);
+    void snapshotMenu(int i);
+    std::vector<rkui::DawTrackState> currentDawStates() const;
+    void stepSnapshotFade(double now);
+    int activeSnapshot_ = -1;
+    bool fading_ = false;
+    double fadeStart_ = 0.0, fadeMs_ = 0.0;
+    rkui::Scene fadeFrom_;
+    std::vector<rkui::DawTrackState> fadeDawFrom_;
     rkui::FormPage inspector_;
     std::unique_ptr<IntroOverlay> intro_;
     juce::String deviceError_;
