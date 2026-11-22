@@ -70,6 +70,9 @@ struct Scene {
     float masterGainDb = 0.0f;
     bool limiter = true;
     bool headphones = false;
+    /// With headphones: true renders the sources binaurally around the head, independent of
+    /// the speaker setup; false lets you listen to the speaker setup itself.
+    bool binaural = false;
     std::vector<SourceInfo> sources;
     std::vector<Snapshot> snapshots;
 

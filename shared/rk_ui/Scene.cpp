@@ -1,5 +1,7 @@
 #include "Scene.h"
 
+#include <rk/binaural.hpp>
+
 namespace rkui {
 namespace {
 
@@ -62,6 +64,10 @@ rk::EngineConfig Scene::engineConfig() const {
     c.dbap.directivity = dbapDirectivity;
     c.ambiOrder = 3;
     c.outputMode = headphones ? rk::OutputMode::Headphones : rk::OutputMode::Speakers;
+    if (headphones && binaural) {
+        c.layout = rk::binauralVirtualLayout();
+        c.panner = rk::PannerKind::VBAP;
+    }
     return c;
 }
 
@@ -249,6 +255,7 @@ juce::var sceneToVar(const Scene& s) {
     o->setProperty("masterGainDb", s.masterGainDb);
     o->setProperty("limiter", s.limiter);
     o->setProperty("headphones", s.headphones);
+    o->setProperty("binaural", s.binaural);
     juce::Array<juce::var> src;
     for (const auto& x : s.sources) src.add(sourceToVar(x));
     o->setProperty("sources", src);
@@ -283,6 +290,7 @@ Scene sceneFromVar(const juce::var& v) {
     s.masterGainDb = getF(v, "masterGainDb", 0.0f, -80.0f, 12.0f);
     s.limiter = getB(v, "limiter", true);
     s.headphones = getB(v, "headphones", false);
+    s.binaural = getB(v, "binaural", false);
     if (const auto* a = v.getProperty("sources", juce::var()).getArray()) {
         for (const auto& e : *a) {
             if (static_cast<int>(s.sources.size()) >= kMaxSceneSources) break;

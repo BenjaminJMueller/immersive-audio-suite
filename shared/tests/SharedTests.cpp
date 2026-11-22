@@ -58,6 +58,17 @@ void roundTrip() {
     EXPECT(back.sources[4].test == rkui::TestSignal::Clicks);
     EXPECT(rkui::sceneToJson(back) == rkui::sceneToJson(s));
     EXPECT(back.effectivePanner() == rk::PannerKind::DBAP);
+    // Binaural: the engine gets the virtual layout around the head, the scene keeps its speakers.
+    EXPECT(!back.binaural);
+    s.binaural = true;
+    EXPECT(rkui::sceneFromJson(rkui::sceneToJson(s), back));
+    EXPECT(back.binaural);
+    const auto cfg = back.engineConfig();
+    EXPECT(cfg.outputMode == rk::OutputMode::Headphones);
+    EXPECT(cfg.layout.speakers.size() == 19);
+    EXPECT(back.layout.speakers.size() == s.layout.speakers.size());
+    back.headphones = false;
+    EXPECT(back.engineConfig().layout.speakers.size() == s.layout.speakers.size());
 }
 
 void rejectsGarbage() {

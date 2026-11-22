@@ -1155,15 +1155,20 @@ void MainComponent::buildOutputPage() {
     master->setValue(scene_.masterGainDb);
     master->onChange = [this](double v) { scene_.masterGainDb = (float)v; applyScene(false); };
     master->onCommit = [this] { commit(); };
-    auto* hp = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Kopfhörer-Vorschau")), 28);
-    hp->setToggleState(scene_.headphones, juce::dontSendNotification);
-    hp->setTooltip(tr("Rechnet alle Lautsprecher auf zwei Kopfhörer-Kanäle herunter. Zum Vorbereiten ohne Lautsprecher."));
-    hp->onClick = [this, hp] {
-        scene_.headphones = hp->getToggleState();
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Hören über")), 26);
+    auto* hp = inspector_.add(std::make_unique<rkui::Segmented>(juce::StringArray{tr("Lautsprecher"), tr("Kopfhörer"), tr("Binaural")}, false), 32);
+    hp->setSelected(!scene_.headphones ? 0 : (scene_.binaural ? 2 : 1));
+    hp->onChange = [this](int m) {
+        scene_.headphones = m > 0;
+        scene_.binaural = m == 2;
         applyScene(true);
         commit();
-        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshAll(); } });
     };
+    const juce::String hpNote = !scene_.headphones ? tr("Jeder Lautsprecher bekommt seinen eigenen Ausgang am Audio-Interface.")
+                              : scene_.binaural ? tr("Die Quellen erklingen frei um den Kopf, unabhängig von den Lautsprechern. Zum Mischen für Kopfhörer.")
+                                                : tr("Die Lautsprecher-Anlage im Kopfhörer: jeder Lautsprecher klingt aus seiner Richtung. Zum Vorbereiten ohne Lautsprecher.");
+    inspector_.add(std::make_unique<rkui::NoteRow>(hpNote), 52);
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Schutz"), tr("Der Schutzbegrenzer sitzt hinter allem anderen, direkt vor jedem Ausgang. Unterhalb der Grenze verändert er nichts.")), 26);
     auto* lim = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Schutzbegrenzer")), 28);
     lim->setToggleState(scene_.limiter, juce::dontSendNotification);
@@ -1584,7 +1589,7 @@ void MainComponent::updateCoach() {
     default:
         if (outs == 0) stage_.setCoach("4", tr("Audiogerät wählen"), tr("Rechts das Audio-Interface auswählen."));
         else if (!scene_.headphones && outs < nSpk)
-            stage_.setCoach("!", tr("Zu wenige Ausgänge"), juce::String(outs) + " " + tr("von") + " " + juce::String(nSpk) + ". " + tr("Anderes Gerät wählen oder Kopfhörer-Vorschau einschalten."));
+            stage_.setCoach("!", tr("Zu wenige Ausgänge"), juce::String(outs) + " " + tr("von") + " " + juce::String(nSpk) + ". " + tr("Anderes Gerät wählen oder unter Ausgabe auf Kopfhörer umschalten."));
         else if (speakerTestRunning_) stage_.setCoach("4", tr("Hörst du den markierten Lautsprecher?"), tr("Sonst Kabel und Reihenfolge der Ausgänge prüfen."));
         else stage_.setCoach({}, tr("Bereit"), tr("Mit „Lautsprecher einzeln anspielen“ die Verkabelung prüfen."), true);
         break;

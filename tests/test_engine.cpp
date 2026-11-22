@@ -208,6 +208,25 @@ TEST_CASE("engine: headphone preview renders two channels") {
     CHECK(r.rms(0, 4096) > 2.0 * r.rms(1, 4096));
 }
 
+TEST_CASE("engine: binaural layout places sources all around the head") {
+    for (Polar where : {Polar{90, 0, 2}, Polar{-120, 30, 2}, Polar{60, -30, 2}, Polar{10, 80, 2}}) {
+        Rig r(1, 2);
+        r.noReverb();
+        r.setLayout(binauralVirtualLayout(), PannerKind::VBAP, OutputMode::Headphones);
+        auto& s = r.engine.source(0);
+        s.active = true;
+        s.setPosition(toCartesian(where));
+        long long ph = 0;
+        for (int i = 0; i < 20; ++i) { fillSine(r.in[0], 3000, 0.3f, 48000, ph); r.run(512); r.engine.collectGarbage(); }
+        fillSine(r.in[0], 3000, 0.3f, 48000, ph);
+        r.run(4096);
+        const double l = r.rms(0, 4096), rr = r.rms(1, 4096);
+        CHECK(l + rr > 0.02);
+        if (where.azimuthDeg > 30.0f && std::fabs(where.elevationDeg) < 45.0f) CHECK(l > 1.5 * rr);
+        if (where.azimuthDeg < -30.0f && std::fabs(where.elevationDeg) < 45.0f) CHECK(rr > 1.5 * l);
+    }
+}
+
 TEST_CASE("engine: more speakers than outputs and vice versa") {
     Rig few(1, 2);
     few.setLayout(presets::ring(16, 3.0f), PannerKind::VBAP);
