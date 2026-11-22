@@ -18,45 +18,6 @@ juce::String rateText(double hz) {
 const juce::String kDegree = juce::String::fromUTF8("\xc2\xb0");
 constexpr int kBarHeight = 46;
 
-/// "› Erweitert": opens and closes the rarely needed settings.
-class ExpandRow : public juce::Component {
-public:
-    ExpandRow(juce::String title, bool open, std::function<void()> toggle) : title_(std::move(title)), open_(open), toggle_(std::move(toggle)) {
-        setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    }
-    void paint(juce::Graphics& g) override {
-        const auto& p = rkui::palette();
-        const auto c = isMouseOver() ? p.text : p.text2;
-        juce::Path chev;
-        const float cx = 14.0f, cy = getHeight() * 0.5f;
-        if (open_) {
-            chev.startNewSubPath(cx - 4, cy - 2);
-            chev.lineTo(cx, cy + 2);
-            chev.lineTo(cx + 4, cy - 2);
-        } else {
-            chev.startNewSubPath(cx - 2, cy - 4);
-            chev.lineTo(cx + 2, cy);
-            chev.lineTo(cx - 2, cy + 4);
-        }
-        g.setColour(c);
-        g.strokePath(chev, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        g.setFont(rkui::uiFont(13.0f));
-        g.drawText(title_, getLocalBounds().withTrimmedLeft(26), juce::Justification::centredLeft);
-    }
-    void mouseEnter(const juce::MouseEvent&) override { repaint(); }
-    void mouseExit(const juce::MouseEvent&) override { repaint(); }
-    void mouseUp(const juce::MouseEvent& e) override {
-        if (!e.mouseWasClicked()) return;
-        // The page is rebuilt (and this row deleted) after the click has been handled.
-        juce::MessageManager::callAsync([t = toggle_] { t(); });
-    }
-
-private:
-    juce::String title_;
-    bool open_;
-    std::function<void()> toggle_;
-};
-
 } // namespace
 
 juce::AudioProcessorEditor* SourceProcessor::createEditor() { return new SourceEditor(*this); }
@@ -156,7 +117,7 @@ void SourceEditor::buildPage() {
               L("Wie stark Abstand leiser und dumpfer macht", "How much distance makes the source quieter and duller"));
 
     page_.addSpace(6);
-    page_.add(std::make_unique<ExpandRow>(L("Erweitert", "Advanced"), advancedOpen_, [safe = juce::Component::SafePointer<SourceEditor>(this)] {
+    page_.add(std::make_unique<rkui::ExpandRow>(L("Erweitert", "Advanced"), advancedOpen_, [safe = juce::Component::SafePointer<SourceEditor>(this)] {
                   if (safe == nullptr) return;
                   safe->advancedOpen_ = !safe->advancedOpen_;
                   safe->buildPage();

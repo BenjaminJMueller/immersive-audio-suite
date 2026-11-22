@@ -1,7 +1,7 @@
 // "Raumklang Quelle": put one on every track. It places the track's audio in the
 // room and outputs one channel per speaker (set the track to as many channels as
-// the speaker setup has). The speaker setup is shared with the Raumklang app and the
-// "Raumklang Raum" plugin through a file, so every instance always uses the same room.
+// the speaker setup has), or sends it to the Raumklang app. The speaker setup comes from
+// the app through a file, so every instance always uses the same room.
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>

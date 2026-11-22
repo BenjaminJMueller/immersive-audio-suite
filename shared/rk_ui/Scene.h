@@ -78,7 +78,7 @@ bool sceneFromJson(const juce::String& json, Scene& out);
 
 /// Folder for settings, autosave and the setup shared between app and plugins.
 juce::File appDataFolder();
-/// Speaker setup published by the app / the "Raum" plugin, read by "Quelle" plugins.
+/// Speaker setup published by the app, read by the plugins.
 juce::File sharedSetupFile();
 bool writeSharedSetup(const Scene& s);
 /// Reads layout, panner and reverb from the shared file into `s` (sources untouched).

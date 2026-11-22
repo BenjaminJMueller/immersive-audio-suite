@@ -6,6 +6,6 @@ Raumklang für macOS
 3. Beim ersten Start der App ebenso: Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen
    (bis macOS 14: Rechtsklick → Öffnen). Die App ist noch nicht von Apple beglaubigt.
 4. Logic neu starten. Die Plugins stehen unter Audio Units → Raumklang:
-   Raumklang Quelle (auf jede Spur), Raumklang Return (Rückweg in die DAW), Raumklang Raum.
+   Raumklang Quelle (auf jede Spur) und Raumklang Return (Rückweg in die DAW).
 
 DAW und App müssen mit derselben Abtastrate laufen.
