@@ -28,7 +28,9 @@ public:
     const juce::String getName() const override { return juce::String("Raumklang Return"); }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    // Long tail: the audio comes from the app, not from the track's input. Hosts such
+    // as Logic stop processing plugins whose input is silent once the tail has passed.
+    double getTailLengthSeconds() const override { return 3600.0; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int) override {}

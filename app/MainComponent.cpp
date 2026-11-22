@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "MicPermission.h"
 
 using rkui::tr;
 using rkui::u8;
@@ -250,7 +251,8 @@ MainComponent::MainComponent()
     const bool testRoom = juce::SystemStats::getEnvironmentVariable("RAUMKLANG_TESTRAUM", {}).isNotEmpty();
     if (!testRoom) {
         std::unique_ptr<juce::XmlElement> audioState(settings_->getXmlValue("audioDevice"));
-        const juce::String err = host_.start(audioState.get());
+        // Inputs only when access is already granted: no microphone prompt for test signals or DAW tracks.
+        const juce::String err = host_.start(audioState.get(), micAccess() == MicAccess::Granted);
         if (err.isNotEmpty()) statusText_ = err;
     }
 
@@ -275,6 +277,8 @@ MainComponent::MainComponent()
         host_.startSimulation(real);
         statusText_ = tr("Testraum ohne Audiogerät");
     }
+
+    updater_.checkInBackgroundIfDue(this, *settings_);
 
     setWantsKeyboardFocus(true);
     setSize(1320, 820);
@@ -309,7 +313,31 @@ rkui::PageContext MainComponent::pageContext() {
     return c;
 }
 
+void MainComponent::ensureInputs() {
+    if (host_.inputsEnabled() || micRequested_) return;
+    if (host_.devices.getCurrentAudioDevice() == nullptr) return;
+    micRequested_ = true; // ask once per run; a "no" is respected until the next start
+    auto open = [sp = juce::Component::SafePointer<MainComponent>(this)](bool granted) {
+        if (sp == nullptr) return;
+        if (!granted) {
+            sp->statusText_ = tr("Kein Zugriff auf die Eingänge. Freigabe unter Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon.");
+            sp->repaint();
+            return;
+        }
+        const juce::String err = sp->host_.setInputsEnabled(true);
+        if (err.isNotEmpty()) sp->statusText_ = err;
+        sp->rebuildInspector();
+    };
+    if (micAccess() == MicAccess::Denied) open(false);
+    else requestMicAccess(open);
+}
+
 void MainComponent::applyScene(bool structural) {
+    for (const auto& s : scene_.sources)
+        if (s.test == rkui::TestSignal::Off) {
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->ensureInputs(); });
+            break;
+        }
     if (structural) host_.engine.setConfig(scene_.engineConfig());
     for (int i = 0; i < rkui::kMaxSceneSources; ++i) {
         auto& c = host_.engine.source(i);
@@ -794,6 +822,7 @@ void MainComponent::addDeviceRows() {
         setup.outputChannels.clear();
         setup.outputChannels.setRange(0, rk::kMaxSpeakers, true);
         setup.inputChannels.clear();
+        if (!host_.inputsEnabled()) setup.inputDeviceName = {};
         if (setup.inputDeviceName.isNotEmpty()) setup.inputChannels.setRange(0, AudioHost::kMaxDeviceInputs, true);
         deviceError_ = host_.devices.setAudioDeviceSetup(setup, true);
         if (auto xml = host_.devices.createStateXml()) settings_->setValue("audioDevice", xml.get());
@@ -1047,6 +1076,7 @@ void MainComponent::showHelpMenu() {
     m.addItem(12, cmd + "O / " + cmd + "S   " + tr("Öffnen / Sichern unter"), false);
     m.addItem(13, u8("\xe2\x87\xa7 ") + tr("beim Ziehen   Position rastet ein"), false);
     m.addItem(6, rkui::language() == rkui::Language::German ? "Projektseite auf GitHub" : "Project page on GitHub");
+    m.addItem(7, tr("Nach Updates suchen …"));
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&helpBtn_), [this](int r) {
         if (r == 1 || r == 2) {
             rkui::setLanguage(r == 1 ? rkui::Language::German : rkui::Language::English);
@@ -1063,6 +1093,8 @@ void MainComponent::showHelpMenu() {
             applyTheme();
         } else if (r == 5) {
             showIntro();
+        } else if (r == 7) {
+            updater_.check(this, true);
         } else if (r == 6) {
             juce::URL("https://github.com/BenjaminJMueller/immersive-audio-suite").launchInDefaultBrowser();
         }
@@ -1340,6 +1372,7 @@ void MainComponent::startCalibration() {
     calibSettings_.micInput = juce::jlimit(0, juce::jmax(0, host_.numDeviceInputs() - 1), calibSettings_.micInput);
     // In a donut not every point hears every speaker: start with at least 8 points there.
     if (rk::analyze(scene_.layout).facesInwardAndOutward) calibSettings_.numPoints = juce::jmax(calibSettings_.numPoints, 8);
+    ensureInputs();
     calib_ = std::make_unique<Calibration>(host_, scene_.layout, calibSettings_);
     calibSeen_ = -1;
     refreshAll();

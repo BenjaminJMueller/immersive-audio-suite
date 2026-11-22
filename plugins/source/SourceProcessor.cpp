@@ -55,6 +55,31 @@ void SourceProcessor::updateTrackProperties(const TrackProperties& properties) {
     trackName_ = properties.name.value_or(juce::String());
 }
 
+juce::String SourceProcessor::customName() const {
+    const juce::ScopedLock sl(nameLock_);
+    return customName_;
+}
+
+juce::String SourceProcessor::dawTrackName() const {
+    const juce::ScopedLock sl(nameLock_);
+    return trackName_;
+}
+
+juce::String SourceProcessor::displayName() const {
+    const juce::ScopedLock sl(nameLock_);
+    if (customName_.isNotEmpty()) return customName_;
+    if (trackName_.isNotEmpty()) return trackName_;
+    return "Raumklang Quelle";
+}
+
+void SourceProcessor::setCustomName(const juce::String& name) {
+    {
+        const juce::ScopedLock sl(nameLock_);
+        customName_ = name.trim().substring(0, 60);
+    }
+    updateHostDisplay(); // the host marks the project as changed
+}
+
 SourceProcessor::LinkStatus SourceProcessor::linkStatus() const {
     LinkStatus s;
     s.sending = sending_.load();
@@ -147,12 +172,7 @@ void SourceProcessor::timerCallback() {
     const auto route = static_cast<Route>(juce::jlimit(0, 2, (int)std::lround(route_->load())));
     if ((route == Route::App && running) || (route == Route::Automatic && running && rateOk)) {
         if (sender_.slot() < 0) sender_.claim();
-        juce::String name;
-        {
-            const juce::ScopedLock sl(nameLock_);
-            name = trackName_;
-        }
-        sender_.heartbeat(name.isEmpty() ? std::string("Raumklang Quelle") : name.toStdString());
+        sender_.heartbeat(displayName().toStdString());
     } else if (sender_.slot() >= 0) {
         sender_.release();
     }
@@ -209,6 +229,7 @@ void SourceProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
 void SourceProcessor::getStateInformation(juce::MemoryBlock& dest) {
     auto state = params.copyState();
     state.setProperty("setup", rkui::sceneToJson(setupSnapshot()), nullptr);
+    state.setProperty("name", customName(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, dest);
 }
 
@@ -226,6 +247,11 @@ void SourceProcessor::setStateInformation(const void* data, int size) {
         applyEngineConfig();
     }
     tree.removeProperty("setup", nullptr);
+    {
+        const juce::ScopedLock sl(nameLock_);
+        customName_ = tree.getProperty("name").toString().substring(0, 60);
+    }
+    tree.removeProperty("name", nullptr);
     params.replaceState(tree);
 }
 

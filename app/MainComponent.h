@@ -6,6 +6,7 @@
 #pragma once
 
 #include "AudioHost.h"
+#include "Updater.h"
 #include "Calibration.h"
 
 #include <rk_ui/Pages.h>
@@ -41,6 +42,10 @@ private:
     void timerCallback() override;
     void setStep(int step);
     void applyScene(bool structural);
+    /// Opens the interface inputs once something needs them (asks for microphone access on macOS once).
+    void ensureInputs();
+    bool micRequested_ = false;
+    Updater updater_;
     void commit();
     void undo();
     void redo();

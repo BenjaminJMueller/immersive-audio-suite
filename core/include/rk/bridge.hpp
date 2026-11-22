@@ -72,6 +72,9 @@ struct DriftState {
     double readPos = 0.0;
     double smoothedError = 0.0;
     uint64_t lastWrite = 0;
+    /// Write position when the reader last ran dry: it only starts again on audio
+    /// written after that, never by replaying what it already played.
+    uint64_t resumeFrom = 0;
     float fade = 0.0f;
 };
 

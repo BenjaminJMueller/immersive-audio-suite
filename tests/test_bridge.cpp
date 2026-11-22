@@ -498,3 +498,66 @@ TEST_CASE("return: write and read never allocate") {
     }
     CHECK(guard.allocations() == 0);
 }
+
+TEST_CASE("bridge: when the DAW stops (pause), the app goes silent and never repeats old audio") {
+    Names nm;
+    Sender tx;
+    Receiver rx;
+    REQUIRE(tx.open(nm.name));
+    REQUIRE(rx.open(nm.name));
+    REQUIRE(tx.claim() >= 0);
+    rx.beginBlock(48000.0);
+    std::vector<float> block(256, 0.5f);
+    const float* in[1] = {block.data()};
+    Out out(256);
+    TrackParams p;
+    int heard = 0;
+    for (int i = 0; i < 100; ++i) {
+        tx.write(in, 1, 256, 48000.0, p);
+        if (rx.read(tx.slot(), out.ptr, 256, p) > 0) ++heard;
+    }
+    CHECK(heard > 90);
+    // Pause: the DAW no longer calls the plugin. The app keeps reading for 10 seconds.
+    int loud = 0;
+    for (int i = 0; i < 48000 * 10 / 256; ++i) {
+        rx.read(tx.slot(), out.ptr, 256, p);
+        for (float v : out.l)
+            if (std::fabs(v) > 1.0e-6f) { ++loud; break; }
+    }
+    CHECK(loud <= 2); // at most the frames still in flight, then silence
+    // Play again: new audio arrives (with a different value), nothing old.
+    std::fill(block.begin(), block.end(), -0.25f);
+    int fresh = 0, stale = 0;
+    for (int i = 0; i < 100; ++i) {
+        tx.write(in, 1, 256, 48000.0, p);
+        if (rx.read(tx.slot(), out.ptr, 256, p) > 0) {
+            ++fresh;
+            for (float v : out.l)
+                if (v > 0.01f) { ++stale; break; }
+        }
+    }
+    CHECK(fresh > 90);
+    CHECK(stale == 0);
+}
+
+TEST_CASE("return: when the app stops writing, the plugin goes silent and never repeats") {
+    Names nm;
+    ReturnSender tx;
+    ReturnReceiver rx;
+    REQUIRE(tx.open(nm.name));
+    REQUIRE(rx.open(nm.name));
+    tx.heartbeat(48000.0);
+    Multi app(2, 256), out(2, 256);
+    for (auto& d : app.data) std::fill(d.begin(), d.end(), 0.5f);
+    for (int i = 0; i < 100; ++i) {
+        tx.write(app.ptr.data(), 2, 256);
+        rx.read(0, out.ptr.data(), 2, 256, 48000.0);
+    }
+    int loud = 0;
+    for (int i = 0; i < 1000; ++i) {
+        rx.read(0, out.ptr.data(), 2, 256, 48000.0);
+        for (float v : out.data[0])
+            if (std::fabs(v) > 1.0e-6f) { ++loud; break; }
+    }
+    CHECK(loud <= 2);
+}

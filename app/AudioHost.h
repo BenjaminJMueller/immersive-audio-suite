@@ -32,7 +32,12 @@ public:
     ~AudioHost() override;
 
     /// Opens the default device (or the one stored in `savedState`). Returns an error text or empty.
-    juce::String start(const juce::XmlElement* savedState);
+    /// Opens the device. Without `withInputs` no input is opened, so macOS does not
+    /// ask for microphone access (test signals and DAW tracks need none).
+    juce::String start(const juce::XmlElement* savedState, bool withInputs);
+    /// Message thread: opens (or closes) the inputs of the current device.
+    juce::String setInputsEnabled(bool on);
+    bool inputsEnabled() const noexcept { return inputsEnabled_; }
     void stop();
 
     rk::Engine engine;
@@ -96,6 +101,7 @@ private:
     std::array<double, kMaxGenerated> phase_{};
     std::array<long long, kMaxGenerated> clickCounter_{};
     std::atomic<int> numOutputs_{0}, numInputs_{0};
+    bool inputsEnabled_ = false;
     std::atomic<double> sampleRate_{48000.0};
     rk::RoomSimulator room_;
     std::thread simThread_;
