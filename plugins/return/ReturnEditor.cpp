@@ -28,11 +28,9 @@ void ReturnMeters::set(int first, int channels, int appChannels, const std::vect
 void ReturnMeters::paint(juce::Graphics& g) {
     const auto& p = rkui::palette();
     g.fillAll(p.stage);
-    auto area = getLocalBounds().toFloat().reduced(24.0f, 20.0f);
-    g.setColour(p.text3);
-    g.setFont(rkui::uiFont(12.0f));
-    g.drawText(L("Lautsprecher aus der App", "Speakers from the app"), area.removeFromTop(18.0f).toNearestInt(), juce::Justification::centredLeft);
-    area.removeFromTop(10.0f);
+    g.setColour(p.line);
+    g.fillRect(0, 0, getWidth(), 1);
+    auto area = getLocalBounds().toFloat().reduced(16.0f, 12.0f);
     if (channels_ <= 0) return;
 
     // Up to 16 meters per row; more channels wrap into further rows.
@@ -40,7 +38,7 @@ void ReturnMeters::paint(juce::Graphics& g) {
     const int rows = (channels_ + perRow - 1) / perRow;
     const float rowH = std::min(320.0f, area.getHeight() / (float)rows);
     const float gap = 6.0f;
-    const float w = std::min(40.0f, (area.getWidth() - gap * (float)(perRow - 1)) / (float)perRow);
+    const float w = std::min(64.0f, (area.getWidth() - gap * (float)(perRow - 1)) / (float)perRow);
     for (int i = 0; i < channels_; ++i) {
         const int r = i / perRow, c = i % perRow;
         auto cell = juce::Rectangle<float>(area.getX() + (float)c * (w + gap), area.getY() + (float)r * rowH, w, rowH - 8.0f);
@@ -73,39 +71,42 @@ ReturnEditor::ReturnEditor(ReturnProcessor& p) : AudioProcessorEditor(p), proc_(
     rkui::setDarkMode(true);
     lnf_.refreshColours();
     setLookAndFeel(&lnf_);
+    room_.setMode(static_cast<rkui::RoomView::Mode>(
+        juce::jlimit(0, 3, (int)proc_.params.state.getProperty("view", (int)rkui::RoomView::Mode::Top))));
+    room_.onModeChanged = [this](rkui::RoomView::Mode m) { proc_.params.state.setProperty("view", (int)m, nullptr); };
+    room_.setSelectedSource(-1);
+    room_.setFirstLockedSource(0); // only shown here, moved in the Quelle plugins
+    addAndMakeVisible(room_);
     addAndMakeVisible(meters_);
     addAndMakeVisible(page_);
+    help_.setTooltip(L("Bringt das, was die Raumklang-App an die Lautsprecher schickt, zur\xc3\xbc" "ck in die DAW. "
+                       "Spur mit so vielen Kan\xc3\xa4len wie Lautsprecher (in Logic etwa ein Aux in 7.1.4 f\xc3\xbcr 12 Lautsprecher), "
+                       "dann aufnehmen oder in Echtzeit bouncen.",
+                       "Brings what the Raumklang app sends to the speakers back into the DAW. "
+                       "Use a track with as many channels as speakers (in Logic for example an aux in 7.1.4 for 12 speakers), "
+                       "then record it or bounce in real time."));
+    addAndMakeVisible(help_);
 
-    card_ = page_.add(std::make_unique<rkui::StatusCard>(), 72);
     page_.add(std::make_unique<rkui::SectionHeader>(
-                  tr("Lautsprecher"),
-                  L("Die Spur bekommt so viele Lautsprecher, wie sie Kan\xc3\xa4le hat, ab dem ersten Lautsprecher. "
-                    "Mehr Lautsprecher als eine Spur fasst? Weitere Spuren mit diesem Plugin anlegen und den ersten Lautsprecher weiterz\xc3\xa4hlen.",
-                    "The track receives as many speakers as it has channels, starting at the first speaker. "
-                    "More speakers than one track holds? Add further tracks with this plugin and count the first speaker on.")),
+                  L("Eingang", "Input"),
+                  L("Die Spur bekommt so viele Lautsprecher, wie sie Kan\xc3\xa4le hat, ab diesem Lautsprecher. "
+                    "Mehr Lautsprecher als eine Spur fasst? Eine weitere Spur mit diesem Plugin anlegen und weiterz\xc3\xa4hlen.",
+                    "The track receives as many speakers as it has channels, starting at this speaker. "
+                    "More speakers than one track holds? Add another track with this plugin and count on.")),
               26);
     auto* prm = proc_.params.getParameter("first");
     const auto range = prm->getNormalisableRange();
-    auto* s = page_.add(std::make_unique<rkui::ParamSlider>(L("Ab Nummer", "From number"), range.start, range.end, 1.0,
+    auto* s = page_.add(std::make_unique<rkui::ParamSlider>(L("Ab Lautsprecher", "From speaker"), range.start, range.end, 1.0,
                                                             juce::String(), 0, range.start),
-                        32);
+                        34);
     s->setTooltip(L("Welcher Lautsprecher der App auf Kanal 1 dieser Spur kommt", "Which app speaker arrives on channel 1 of this track"));
     bindings_.push_back(std::make_unique<ParamBinding>(*s, *prm));
 
-    page_.addDetails(L("Bringt das, was die Raumklang-App an die Lautsprecher schickt, zur\xc3\xbc" "ck in die DAW. "
-                       "Lege das Plugin auf eine Spur mit so vielen Kan\xc3\xa4len wie Lautsprecher (in Logic etwa ein Aux in 7.1.4 f\xc3\xbcr 12 Lautsprecher) "
-                       "und nimm sie auf oder bounce in Echtzeit.\n\n"
-                       "Offline-Bounce geht nicht, weil die App in Echtzeit rechnet. In Logic: Bounce mit \xe2\x80\x9e" "Echtzeit\xe2\x80\x9c.\n\n"
-                       "Das Plugin ersetzt den Eingang der Spur. DAW und App m\xc3\xbcssen mit derselben Abtastrate laufen.",
-                       "Brings what the Raumklang app sends to the speakers back into the DAW. "
-                       "Put the plugin on a track with as many channels as speakers (in Logic for example an aux in 7.1.4 for 12 speakers) "
-                       "and record it or bounce in real time.\n\n"
-                       "Offline bounces do not work because the app renders in real time. In Logic: bounce in \"Realtime\" mode.\n\n"
-                       "The plugin replaces the track's input. The DAW and the app must run at the same sample rate."));
-
+    tracks_.open();
     setResizable(true, true);
-    setResizeLimits(640, 420, 1800, 1200);
-    setSize(860, 520);
+    setResizeLimits(760, 520, 2400, 1600);
+    setSize(1100, 680);
+    refreshRoom();
     refreshStatus();
     startTimerHz(30);
 }
@@ -116,6 +117,25 @@ ReturnEditor::~ReturnEditor() {
     setLookAndFeel(nullptr);
 }
 
+void ReturnEditor::refreshRoom() {
+    // The room from the shared setup, the tracks from the bridge: what the app is playing.
+    rkui::readSharedSetup(scene_);
+    scene_.sources.clear();
+    for (const auto& t : tracks_.scan()) {
+        rkui::SourceInfo s;
+        s.name = juce::String::fromUTF8(t.name.c_str());
+        s.position = rk::toCartesian({t.params.azimuthDeg, t.params.elevationDeg, t.params.distance});
+        s.spread = t.params.spread;
+        s.mute = !t.sending;
+        scene_.sources.push_back(s);
+    }
+    room_.setSourceStyle({}, 1 << 30, true);
+    room_.setScene(scene_);
+    std::vector<float> lv(scene_.sources.size(), 0.0f);
+    for (size_t i = 0; i < lv.size(); ++i) lv[i] = scene_.sources[i].mute ? 0.0f : 0.5f;
+    room_.setSourceLevels(lv);
+}
+
 void ReturnEditor::refreshStatus() {
     const auto st = proc_.status();
     if (st.dropouts > 0) {
@@ -124,57 +144,41 @@ void ReturnEditor::refreshStatus() {
     } else if (dropoutHold_ > 0 && --dropoutHold_ == 0) {
         recentDropouts_ = 0;
     }
-    using K = rkui::StatusCard::Kind;
-    K kind = K::Info;
-    juce::String title, detail;
+    // Only what needs attention; when audio arrives, the bar stays quiet.
+    bool warn = true;
+    juce::String text;
     const int last = st.firstChannel + st.trackChannels - 1;
-    const juce::String range = juce::String(st.firstChannel) + (st.trackChannels > 1 ? juce::String::fromUTF8("\xe2\x80\x93") + juce::String(last) : "");
-
     if (!st.available) {
-        kind = K::Warn;
-        title = L("Keine Verbindung m\xc3\xb6glich", "Cannot connect");
-        detail = L("Dieser Host erlaubt keine Verbindung zur App.", "This host does not allow a connection to the app.");
+        text = L("Dieser Host erlaubt keine Verbindung zur App.", "This host does not allow a connection to the app.");
     } else if (!st.appRunning) {
-        kind = K::Info;
-        title = L("App nicht gefunden", "App not found");
-        detail = L("Starte die Raumklang-App. Bis dahin bleibt die Spur still.", "Start the Raumklang app. Until then the track stays silent.");
+        warn = false;
+        text = L("Raumklang-App nicht ge\xc3\xb6" "ffnet. Die Spur bleibt still.", "Raumklang app not open. The track stays silent.");
     } else if (st.rateMismatch) {
-        kind = K::Warn;
-        title = L("Abtastrate passt nicht", "Sample rate differs");
-        detail = L("Die App l\xc3\xa4uft mit ", "The app runs at ") + rateText(st.appSampleRate) + L(", die DAW mit ", ", the DAW at ") +
-                 rateText(st.sampleRate) + L(". Stelle beide gleich ein.", ". Set both to the same rate.");
+        text = L("Abtastrate passt nicht: App ", "Sample rate differs: app ") + rateText(st.appSampleRate) + L(", DAW ", ", DAW ") +
+               rateText(st.sampleRate) + L(". Beide gleich einstellen.", ". Set both to the same rate.");
     } else if (st.offline) {
-        kind = K::Warn;
-        title = L("Nur Echtzeit-Bounce", "Real-time bounce only");
-        detail = L("Die App rechnet in Echtzeit. Bounce mit \xe2\x80\x9e" "Echtzeit\xe2\x80\x9c, sonst fehlt Audio.",
-                   "The app renders in real time. Bounce in \"Realtime\" mode, otherwise audio is missing.");
+        text = L("Nur Echtzeit-Bounce: Die App rechnet in Echtzeit.", "Real-time bounce only: the app renders in real time.");
     } else if (st.firstChannel > st.appChannels) {
-        kind = K::Warn;
-        title = L("Kein Lautsprecher in diesem Bereich", "No speaker in this range");
-        detail = L("Die App hat ", "The app has ") + juce::String(st.appChannels) + " " + tr("Lautsprecher") +
-                 L(". W\xc3\xa4hle einen kleineren ersten Lautsprecher.", ". Choose a lower first speaker.");
+        text = L("Die App hat nur ", "The app has only ") + juce::String(st.appChannels) + " " + tr("Lautsprecher") +
+               L(". Kleineren ersten Lautsprecher w\xc3\xa4hlen.", ". Choose a lower first speaker.");
     } else if (recentDropouts_ > 0) {
-        kind = K::Warn;
-        title = L("Aussetzer", "Dropouts");
-        detail = L("Die DAW hat kurz nicht mitgehalten. Ein gr\xc3\xb6\xc3\x9f" "erer Puffer in der DAW hilft.",
-                   "The DAW briefly could not keep up. A larger buffer in the DAW helps.");
+        text = L("Aussetzer: Ein gr\xc3\xb6\xc3\x9f" "erer Puffer in der DAW hilft.", "Dropouts: a larger buffer in the DAW helps.");
+    } else if (st.trackChannels < st.appChannels - st.firstChannel + 1) {
+        warn = st.firstChannel == 1;
+        text = L("Spur hat ", "Track has ") + juce::String(st.trackChannels) + L(" Kan\xc3\xa4le, die App ", " channels, the app ") +
+               juce::String(st.appChannels) + " " + tr("Lautsprecher") +
+               L(". Spur auf mehr Kan\xc3\xa4le stellen oder eine weitere Spur ab ", ". Use more channels or another track from speaker ") +
+               juce::String(last + 1) + L(" anlegen.", ".");
     } else {
-        kind = st.receiving ? K::Ok : K::Info;
-        title = st.receiving ? L("Empf\xc3\xa4ngt von Raumklang", "Receiving from Raumklang") : L("Verbunden mit Raumklang", "Connected to Raumklang");
-        detail = tr("Lautsprecher") + " " + range + L(" von ", " of ") + juce::String(st.appChannels) + ".";
-        if (st.appChannels > last)
-            detail << L(" F\xc3\xbcr die \xc3\xbc" "brigen eine weitere Spur ab Lautsprecher ", " For the rest add another track from speaker ") +
-                          juce::String(last + 1) + ".";
-        else if (st.firstChannel == 1 && st.trackChannels > st.appChannels)
-            detail << L(" Die letzten Kan\xc3\xa4le bleiben still.", " The last channels stay silent.");
+        text.clear();
     }
-    const int filled = st.appRunning ? juce::jlimit(0, st.trackChannels, st.appChannels - st.firstChannel + 1) : 0;
-    const juce::String key = juce::String((int)kind) + title + detail + juce::String(filled);
-    if (key != cardKey_) {
-        cardKey_ = key;
-        card_->set(kind, title, detail);
-        card_->setProgress(filled, st.trackChannels);
-        page_.setRowHeight(card_, card_->idealHeight(juce::jmax(200, page_.getWidth() - 24)));
+    const juce::String range = tr("Lautsprecher") + " " + juce::String(st.firstChannel) +
+                               (st.trackChannels > 1 ? juce::String::fromUTF8("\xe2\x80\x93") + juce::String(last) : juce::String());
+    if (text != notice_ || warn != noticeWarn_ || range != rangeText_) {
+        notice_ = text;
+        noticeWarn_ = warn;
+        rangeText_ = range;
+        repaint(0, 0, getWidth(), 46);
     }
 
     levels_.resize((size_t)st.trackChannels);
@@ -183,10 +187,21 @@ void ReturnEditor::refreshStatus() {
         levels_[c] = std::max(juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f), levels_[c] * 0.85f);
     }
     meters_.set(st.firstChannel, st.trackChannels, st.appRunning ? st.appChannels : 0, levels_);
+    // The same levels on the speakers in the room.
+    std::vector<float> spk(scene_.layout.speakers.size(), 0.0f);
+    for (size_t c = 0; c < levels_.size(); ++c) {
+        const size_t m = (size_t)(st.firstChannel - 1) + c;
+        if (m < spk.size()) spk[m] = levels_[c];
+    }
+    room_.setSpeakerLevels(spk);
 }
 
 void ReturnEditor::timerCallback() {
     for (auto& b : bindings_) b->refresh();
+    if (--roomCountdown_ <= 0) {
+        roomCountdown_ = 15;
+        refreshRoom();
+    }
     refreshStatus();
 }
 
@@ -194,20 +209,25 @@ void ReturnEditor::paint(juce::Graphics& g) {
     const auto& p = rkui::palette();
     g.fillAll(p.side);
     g.setColour(p.bar);
-    g.fillRect(0, 0, getWidth(), 52);
+    g.fillRect(0, 0, getWidth(), 46);
     g.setColour(p.line);
-    g.fillRect(0, 51, getWidth(), 1);
+    g.fillRect(0, 45, getWidth(), 1);
     g.setColour(p.text);
     g.setFont(rkui::uiFont(15.0f, true));
-    g.drawText(juce::String("Raumklang Return"), 16, 0, 260, 52, juce::Justification::centredLeft);
+    g.drawText(juce::String("Raumklang Return"), 16, 0, 170, 46, juce::Justification::centredLeft);
+    g.setColour(p.text3);
+    g.setFont(rkui::uiFont(12.5f));
+    g.drawText(rangeText_, 180, 0, 200, 46, juce::Justification::centredLeft);
+    if (notice_.isNotEmpty()) rkui::drawNoticePill(g, 380.0f, (float)help_.getX() - 10.0f, 23.0f, noticeWarn_, notice_);
 }
 
 void ReturnEditor::resized() {
     auto r = getLocalBounds();
-    r.removeFromTop(52);
-    page_.setBounds(r.removeFromRight(juce::jmax(330, getWidth() / 3)).reduced(0, 8));
-    meters_.setBounds(r);
-    cardKey_.clear();
+    auto bar = r.removeFromTop(46);
+    help_.setBounds(bar.removeFromRight(46).withSizeKeepingCentre(30, 28));
+    page_.setBounds(r.removeFromRight(juce::jlimit(280, 340, getWidth() / 3)).reduced(0, 8));
+    meters_.setBounds(r.removeFromBottom(juce::jlimit(110, 170, getHeight() / 5)));
+    room_.setBounds(r);
 }
 
 } // namespace rkplug

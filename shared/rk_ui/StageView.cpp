@@ -182,9 +182,12 @@ void StageView::paintLegend(juce::Graphics& g) {
     std::vector<Item> items;
     items.push_back({0, itemColour(3), tr("Lautsprecher")});
     const bool named = sourceNames_ && !scene_.sources.empty();
-    items.push_back({1, sourceColour(0), named ? scene_.sources[0].name : tr("Quelle")});
-    if (named && (int)scene_.sources.size() > dimFrom_) items.push_back({1, p.text3, tr("andere Spuren")});
-    items.push_back({2, sourceColour(0), named ? tr("spielt auf") : tr("Anteil")});
+    if (!sourceNames_ || named) {
+        const bool tracks = named && dimFrom_ >= (int)scene_.sources.size() && scene_.sources.size() > 1;
+        items.push_back({1, sourceColour(0), tracks ? tr("Spuren") : (named ? scene_.sources[0].name : tr("Quelle"))});
+        if (named && (int)scene_.sources.size() > dimFrom_) items.push_back({1, p.text3, tr("andere Spuren")});
+        items.push_back({2, sourceColour(0), named ? tr("spielt auf") : tr("Anteil")});
+    }
     const juce::Font f = uiFont(11.5f);
     auto tw = [&f](const juce::String& t) { return juce::GlyphArrangement::getStringWidth(f, t); };
     float w = 14.0f;

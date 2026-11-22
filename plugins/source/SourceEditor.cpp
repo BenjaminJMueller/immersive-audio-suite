@@ -343,29 +343,8 @@ void SourceEditor::paint(juce::Graphics& g) {
     g.setFont(rkui::uiFont(12.5f));
     g.drawText("Raumklang Quelle", juce::Rectangle<float>(px + 20.0f, 0.0f, 160.0f, (float)kBarHeight), juce::Justification::centredLeft);
 
-    if (noticeKind_ != NoticeKind::None) {
-        const auto f = rkui::uiFont(12.5f);
-        const float maxW = (float)help_.getX() - (px + 200.0f) - 12.0f;
-        const float tw = std::min(maxW - 34.0f, juce::GlyphArrangement::getStringWidth(f, notice_));
-        if (tw > 60.0f) {
-            auto r = juce::Rectangle<float>(tw + 40.0f, 28.0f).withRightX((float)help_.getX() - 10.0f).withCentre(
-                {(float)help_.getX() - 10.0f - (tw + 40.0f) * 0.5f, kBarHeight * 0.5f});
-            const bool warn = noticeKind_ == NoticeKind::Warn;
-            g.setColour(warn ? p.warn.withAlpha(0.14f) : p.group);
-            g.fillRoundedRectangle(r, 7.0f);
-            g.setColour(warn ? p.warn.withAlpha(0.45f) : p.line);
-            g.drawRoundedRectangle(r.reduced(0.5f), 7.0f, 1.0f);
-            auto dot = juce::Rectangle<float>(r.getX() + 9.0f, r.getCentreY() - 7.0f, 14.0f, 14.0f);
-            g.setColour(warn ? p.warn : p.text3);
-            g.fillEllipse(dot);
-            g.setColour(p.side);
-            g.setFont(rkui::uiFont(10.5f, true));
-            g.drawText(warn ? "!" : "i", dot, juce::Justification::centred);
-            g.setColour(warn ? p.text : p.text2);
-            g.setFont(f);
-            g.drawText(notice_, r.withTrimmedLeft(30.0f).withTrimmedRight(8.0f), juce::Justification::centredLeft, true);
-        }
-    }
+    if (noticeKind_ != NoticeKind::None)
+        rkui::drawNoticePill(g, px + 200.0f, (float)help_.getX() - 10.0f, kBarHeight * 0.5f, noticeKind_ == NoticeKind::Warn, notice_);
 }
 
 void SourceEditor::resized() {

@@ -138,6 +138,7 @@ const std::map<std::string, const char*>& english() {
         {"Seite", "Side"},
         {"Geteilt", "Split"},
         {"andere Spuren", "other tracks"},
+        {"Spuren", "Tracks"},
         {"spielt auf", "plays on"},
         {"Ansicht: von oben, von vorne, beides nebeneinander oder räumlich", "View: from above, from the front, both side by side or in 3D"},
         {"vorne", "front"},

@@ -141,9 +141,17 @@ namespace {
 int labelWidth(int w) { return juce::jlimit(72, 120, w * 31 / 100); }
 } // namespace
 
+namespace {
+/// Room for the label: the usual column, wider for a long label so it never runs into the slider.
+int sliderLabelWidth(const juce::String& label, int w) {
+    const int text = juce::roundToInt(juce::GlyphArrangement::getStringWidth(uiFont(13.5f), label)) + 12;
+    return juce::jmax(labelWidth(w), juce::jmin(text, w * 45 / 100));
+}
+} // namespace
+
 void ParamSlider::resized() {
     auto r = getLocalBounds();
-    r.removeFromLeft(labelWidth(getWidth()));
+    r.removeFromLeft(sliderLabelWidth(label_, getWidth()));
     value_.setBounds(r.removeFromRight(60));
     slider_.setBounds(r);
 }
@@ -151,7 +159,7 @@ void ParamSlider::resized() {
 void ParamSlider::paint(juce::Graphics& g) {
     g.setColour(slider_.isEnabled() ? palette().text : palette().text3);
     g.setFont(uiFont(13.5f));
-    g.drawText(label_, getLocalBounds().withWidth(labelWidth(getWidth())), juce::Justification::centredLeft, true);
+    g.drawText(label_, getLocalBounds().withWidth(sliderLabelWidth(label_, getWidth())), juce::Justification::centredLeft, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +181,7 @@ void ChoiceRow::paint(juce::Graphics& g) {
     if (label_.isEmpty()) return;
     g.setColour(palette().text);
     g.setFont(uiFont(13.5f));
-    g.drawText(label_, getLocalBounds().withWidth(labelWidth(getWidth())), juce::Justification::centredLeft, true);
+    g.drawText(label_, getLocalBounds().withWidth(sliderLabelWidth(label_, getWidth())), juce::Justification::centredLeft, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +202,7 @@ void TextRow::resized() {
 void TextRow::paint(juce::Graphics& g) {
     g.setColour(palette().text);
     g.setFont(uiFont(13.5f));
-    g.drawText(label_, getLocalBounds().withWidth(labelWidth(getWidth())), juce::Justification::centredLeft, true);
+    g.drawText(label_, getLocalBounds().withWidth(sliderLabelWidth(label_, getWidth())), juce::Justification::centredLeft, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +593,27 @@ std::unique_ptr<juce::TextButton> makeButton(const juce::String& text, bool prim
     b->getProperties().set("primary", primary);
     b->getProperties().set("flat", flat);
     return b;
+}
+
+void drawNoticePill(juce::Graphics& g, float leftLimit, float rightX, float centreY, bool warn, const juce::String& text) {
+    const Palette& p = palette();
+    const auto f = uiFont(12.5f);
+    const float tw = std::min(rightX - leftLimit - 40.0f, juce::GlyphArrangement::getStringWidth(f, text));
+    if (tw < 60.0f || text.isEmpty()) return;
+    const auto r = juce::Rectangle<float>(rightX - tw - 40.0f, centreY - 14.0f, tw + 40.0f, 28.0f);
+    g.setColour(warn ? p.warn.withAlpha(0.14f) : p.group);
+    g.fillRoundedRectangle(r, 7.0f);
+    g.setColour(warn ? p.warn.withAlpha(0.45f) : p.line);
+    g.drawRoundedRectangle(r.reduced(0.5f), 7.0f, 1.0f);
+    const auto dot = juce::Rectangle<float>(r.getX() + 9.0f, r.getCentreY() - 7.0f, 14.0f, 14.0f);
+    g.setColour(warn ? p.warn : p.text3);
+    g.fillEllipse(dot);
+    g.setColour(p.side);
+    g.setFont(uiFont(10.5f, true));
+    g.drawText(warn ? "!" : "i", dot, juce::Justification::centred);
+    g.setColour(warn ? p.text : p.text2);
+    g.setFont(f);
+    g.drawText(text, r.withTrimmedLeft(30.0f).withTrimmedRight(8.0f), juce::Justification::centredLeft, true);
 }
 
 } // namespace rkui

@@ -124,6 +124,10 @@ private:
     int hover_ = -1;
 };
 
+/// A one-line hint in a plugin's top bar, right-aligned at `rightX`: orange when something
+/// needs fixing, grey for plain information. Draws nothing if it does not fit.
+void drawNoticePill(juce::Graphics& g, float leftLimit, float rightX, float centreY, bool warn, const juce::String& text);
+
 /// Green/orange card with a plain-language verdict ("Sitzt gut").
 class StatusCard : public juce::Component {
 public:

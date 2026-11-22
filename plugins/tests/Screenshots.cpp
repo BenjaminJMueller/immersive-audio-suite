@@ -93,6 +93,16 @@ int main(int argc, char** argv) {
         save(*ed, dir.getChildFile(names[mode]));
         ed.reset();
     }
+    {
+        rkplug::ReturnProcessor proc;
+        proc.params.state.setProperty("view", 0, nullptr);
+        proc.setChannelLayoutOfBus(false, 0, juce::AudioChannelSet::discreteChannels(12));
+        for (size_t i = 0; i < senders.size(); ++i) senders[i]->heartbeat(others[i].name);
+        std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+        ed->setSize(1100, 680);
+        for (int k = 0; k < 40; ++k) { play(proc, 2); pump(20); }
+        save(*ed, dir.getChildFile("return.png"));
+    }
     for (auto& s : senders) s->release();
     return 0;
 }
