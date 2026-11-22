@@ -132,6 +132,9 @@ juce::var sourceToVar(const SourceInfo& x) {
     so->setProperty("spread", x.spread);
     so->setProperty("reverbSendDb", x.reverbSendDb);
     so->setProperty("distanceAmount", x.distanceAmount);
+    so->setProperty("yaw", x.yawDeg);
+    so->setProperty("directivity", x.directivity);
+    so->setProperty("doppler", x.doppler);
     so->setProperty("mute", x.mute);
     so->setProperty("solo", x.solo);
     so->setProperty("orbit", x.orbit);
@@ -149,6 +152,9 @@ SourceInfo sourceFromVar(const juce::var& e, int index) {
     x.spread = getF(e, "spread", 0.0f, 0.0f, 1.0f);
     x.reverbSendDb = getF(e, "reverbSendDb", -12.0f, -80.0f, 6.0f);
     x.distanceAmount = getF(e, "distanceAmount", 1.0f, 0.0f, 2.0f);
+    x.yawDeg = getF(e, "yaw", 0.0f, -180.0f, 180.0f);
+    x.directivity = getF(e, "directivity", 0.0f, 0.0f, 1.0f);
+    x.doppler = getB(e, "doppler", false);
     x.mute = getB(e, "mute", false);
     x.solo = getB(e, "solo", false);
     x.orbit = getB(e, "orbit", false);

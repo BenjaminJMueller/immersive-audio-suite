@@ -35,6 +35,13 @@ struct SourceControl {
     std::atomic<float> spread{0.0f};         // 0..1
     std::atomic<float> reverbSendDb{-12.0f}; // -80..+6
     std::atomic<float> distanceAmount{1.0f}; // 0 = no distance cues, 1 = natural
+    /// Where the source faces, relative to the listener: 0 = towards the listener, 180 = away.
+    std::atomic<float> yawDeg{0.0f};
+    /// 0 = radiates evenly in all directions; 1 = strongly directed (facing away: about
+    /// 12 dB quieter and much darker in the direct sound; the room part stays).
+    std::atomic<float> directivity{0.0f};
+    /// Delays the source by its distance (about 3 ms per metre), so movement shifts the pitch.
+    std::atomic<bool> doppler{false};
     std::atomic<bool> mute{false};
     std::atomic<bool> solo{false};
     std::atomic<uint32_t> version{0};
@@ -136,6 +143,12 @@ private:
         float distanceGain = 1.0f;
         float airCoef = 1.0f;
         float airState = 0.0f;
+        float dirGain = 1.0f;    // directivity, part of the direct gain
+        float dirCoef = 1.0f;    // directivity low-pass (1 = off)
+        float dirState = 0.0f;
+        int dopplerSlot = -1;    // index into the Doppler delay pool, -1 = none
+        float dopplerCur = 0.0f; // current delay in samples
+        float dopplerTarget = 0.0f;
         float sendCur = 0.0f;
         float subCur = 0.0f;
         bool hadSignal = false;
@@ -149,6 +162,13 @@ private:
     std::vector<float> subBus_;      // maxBlock
     std::vector<float> srcTmp_;      // maxBlock
     std::vector<float> outTmp_;      // 2 x maxBlock (headphones)
+    std::vector<float> directTmp_;   // maxBlock: direct sound after directivity
+    // Doppler: a small pool of delay lines shared by the sources that use it.
+    static constexpr int kDopplerSlots = 16;
+    std::vector<float> dopplerLines_; // kDopplerSlots x dopplerLen_
+    int dopplerLen_ = 0;
+    std::array<int, kDopplerSlots> dopplerPos_{};
+    std::array<bool, kDopplerSlots> dopplerUsed_{};
     std::array<float*, kMaxSpeakers> mixPtr_{};
 
     // Output stage state.

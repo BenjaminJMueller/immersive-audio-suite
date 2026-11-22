@@ -107,6 +107,12 @@ void Engine::prepare(double sampleRate, int maxBlockSize) {
     subBus_.assign(mb, 0.0f);
     srcTmp_.assign(mb, 0.0f);
     outTmp_.assign(2 * mb, 0.0f);
+    directTmp_.assign(mb, 0.0f);
+    // 0.25 s covers 85 m; farther sources are held at that delay.
+    dopplerLen_ = static_cast<int>(std::ceil(0.25 * sampleRate_)) + maxBlock_ + 4;
+    dopplerLines_.assign(static_cast<size_t>(kDopplerSlots) * static_cast<size_t>(dopplerLen_), 0.0f);
+    dopplerPos_.fill(0);
+    dopplerUsed_.fill(false);
     for (int m = 0; m < kMaxSpeakers; ++m) mixPtr_[static_cast<size_t>(m)] = &mix_[static_cast<size_t>(m) * mb];
     state_.assign(static_cast<size_t>(kMaxSources), SourceState{});
     reverb_.prepare(sampleRate_);
@@ -198,10 +204,13 @@ void Engine::resetSourceState() noexcept {
         st.step.fill(0.0f);
         st.rampLeft = 0;
         st.airState = 0.0f;
+        st.dirState = 0.0f;
+        st.dopplerSlot = -1;
         st.sendCur = 0.0f;
         st.subCur = 0.0f;
         st.hadSignal = false;
     }
+    dopplerUsed_.fill(false);
     for (auto& l : limiter_) l.reset();
 }
 
@@ -343,10 +352,19 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
             const float fc = std::max(1500.0f, 20000.0f * std::exp(-over * amt / 25.0f));
             st.airCoef = (amt <= 0.0f || over <= 0.0f) ? 1.0f
                                                        : static_cast<float>(1.0 - std::exp(-kTwoPi * fc / sampleRate_));
+            // Directivity: how far the source looks away from the listener.
+            const float dir = safeClamp(c.directivity.load(std::memory_order_relaxed), 0.0f, 1.0f, 0.0f);
+            const float yaw = safeClamp(c.yawDeg.load(std::memory_order_relaxed), -360.0f, 360.0f, 0.0f);
+            const float away = dir * 0.5f * (1.0f - std::cos(yaw * kDegToRad)); // 0 facing .. 1 turned away
+            st.dirGain = 1.0f - 0.75f * away;
+            const float dfc = 20000.0f * std::pow(0.15f, away);
+            st.dirCoef = away < 1.0e-3f ? 1.0f : static_cast<float>(1.0 - std::exp(-kTwoPi * std::min(dfc, 0.45f * static_cast<float>(sampleRate_)) / sampleRate_));
+            st.dopplerTarget = std::min(d / kSpeedOfSound * static_cast<float>(sampleRate_),
+                                        static_cast<float>(dopplerLen_ - maxBlock_ - 4));
         }
 
         const float srcGain = on ? dbToGain(safeClamp(c.gainDb.load(std::memory_order_relaxed), -80.0f, 12.0f, 0.0f)) : 0.0f;
-        const float scalar = srcGain * st.distanceGain;
+        const float scalar = srcGain * st.distanceGain * st.dirGain;
 
         // New target gains -> start a 10 ms linear ramp.
         bool changed = false;
@@ -364,7 +382,7 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
         }
 
         const float sendTarget = srcGain * dbToGain(safeClamp(c.reverbSendDb.load(std::memory_order_relaxed), -80.0f, 6.0f, -12.0f));
-        const float subTarget = scalar;
+        const float subTarget = srcGain * st.distanceGain;
         bool silent = !on && st.rampLeft == 0 && st.sendCur == 0.0f && st.subCur == 0.0f;
         if (silent) {
             for (int m = 0; m < numSpk && silent; ++m) silent = st.cur[static_cast<size_t>(m)] == 0.0f;
@@ -372,6 +390,8 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
         if (silent) {
             st.hadSignal = false;
             st.airState = 0.0f;
+            st.dirState = 0.0f;
+            if (st.dopplerSlot >= 0) { dopplerUsed_[static_cast<size_t>(st.dopplerSlot)] = false; st.dopplerSlot = -1; }
             continue;
         }
         st.hadSignal = true;
@@ -395,6 +415,64 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
         }
         storeMax(srcPeak_[static_cast<size_t>(s)], peak);
 
+        // Doppler: read the source back from a delay line as long as its distance.
+        const bool wantDoppler = c.doppler.load(std::memory_order_relaxed);
+        if (!wantDoppler && st.dopplerSlot >= 0) {
+            dopplerUsed_[static_cast<size_t>(st.dopplerSlot)] = false;
+            st.dopplerSlot = -1;
+        }
+        if (wantDoppler && st.dopplerSlot < 0) {
+            for (int k = 0; k < kDopplerSlots; ++k)
+                if (!dopplerUsed_[static_cast<size_t>(k)]) {
+                    dopplerUsed_[static_cast<size_t>(k)] = true;
+                    st.dopplerSlot = k;
+                    float* line = &dopplerLines_[static_cast<size_t>(k) * static_cast<size_t>(dopplerLen_)];
+                    std::fill(line, line + dopplerLen_, 0.0f);
+                    dopplerPos_[static_cast<size_t>(k)] = 0;
+                    st.dopplerCur = st.dopplerTarget; // start in place, no sweep
+                    break;
+                }
+        }
+        if (st.dopplerSlot >= 0) {
+            const size_t k = static_cast<size_t>(st.dopplerSlot);
+            float* line = &dopplerLines_[k * static_cast<size_t>(dopplerLen_)];
+            int pos = dopplerPos_[k];
+            // At most 10 % pitch change: the delay moves by at most 0.1 samples per sample.
+            const float maxMove = 0.1f * static_cast<float>(n);
+            const float next = st.dopplerCur + std::clamp(st.dopplerTarget - st.dopplerCur, -maxMove, maxMove);
+            const float dstep = (next - st.dopplerCur) * invN;
+            float del = st.dopplerCur;
+            const float len = static_cast<float>(dopplerLen_);
+            for (int i = 0; i < n; ++i) {
+                line[pos] = x[i];
+                del += dstep;
+                float rp = static_cast<float>(pos) - del;
+                if (rp < 0.0f) rp += len;
+                const int i0 = static_cast<int>(rp);
+                const float fr = rp - static_cast<float>(i0);
+                const int i1 = i0 + 1 < dopplerLen_ ? i0 + 1 : 0;
+                x[i] = line[i0] + fr * (line[i1] - line[i0]);
+                pos = pos + 1 < dopplerLen_ ? pos + 1 : 0;
+            }
+            dopplerPos_[k] = pos;
+            st.dopplerCur = next;
+        }
+
+        // Directivity colours only the direct sound; the room hears the source from all sides.
+        const float* direct = x;
+        if (st.dirCoef < 1.0f) {
+            float* xd = directTmp_.data();
+            float y = st.dirState;
+            for (int i = 0; i < n; ++i) {
+                y += st.dirCoef * (x[i] - y);
+                xd[i] = y;
+            }
+            st.dirState = sanitizeSample(y);
+            direct = xd;
+        } else {
+            st.dirState = x[n - 1];
+        }
+
         // Pan into the speaker mix.
         const int k = std::min(n, st.rampLeft);
         for (int m = 0; m < numSpk; ++m) {
@@ -407,9 +485,9 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
             int i = 0;
             for (; i < k; ++i) {
                 g += step;
-                out[i] += x[i] * g;
+                out[i] += direct[i] * g;
             }
-            for (; i < n; ++i) out[i] += x[i] * t;
+            for (; i < n; ++i) out[i] += direct[i] * t;
             st.cur[mi] = (st.rampLeft <= n) ? t : g;
         }
         st.rampLeft = std::max(0, st.rampLeft - n);

@@ -454,6 +454,26 @@ void StageView::paint(juce::Graphics& g) {
                 g.strokePath(band, juce::PathStrokeType(0.9f));
             }
         }
+        // Radiation (top view): a soft fan in the direction the source faces, narrower the
+        // more it is directed. Facing 0 points at the listener.
+        if (src.directivity > 0.01f && proj_ == Projection::Top) {
+            const float dx = centre_.x - c.x, dy = centre_.y - c.y;
+            const float base = (std::abs(dx) + std::abs(dy) > 0.5f) ? std::atan2(dy, dx) : -juce::MathConstants<float>::halfPi;
+            const float ang = base - src.yawDeg * juce::MathConstants<float>::pi / 180.0f; // positive = turned left
+            const float half = juce::jmap(src.directivity, 1.2f, 0.45f);
+            const float len = 24.0f + 14.0f * src.directivity;
+            juce::Path fan;
+            fan.startNewSubPath(c);
+            for (int k = 0; k <= 12; ++k) {
+                const float a = ang - half + 2.0f * half * (float)k / 12.0f;
+                fan.lineTo(c.x + len * std::cos(a), c.y + len * std::sin(a));
+            }
+            fan.closeSubPath();
+            g.setColour(col.withAlpha(0.16f + 0.12f * src.directivity));
+            g.fillPath(fan);
+            g.setColour(col.withAlpha(0.7f));
+            g.drawLine(c.x + 17.0f * std::cos(ang), c.y + 17.0f * std::sin(ang), c.x + len * std::cos(ang), c.y + len * std::sin(ang), 1.5f);
+        }
         // Level: a fine ring meter around the source (270 degrees, open at the bottom).
         {
             const float rr = 16.5f;

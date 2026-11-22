@@ -396,6 +396,9 @@ void MainComponent::applyScene(bool structural) {
             c.spread = s.spread;
             c.reverbSendDb = s.reverbSendDb;
             c.distanceAmount = s.distanceAmount;
+            c.yawDeg = s.yawDeg;
+            c.directivity = s.directivity;
+            c.doppler = s.doppler;
             c.mute = s.mute;
             c.solo = s.solo;
             c.active = true;
@@ -988,6 +991,12 @@ void MainComponent::buildSourcesPage() {
     addParam(tr("Entfernung"), 0, 200, 1, "%", 0, 0, s.distanceAmount * 100.0, [](rkui::SourceInfo& x, double v) { x.distanceAmount = (float)v / 100.0f; })
         ->setTooltip(tr("Wie stark Abstand hörbar wird: leiser, dumpfer und später. 0 % schaltet das aus."));
 
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Abstrahlung"), tr("Ein Sänger klingt von vorne hell und direkt, von hinten leiser und dumpfer. Der Raumanteil bleibt dabei gleich.")), 26);
+    auto* bundle = addParam(tr("Bündelung"), 0, 100, 1, "%", 0, 0, s.directivity * 100.0, [](rkui::SourceInfo& x, double v) { x.directivity = (float)v / 100.0f; });
+    bundle->setTooltip(tr("0 % strahlt in alle Richtungen gleich, 100 % stark nach vorne gerichtet."));
+    auto* yaw = addParam(tr("Ausrichtung"), -180, 180, 1, degree(), 0, 0, s.yawDeg, [](rkui::SourceInfo& x, double v) { x.yawDeg = (float)v; });
+    yaw->setTooltip(tr("0° schaut zum Hörplatz, 180° abgewandt. Wirkt nur mit Bündelung."));
+
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Bewegung")), 26);
     auto* motion = inspector_.add(std::make_unique<rkui::Segmented>(juce::StringArray{tr("Aus"), tr("Kreisen")}, false), 32);
     motion->setSelected(s.orbit ? 1 : 0);
@@ -999,6 +1008,15 @@ void MainComponent::buildSourcesPage() {
     };
     auto* speed = addParam(tr("Tempo"), -30, 30, 0.5, "U/min", 1, 0, s.orbitSpeed * 60.0, [](rkui::SourceInfo& x, double v) { x.orbitSpeed = (float)v / 60.0f; });
     speed->setTooltip(tr("Umdrehungen pro Minute, negativ = im Uhrzeigersinn"));
+    auto* dop = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Doppler-Effekt")), 28);
+    dop->setToggleState(s.doppler, juce::dontSendNotification);
+    dop->setTooltip(tr("Bewegte Quellen ändern die Tonhöhe wie ein vorbeifahrendes Auto. Verzögert die Quelle um ihren Abstand, etwa 3 ms pro Meter."));
+    dop->onClick = [this, i, dop] {
+        if (i >= (int)scene_.sources.size()) return;
+        scene_.sources[(size_t)i].doppler = dop->getToggleState();
+        applyScene(false);
+        commit();
+    };
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Wiedergabe")), 26);
     auto* mute = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Stumm")), 28);

@@ -42,9 +42,21 @@ void roundTrip() {
         src.orbit = i % 2 == 0;
         s.sources.push_back(src);
     }
+    s.sources[1].yawDeg = 135.0f;
+    s.sources[1].directivity = 0.8f;
+    s.sources[1].doppler = true;
     rkui::Scene back;
     EXPECT(rkui::sceneFromJson(rkui::sceneToJson(s), back));
     EXPECT(back.name == s.name);
+    {
+        // Snapshot fade turns the short way: 170 -> -170 passes 180, not 0.
+        rkui::Scene from = s, mid = s;
+        from.sources[1].yawDeg = 170.0f;
+        rkui::Snapshot to = rkui::captureSnapshot(s, {}, "x", 1.0f);
+        to.sources[1].yawDeg = -170.0f;
+        rkui::blendSnapshot(mid, from, to, 0.5f);
+        EXPECT(std::abs(std::abs(mid.sources[1].yawDeg) - 180.0f) < 0.01f);
+    }
     EXPECT(back.presetId == "donut");
     EXPECT(back.innerCount == 6);
     EXPECT(back.layout.speakers.size() == s.layout.speakers.size());
@@ -56,6 +68,9 @@ void roundTrip() {
     EXPECT(back.sources.size() == 5);
     EXPECT(back.sources[3].position.x == 3.0f);
     EXPECT(back.sources[4].test == rkui::TestSignal::Clicks);
+    EXPECT(std::abs(back.sources[1].yawDeg - 135.0f) < 1e-4f);
+    EXPECT(std::abs(back.sources[1].directivity - 0.8f) < 1e-4f);
+    EXPECT(back.sources[1].doppler && !back.sources[0].doppler);
     EXPECT(rkui::sceneToJson(back) == rkui::sceneToJson(s));
     EXPECT(back.effectivePanner() == rk::PannerKind::DBAP);
     // Binaural: the engine gets the virtual layout around the head, the scene keeps its speakers.

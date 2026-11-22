@@ -21,6 +21,9 @@ struct SourceInfo {
     float spread = 0.0f;
     float reverbSendDb = -12.0f;
     float distanceAmount = 1.0f;
+    float yawDeg = 0.0f;            // where it faces: 0 = towards the listener
+    float directivity = 0.0f;       // 0 = all directions alike, 1 = strongly directed
+    bool doppler = false;
     bool mute = false;
     bool solo = false;
     bool orbit = false;

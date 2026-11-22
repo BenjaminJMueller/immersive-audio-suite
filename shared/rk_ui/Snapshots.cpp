@@ -60,7 +60,13 @@ void blendSnapshot(Scene& out, const Scene& from, const Snapshot& to, float t) {
         o.spread = lerp(a.spread, b.spread, t);
         o.reverbSendDb = lerp(a.reverbSendDb, b.reverbSendDb, t);
         o.distanceAmount = lerp(a.distanceAmount, b.distanceAmount, t);
+        o.directivity = lerp(a.directivity, b.directivity, t);
+        // Turn the short way round.
+        float dy = std::fmod(b.yawDeg - a.yawDeg + 540.0f, 360.0f) - 180.0f;
+        if (!std::isfinite(dy)) dy = 0.0f;
+        o.yawDeg = std::fmod(a.yawDeg + dy * t + 540.0f, 360.0f) - 180.0f;
         if (t > 0.0f) {
+            o.doppler = b.doppler;
             o.mute = b.mute;
             o.solo = b.solo;
             o.orbit = b.orbit;
