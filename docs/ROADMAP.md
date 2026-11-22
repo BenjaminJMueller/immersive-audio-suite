@@ -6,7 +6,7 @@ Stabilität geht vor neuen Funktionen. Jede Phase wird erst abgeschlossen, wenn 
 
 - Engine ohne Abhängigkeiten: VBAP 2D/3D, DBAP mit Richtwirkung (Donut), Ambisonics 3. Ordnung, FDN-Hall, Kopfhörer-Vorschau, Schutzbegrenzer
 - Standalone-App mit vier Schritten (Lautsprecher, Quellen, Raum, Ausgabe), Einführung mit Demo, Rückgängig, automatisches Sichern
-- Plugins *Raumklang Quelle* und *Raumklang Raum* (VST3, AU, Standalone) mit gemeinsamem Lautsprecher-Setup
+- Plugins *Raumklang Quelle* und *Raumklang Return* (VST3, AU, Standalone) mit gemeinsamem Lautsprecher-Setup
 - Tests: Unit, Echtzeit-Sicherheit (keine Speicherreservierung im Audio-Thread), Stress, Fuzzing, ASan/UBSan/TSan, Plugin-Host-Stresstest, pluginval
 
 ## Phase 2 · Ohne Routing aus der DAW in die App (0.2)

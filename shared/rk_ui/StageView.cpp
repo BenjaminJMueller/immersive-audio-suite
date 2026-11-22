@@ -214,38 +214,7 @@ void StageView::paintLegend(juce::Graphics& g) {
 
 void StageView::paintCoach(juce::Graphics& g) {
     if (coachTitle_.isEmpty()) return;
-    const Palette& p = palette();
-    const juce::Font tf = uiFont(13.5f, true), sf = uiFont(12.0f);
-    const float textW = std::max(juce::GlyphArrangement::getStringWidth(tf, coachTitle_), juce::GlyphArrangement::getStringWidth(sf, coachText_));
-    const float w = std::min((float)getWidth() - 32.0f, 10.0f + 28.0f + 12.0f + textW + 18.0f);
-    auto r = juce::Rectangle<float>(w, 50.0f).withCentre({getWidth() * 0.5f, (float)getHeight() - 20.0f - 25.0f});
-    g.setColour(juce::Colours::black.withAlpha(0.25f));
-    g.fillRoundedRectangle(r.translated(0, 4).expanded(2), 15.0f);
-    g.setColour(juce::Colour(0xff1c1c1e).withAlpha(0.88f));
-    g.fillRoundedRectangle(r, 14.0f);
-    g.setColour(juce::Colours::white.withAlpha(0.12f));
-    g.drawRoundedRectangle(r.reduced(0.25f), 14.0f, 0.75f);
-    auto badge = juce::Rectangle<float>(r.getX() + 10.0f, r.getCentreY() - 14.0f, 28.0f, 28.0f);
-    g.setColour(coachOk_ ? p.ok : juce::Colour(0xff0a84ff));
-    g.fillEllipse(badge);
-    g.setColour(juce::Colours::white);
-    if (coachOk_ && coachBadge_.isEmpty()) {
-        juce::Path t;
-        t.startNewSubPath(badge.getX() + 8.5f, badge.getCentreY());
-        t.lineTo(badge.getX() + 12.5f, badge.getY() + 18.0f);
-        t.lineTo(badge.getX() + 20.0f, badge.getY() + 10.0f);
-        g.strokePath(t, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    } else {
-        g.setFont(uiFont(13.5f, true));
-        g.drawText(coachBadge_, badge, juce::Justification::centred, false);
-    }
-    auto text = r.withTrimmedLeft(50.0f).withTrimmedRight(16.0f);
-    g.setColour(juce::Colour(0xfff2f2f4));
-    g.setFont(tf);
-    g.drawText(coachTitle_, text.withTrimmedTop(8.0f).withHeight(18.0f), juce::Justification::centredLeft, true);
-    g.setColour(juce::Colour(0xffebebf5).withAlpha(0.68f));
-    g.setFont(sf);
-    g.drawText(coachText_, text.withTrimmedTop(26.0f).withHeight(16.0f), juce::Justification::centredLeft, true);
+    drawCoachBar(g, getLocalBounds(), coachBadge_, coachTitle_, coachText_, coachOk_);
 }
 
 void StageView::mouseMove(const juce::MouseEvent& e) {

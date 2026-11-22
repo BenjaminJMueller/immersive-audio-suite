@@ -27,6 +27,13 @@ RoomView::RoomView() : switch_(juce::StringArray{tr("Oben"), tr("Vorne"), tr("Ge
         v->onDragEnd = [this] {
             if (onDragEnd) onDragEnd();
         };
+        v->onSpeakerMoved = [this](int i, rk::Vec3 p) {
+            if (onSpeakerMoved) onSpeakerMoved(i, p);
+        };
+        v->onSpeakerSelected = [this](int i) {
+            setSelectedSpeaker(i);
+            if (onSpeakerSelected) onSpeakerSelected(i);
+        };
         addChildComponent(*v);
     }
     view3d_.onSourceSelected = [this](int i) {
@@ -48,6 +55,7 @@ void RoomView::setMode(Mode m) {
     front_.setShowLegend(m == Mode::Front);
     top_.setCaption(m == Mode::Split ? tr("Oben") : juce::String());
     front_.setCaption(m == Mode::Split ? tr("Vorne") : juce::String());
+    placeCoach();
     resized();
 }
 
@@ -84,6 +92,46 @@ void RoomView::setSourceStyle(const std::vector<juce::Colour>& colours, int dimF
 void RoomView::setFirstLockedSource(int i) {
     top_.setFirstLockedSource(i);
     front_.setFirstLockedSource(i);
+}
+
+void RoomView::setEditTarget(StageView::EditTarget t) {
+    top_.setEditTarget(t);
+    front_.setEditTarget(t);
+}
+
+void RoomView::setSelectedSpeaker(int i) {
+    top_.setSelectedSpeaker(i);
+    front_.setSelectedSpeaker(i);
+}
+
+void RoomView::setCalibration(StageView::CalibrationOverlay o) {
+    front_.setCalibration(o);
+    top_.setCalibration(std::move(o));
+}
+
+void RoomView::clearCalibration() {
+    top_.clearCalibration();
+    front_.clearCalibration();
+}
+
+void RoomView::setCoach(juce::String badge, juce::String title, juce::String text, bool ok) {
+    coachBadge_ = std::move(badge);
+    coachTitle_ = std::move(title);
+    coachText_ = std::move(text);
+    coachOk_ = ok;
+    placeCoach();
+}
+
+void RoomView::placeCoach() {
+    // One coach bar, in the view that is the larger one (from above unless only "Vorne" shows).
+    const bool onFront = mode_ == Mode::Front;
+    top_.setCoach(onFront ? juce::String() : coachBadge_, onFront ? juce::String() : coachTitle_, onFront ? juce::String() : coachText_, coachOk_);
+    front_.setCoach(onFront ? coachBadge_ : juce::String(), onFront ? coachTitle_ : juce::String(), onFront ? coachText_ : juce::String(), coachOk_);
+}
+
+void RoomView::setLegendAtBottom(bool on) {
+    top_.setLegendAtBottom(on);
+    front_.setLegendAtBottom(on);
 }
 
 void RoomView::paint(juce::Graphics& g) {

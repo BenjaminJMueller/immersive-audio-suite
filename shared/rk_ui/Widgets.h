@@ -48,6 +48,33 @@ private:
     juce::String title_, text_;
 };
 
+/// "› Erweitert": a row that opens and closes the rarely needed settings below it.
+/// The toggle runs asynchronously, so it may rebuild the page that owns this row.
+class ExpandRow : public juce::Component {
+public:
+    ExpandRow(juce::String title, bool open, std::function<void()> toggle);
+    void paint(juce::Graphics& g) override;
+    void mouseEnter(const juce::MouseEvent&) override { repaint(); }
+    void mouseExit(const juce::MouseEvent&) override { repaint(); }
+    void mouseUp(const juce::MouseEvent& e) override;
+
+private:
+    juce::String title_;
+    bool open_;
+    std::function<void()> toggle_;
+};
+
+/// A short explanation in grey under a setting, wrapped to the page width.
+class NoteRow : public juce::Component {
+public:
+    explicit NoteRow(juce::String text) : text_(std::move(text)) {}
+    int heightFor(int width) const;
+    void paint(juce::Graphics& g) override;
+
+private:
+    juce::String text_;
+};
+
 /// Label | slider | value. Calls onChange while dragging and onCommit once at the end
 /// (the place to record an undo step).
 class ParamSlider : public juce::Component, public juce::SettableTooltipClient {
@@ -127,6 +154,11 @@ private:
 /// A one-line hint in a plugin's top bar, right-aligned at `rightX`: orange when something
 /// needs fixing, grey for plain information. Draws nothing if it does not fit.
 void drawNoticePill(juce::Graphics& g, float leftLimit, float rightX, float centreY, bool warn, const juce::String& text);
+
+/// The coach bar at the bottom of a view: a numbered badge (or a tick when `ok`), a short
+/// title and one line of text. Used by the room view and the reverb editor.
+void drawCoachBar(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& badge, const juce::String& title,
+                  const juce::String& text, bool ok);
 
 /// Green/orange card with a plain-language verdict ("Sitzt gut").
 class StatusCard : public juce::Component {

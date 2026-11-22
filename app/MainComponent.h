@@ -10,7 +10,8 @@
 #include "Calibration.h"
 
 #include <rk_ui/Pages.h>
-#include <rk_ui/StageView.h>
+#include <rk_ui/ReverbPanel.h>
+#include <rk_ui/RoomView.h>
 #include <rk_ui/Strings.h>
 #include <rk_ui/Visuals.h>
 #include <rk_ui/Widgets.h>
@@ -64,6 +65,7 @@ private:
     void showStage();
     int dawTrackLevelIndex(int track) const;
     void selectSource(int i);
+    void selectRoomPreset(int i);
     void selectSpeaker(int i);
     void addSource();
     void startDemo();
@@ -113,7 +115,8 @@ private:
     std::unique_ptr<juce::TextButton> addBtn_;
     rkui::SidebarList sidebar_;
     juce::Viewport sidebarView_;
-    rkui::StageView stage_;
+    rkui::RoomView stage_;
+    rkui::ReverbPanel reverbPanel_; // replaces the room view in step 3
     rkui::FormPage inspector_;
     std::unique_ptr<IntroOverlay> intro_;
     juce::String deviceError_;
@@ -123,7 +126,6 @@ private:
     int dawPageTrack_ = -1;                       // DAW track the inspector shows, -1 none
     std::vector<rkui::ParamSlider*> dawSliders_;  // owned by inspector_, valid while dawPageTrack_ >= 0
     rkui::StatusCard* dawCard_ = nullptr;
-    rkui::ReverbView* reverbView_ = nullptr; // owned by inspector_, only on the room page
     rkui::SpectrumAnalyzer analyzer_;
     juce::String statusText_;
     std::array<bool, rk::kMaxSources> sourceHasSignal_{};

@@ -218,6 +218,7 @@ MainComponent::MainComponent()
 
     sidebar_.onSelect = [this](int row) {
         if (step_ == StepSpeakers || step_ == StepOutput) selectSpeaker(row);
+        else if (step_ == StepRoom) selectRoomPreset(row);
         else selectSource(row);
     };
     sidebarView_.setViewedComponent(&sidebar_, false);
@@ -225,6 +226,7 @@ MainComponent::MainComponent()
     sidebarView_.setScrollBarThickness(8);
     addAndMakeVisible(sidebarView_);
 
+    stage_.setLegendAtBottom(false);
     stage_.onSourceMoved = [this](int i, rk::Vec3 p) {
         if (i < (int)scene_.sources.size()) {
             scene_.sources[(size_t)i].position = p;
@@ -245,6 +247,16 @@ MainComponent::MainComponent()
     stage_.onSpeakerSelected = [this](int i) { selectSpeaker(i); };
     stage_.onDragEnd = [this] { commit(); rebuildInspector(); };
     addAndMakeVisible(stage_);
+    addChildComponent(reverbPanel_);
+    reverbPanel_.onChange = [this](const rk::ReverbParams& p) {
+        scene_.reverb = p;
+        applyScene(false);
+    };
+    reverbPanel_.onCommit = [this] {
+        commit();
+        rebuildInspector();
+        refreshSidebar();
+    };
     addAndMakeVisible(inspector_);
 
     // Audio: open the device stored last time, otherwise the system default.
@@ -421,7 +433,10 @@ void MainComponent::refreshAll() {
     updateCoach();
     undoBtn_.setEnabled(!undo_.empty());
     redoBtn_.setEnabled(!redo_.empty());
-    addBtn_->setVisible(step_ == StepSources || step_ == StepRoom);
+    addBtn_->setVisible(step_ == StepSources);
+    stage_.setVisible(step_ != StepRoom || calibrating_);
+    reverbPanel_.setVisible(step_ == StepRoom && !calibrating_);
+    reverbPanel_.setParams(scene_.reverb, scene_.reverbWetDb);
     refreshSidebar();
     rebuildInspector();
     resized();
@@ -502,17 +517,14 @@ void MainComponent::buildDawTrackPage(int j) {
     juce::String name = juce::String::fromUTF8(t.name.c_str());
     if (name.isEmpty()) name = tr("Spur") + " " + juce::String(j + 1);
     inspector_.add(std::make_unique<rkui::SectionHeader>(name, tr("Diese Spur kommt über das Plugin „Raumklang Quelle“ aus der DAW. Position und Klang stellst du im Plugin ein, dort lassen sie sich automatisieren.")), 26);
-    dawCard_ = inspector_.add(std::make_unique<rkui::StatusCard>(), 72);
-    if (t.sampleRateMismatch)
+    // Only a problem gets a card. A connected track needs no message, the list shows it playing.
+    if (t.sampleRateMismatch) {
+        dawCard_ = inspector_.add(std::make_unique<rkui::StatusCard>(), 72);
         dawCard_->set(rkui::StatusCard::Kind::Warn, tr("Abtastrate passt nicht"),
                       tr("Die DAW läuft mit") + " " + rkui::num(t.sampleRate / 1000.0, 1) + " kHz, " + tr("die App mit") + " " +
                           rkui::num(host_.sampleRate() / 1000.0, 1) + " kHz. " + tr("Stelle beide gleich ein."));
-    else if (t.sending)
-        dawCard_->set(rkui::StatusCard::Kind::Ok, tr("Verbunden"), (t.channels == 2 ? juce::String("Stereo") : juce::String("Mono")) + u8(" \xc2\xb7 ") +
-                                                                     tr("Routing ist nicht nötig."));
-    else
-        dawCard_->set(rkui::StatusCard::Kind::Info, tr("Wartet auf Wiedergabe"), tr("Sobald die DAW abspielt, ist die Spur hier zu hören."));
-    inspector_.setRowHeight(dawCard_, dawCard_->idealHeight(juce::jmax(200, inspector_.getWidth() - 24)));
+        inspector_.setRowHeight(dawCard_, dawCard_->idealHeight(juce::jmax(200, inspector_.getWidth() - 24)));
+    }
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Position")), 26);
     auto add = [this](const juce::String& label, double lo, double hi, const juce::String& unit, int dec) {
@@ -527,7 +539,7 @@ void MainComponent::buildDawTrackPage(int j) {
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Klang")), 26);
     add(tr("Pegel"), -60, 12, "dB", 1);
     add(tr("Breite"), 0, 100, "%", 0);
-    add(tr("Hallanteil"), -80, 6, "dB", 1);
+    add(tr("Raumanteil"), -80, 6, "dB", 1);
     if (dawSliders_.size() > 2) dawSliders_[2]->setSkewForCentre(5.0);
     refreshDawValues();
     inspector_.addDetails(tr("Ein Plugin „Raumklang Quelle“ pro Spur in der DAW. Steht sein Ziel auf „Automatisch“ oder „An die App“, spielt die App die Spur über ihr Audiogerät, die Spur in der DAW bleibt still.\n\n"
@@ -575,6 +587,30 @@ void MainComponent::refreshSidebar() {
         }
         sidebar_.setRows(rows);
         sidebar_.setSelected(selSpeaker_);
+    } else if (step_ == StepRoom) {
+        // Room types. Any change to a type turns it into "Eigener" (custom).
+        const auto& presets = rkui::roomPresets();
+        const int match = rkui::matchRoomPreset(scene_.reverb, scene_.reverbWetDb);
+        for (int i = 0; i < (int)presets.size(); ++i) {
+            rkui::SidebarList::Row r;
+            r.group = tr("Raumtyp");
+            r.number = i + 1;
+            r.colour = rkui::itemColour(i + 2);
+            r.title = tr(presets[(size_t)i].name);
+            r.subtitle = rkui::num(rkui::reverbBandRt(presets[(size_t)i].params, 1), 1) + " s";
+            rows.push_back(r);
+        }
+        if (match < 0) {
+            rkui::SidebarList::Row r;
+            r.group = tr("Raumtyp");
+            r.number = (int)presets.size() + 1;
+            r.colour = rkui::itemColour((int)presets.size() + 2);
+            r.title = tr("Eigener");
+            r.subtitle = rkui::num(rkui::reverbBandRt(scene_.reverb, 1), 1) + " s";
+            rows.push_back(r);
+        }
+        sidebar_.setRows(rows);
+        sidebar_.setSelected(match >= 0 ? match : (int)presets.size());
     } else {
         for (int i = 0; i < (int)scene_.sources.size(); ++i) {
             const auto& s = scene_.sources[(size_t)i];
@@ -619,6 +655,17 @@ void MainComponent::selectSource(int i) {
     rebuildInspector();
 }
 
+void MainComponent::selectRoomPreset(int i) {
+    const auto& presets = rkui::roomPresets();
+    if (i < 0 || i >= (int)presets.size()) return; // "Eigener" is the current state
+    scene_.reverb = presets[(size_t)i].params;
+    scene_.reverbWetDb = presets[(size_t)i].wetDb;
+    applyScene(false);
+    commit();
+    refreshSidebar();
+    rebuildInspector();
+}
+
 void MainComponent::selectSpeaker(int i) {
     selSpeaker_ = i;
     stage_.setSelectedSpeaker(i);
@@ -641,7 +688,6 @@ void MainComponent::rebuildInspector() {
     dawPageTrack_ = -1;
     dawSliders_.clear();
     dawCard_ = nullptr;
-    reverbView_ = nullptr;
     if (calibrating_) {
         if (phoneMode_) buildPhonePage();
         else buildCalibrationPage();
@@ -655,7 +701,6 @@ void MainComponent::rebuildInspector() {
         break;
     case StepRoom: {
         auto ctx = pageContext();
-        ctx.reverbView = [this](rkui::ReverbView* v) { reverbView_ = v; };
         rkui::buildRoomPage(inspector_, ctx);
         break;
     }
@@ -757,7 +802,7 @@ void MainComponent::buildSourcesPage() {
     addParam(tr("Pegel"), -60, 12, 0.1, "dB", 1, 0, s.gainDb, [](rkui::SourceInfo& x, double v) { x.gainDb = (float)v; });
     addParam(tr("Breite"), 0, 100, 1, "%", 0, 0, s.spread * 100.0, [](rkui::SourceInfo& x, double v) { x.spread = (float)v / 100.0f; })
         ->setTooltip(tr("0 % klingt punktförmig, 100 % verteilt die Quelle auf mehrere Lautsprecher."));
-    auto* send = addParam(tr("Hallanteil"), -80, 6, 0.5, "dB", 1, -80, s.reverbSendDb, [](rkui::SourceInfo& x, double v) { x.reverbSendDb = (float)v; });
+    auto* send = addParam(tr("Raumanteil"), -80, 6, 0.5, "dB", 1, -80, s.reverbSendDb, [](rkui::SourceInfo& x, double v) { x.reverbSendDb = (float)v; });
     send->formatter = [](double v) { return v <= -79.9 ? u8("\xe2\x88\x92\xe2\x88\x9e dB") : rkui::num(v, 1) + " dB"; };
     send->setValue(s.reverbSendDb);
     addParam(tr("Entfernung"), 0, 200, 1, "%", 0, 0, s.distanceAmount * 100.0, [](rkui::SourceInfo& x, double v) { x.distanceAmount = (float)v / 100.0f; })
@@ -912,16 +957,18 @@ void MainComponent::buildOutputPage() {
     const int need = scene_.headphones ? 2 : (int)scene_.layout.speakers.size();
     const juce::String dot = u8(" \xc2\xb7 ");
     auto card = std::make_unique<rkui::StatusCard>();
+    bool problem = true;
     if (deviceError_.isNotEmpty()) card->set(rkui::StatusCard::Kind::Warn, tr("Gerät lässt sich nicht öffnen"), deviceError_);
     else if (outs == 0) card->set(rkui::StatusCard::Kind::Warn, tr("Kein Audiogerät"), tr("Oben ein Gerät wählen."));
-    else if (outs < need) card->set(rkui::StatusCard::Kind::Warn, tr("Zu wenige Ausgänge"),
-                                    juce::String(outs) + " " + tr("von") + " " + juce::String(need) + dot + tr("die übrigen Lautsprecher bleiben stumm"));
-    else card->set(rkui::StatusCard::Kind::Ok, tr("Sitzt gut"),
-                   juce::String(need) + " " + tr("von") + " " + juce::String(outs) + " " + tr("Ausgängen") + dot +
-                       rkui::num(host_.sampleRate() / 1000.0, 1) + " kHz" + dot + "CPU " + juce::String(juce::roundToInt(host_.devices.getCpuUsage() * 100.0)) + " %");
-    card->setProgress(juce::jmin(outs, need), need);
-    const int cardH = card->idealHeight(juce::jmax(200, inspector_.getWidth() - 24));
-    inspector_.add(std::move(card), cardH);
+    else if (outs < need) {
+        card->set(rkui::StatusCard::Kind::Warn, tr("Zu wenige Ausgänge"),
+                  juce::String(outs) + " " + tr("von") + " " + juce::String(need) + dot + tr("die übrigen Lautsprecher bleiben stumm"));
+        card->setProgress(outs, need);
+    } else problem = false;
+    if (problem) {
+        const int cardH = card->idealHeight(juce::jmax(200, inspector_.getWidth() - 24));
+        inspector_.add(std::move(card), cardH);
+    }
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Ausgabe")), 26);
     auto* master = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Gesamtpegel"), -60, 12, 0.1, "dB", 1, 0), 32);
@@ -937,10 +984,12 @@ void MainComponent::buildOutputPage() {
         commit();
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
     };
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Schutz"), tr("Der Schutzbegrenzer sitzt hinter allem anderen, direkt vor jedem Ausgang. Unterhalb der Grenze verändert er nichts.")), 26);
     auto* lim = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Schutzbegrenzer")), 28);
     lim->setToggleState(scene_.limiter, juce::dontSendNotification);
-    lim->setTooltip(tr("Verhindert Übersteuerung und schützt die Lautsprecher. Nur für Messungen ausschalten."));
+    lim->setTooltip(tr("Nur für Messungen ausschalten."));
     lim->onClick = [this, lim] { scene_.limiter = lim->getToggleState(); applyScene(false); commit(); };
+    inspector_.add(std::make_unique<rkui::NoteRow>(tr("Begrenzt jeden Lautsprecher auf einen Höchstpegel. So kann ein falsch eingestellter Regler oder ein Fehler in der DAW keinen Lautsprecher beschädigen.")), 52);
     auto* test = inspector_.add(rkui::makeButton(speakerTestRunning_ ? tr("Test beenden") : tr("Lautsprecher einzeln anspielen"), speakerTestRunning_), 32);
     test->onClick = [this] {
         speakerTestRunning_ = !speakerTestRunning_;
@@ -1139,18 +1188,12 @@ void MainComponent::timerCallback() {
     }
     std::vector<float> spkView(spk.begin(), spk.begin() + juce::jmax(0, scene_.headphones ? 0 : nOut));
     stage_.setSpeakerLevels(spkView);
-    {
-        float sum = 0.0f;
-        for (float v : spkView) sum += v;
-        const float mean = spkView.empty() ? 0.0f : sum / (float)spkView.size();
-        const float wet = scene_.reverbWetDb <= -79.0f ? 0.0f : juce::jlimit(0.0f, 1.0f, (scene_.reverbWetDb + 40.0f) / 40.0f);
-        stage_.setAmbience(juce::jlimit(0.0f, 1.0f, mean * 1.6f) * wet);
-    }
-    if (reverbView_ != nullptr) {
+    if (reverbPanel_.isVisible()) {
+        reverbPanel_.setParams(scene_.reverb, scene_.reverbWetDb);
         std::array<float, rkui::SpectrumAnalyzer::kSize> buf;
         host_.readScope(buf.data(), (int)buf.size());
         analyzer_.process(buf.data(), host_.sampleRate());
-        reverbView_->setBands(analyzer_.bandsDb());
+        reverbPanel_.setBands(analyzer_.bandsDb());
     }
     std::vector<float> srcView(src.begin(), src.begin() + (long)scene_.sources.size());
     for (int j = 0; j < (int)dawTracks_.size(); ++j) {
@@ -1278,6 +1321,7 @@ void MainComponent::resized() {
     sidebar_.setSize(sidebarView_.getMaximumVisibleWidth(), sidebar_.contentHeight());
     inspector_.setBounds(r.removeFromRight(kInspector).reduced(0, 8));
     stage_.setBounds(r);
+    reverbPanel_.setBounds(r);
     if (intro_ != nullptr) intro_->setBounds(getLocalBounds());
 }
 
@@ -1333,7 +1377,10 @@ void MainComponent::updateCoach() {
         if (scene_.sources.empty()) stage_.setCoach("2", tr("Quelle hinzufügen"), tr("Links unten auf „+ Quelle hinzufügen“ klicken."));
         else stage_.setCoach("2", tr("Quellen im Raum platzieren"), tr("Ziehen verschiebt sie, mit ⇧ rastet die Position ein. Mausrad zoomt."));
         break;
-    case StepRoom: stage_.setCoach("3", tr("Raum wählen"), tr("Rechts eine Vorlage wählen. Den Anteil je Quelle regelt der Hallanteil.")); break;
+    case StepRoom:
+        stage_.setCoach({}, {}, {});
+        reverbPanel_.setCoach("3", tr("Raum einstellen"), tr("Raumtyp wählen, dann die Punkte im Bild ziehen."));
+        break;
     default:
         if (outs == 0) stage_.setCoach("4", tr("Audiogerät wählen"), tr("Rechts das Audio-Interface auswählen."));
         else if (!scene_.headphones && outs < nSpk)

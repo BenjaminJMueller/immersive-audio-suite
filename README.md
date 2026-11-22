@@ -81,11 +81,10 @@ Am besten beide Wege zusammen: das iPhone für Position und Ausrichtung, danach 
 
 ## In der DAW
 
-Drei Plugins (VST3, auf dem Mac zusätzlich AU für Logic Pro):
+Zwei Plugins (VST3, auf dem Mac zusätzlich AU für Logic Pro):
 
-- **Raumklang Quelle** kommt auf jede Spur. Läuft die Raumklang-App, erscheint die Spur dort unter *Aus der DAW* und die App spielt sie über ihr Audio-Interface, ganz ohne Routing. Position, Breite, Pegel und Hallanteil sind in der DAW automatisierbar, die App zeigt die Spur mit und übernimmt jede Bewegung. Ohne App gibt das Plugin einen Kanal pro Lautsprecher aus; die Spur braucht dann so viele Kanäle wie das Layout Lautsprecher.
+- **Raumklang Quelle** kommt auf jede Spur. Läuft die Raumklang-App, erscheint die Spur dort unter *Aus der DAW* und die App spielt sie über ihr Audio-Interface, ganz ohne Routing. Position, Breite, Pegel und Raumanteil sind in der DAW automatisierbar, die App zeigt die Spur mit und übernimmt jede Bewegung. Das Plugin zeigt den Raum von oben, von vorne oder in 3D, mit den anderen Spuren blass im Hintergrund. Ohne App gibt das Plugin einen Kanal pro Lautsprecher aus; die Spur braucht dann so viele Kanäle wie das Layout Lautsprecher.
 - **Raumklang Return** (der Rückweg) holt die Lautsprechersignale der App zurück in die DAW, zum Aufnehmen und für Bounces in Echtzeit. In Logic etwa auf einem Aux in 7.1.4 für zwölf Lautsprecher; bei mehr Lautsprechern übernehmen weitere Spuren den Rest.
-- **Raumklang Raum** kommt auf den Summen- bzw. Lautsprecher-Bus, wenn ohne App gearbeitet wird. Hier wird das Layout bearbeitet, dazu Laufzeit und Pegel je Lautsprecher, Kopfhörer-Vorschau, Lautsprechertest und Schutzbegrenzer.
 
 DAW und App müssen mit derselben Abtastrate laufen. Die Plugins sagen es, wenn nicht.
 
@@ -165,7 +164,7 @@ Aufbau:
 | `core/` | Engine ohne Abhängigkeiten: Layouts, Panning, Hall, Kopfhörer-Vorschau, Ausgangsstufe |
 | `shared/` | Oberfläche und Projektdatei, gemeinsam für App und Plugins |
 | `app/` | Standalone-App |
-| `plugins/` | *Raumklang Quelle* und *Raumklang Raum* |
+| `plugins/` | *Raumklang Quelle* und *Raumklang Return* |
 | `tests/` | Unit-, Stress- und Fuzz-Tests der Engine |
 
 ## Lizenz

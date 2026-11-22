@@ -1,4 +1,5 @@
 #include "Pages.h"
+#include "ReverbPanel.h"
 #include "Visuals.h"
 
 #include "Strings.h"
@@ -6,11 +7,13 @@
 namespace rkui {
 namespace {
 
+bool layoutAdvancedOpen = false;
+
 juce::String dbText(double v) { return v <= -79.9 ? juce::String(juce::CharPointer_UTF8("\xe2\x88\x92\xe2\x88\x9e dB")) : num(v, 1) + " dB"; }
 
 } // namespace
 
-void describeLayout(const Scene& s, StatusCard& card) {
+bool describeLayout(const Scene& s, StatusCard& card) {
     const rk::LayoutInfo info = rk::analyze(s.layout);
     auto has = [&info](const char* id) { return std::find(info.hints.begin(), info.hints.end(), id) != info.hints.end(); };
     const juce::String method = juce::String(rk::pannerId(s.effectivePanner())).toUpperCase().replace("AMBISONICS", "Ambisonics");
@@ -19,16 +22,13 @@ void describeLayout(const Scene& s, StatusCard& card) {
     if (info.numActive == 0) {
         card.set(StatusCard::Kind::Warn, tr("Keine Lautsprecher"), tr("Vorlage wählen oder Lautsprecher hinzufügen."));
     } else if (has("single_speaker")) {
-        card.set(StatusCard::Kind::Warn, tr("Bitte prüfen"), tr("Nur ein Lautsprecher, also keine Richtung."));
-    } else if (has("donut_uses_dbap")) {
-        card.set(StatusCard::Kind::Ok, tr("Sitzt gut") + dot + method, counts + ", " + tr("Donut erkannt"));
+        card.set(StatusCard::Kind::Warn, tr("Nur ein Lautsprecher"), tr("Damit gibt es keine Richtung."));
     } else if (has("unequal_distances")) {
-        card.set(StatusCard::Kind::Warn, tr("Bitte prüfen") + dot + method, counts + ", " + tr("Abstände sehr verschieden. „Abstände ausgleichen“ hilft."));
-    } else if (has("listener_not_enclosed")) {
-        card.set(StatusCard::Kind::Info, tr("Sitzt gut") + dot + method, counts + ", " + tr("Hörplatz nicht umschlossen"));
+        card.set(StatusCard::Kind::Warn, tr("Abstände sehr verschieden"), counts + dot + method + dot + tr("„Abstände ausgleichen“ hilft."));
     } else {
-        card.set(StatusCard::Kind::Ok, tr("Sitzt gut") + dot + method, counts + " " + tr("rund um den Hörplatz"));
+        return false;
     }
+    return true;
 }
 
 void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<void(int)> selectSpeaker) {
@@ -99,9 +99,10 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
     }
 
     auto card = std::make_unique<StatusCard>();
-    describeLayout(s, *card);
-    const int cardH = card->idealHeight(juce::jmax(200, page.getWidth() - 24));
-    page.add(std::move(card), cardH);
+    if (describeLayout(s, *card)) {
+        const int cardH = card->idealHeight(juce::jmax(200, page.getWidth() - 24));
+        page.add(std::move(card), cardH);
+    }
 
     if (ctx.calibrate || ctx.importSurvey) {
         page.add(std::make_unique<SectionHeader>(tr("Einmessen"), tr("Mit Mikrofon: Raumklang spielt über jeden Lautsprecher einen kurzen Messton und berechnet daraus Laufzeit, Pegel und, mit mehreren Messpunkten, die genaue Position.\n\nMit dem iPhone: In der App „Raumklang Messen“ jeden Lautsprecher antippen und die Messung hier laden oder auf das Fenster ziehen.")), 26);
@@ -115,34 +116,6 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
             phone->setTooltip(tr("Datei aus der App „Raumklang Messen“ laden. Sie lässt sich auch auf das Fenster ziehen."));
             phone->onClick = ctx.importSurvey;
         }
-    }
-
-    page.add(std::make_unique<SectionHeader>(tr("Verfahren"), tr("VBAP für Lautsprecher rund um den Hörplatz, DBAP für Aufbauten ohne Mitte wie den Donut, Ambisonics für gleichmäßige Kuppeln. „Automatisch“ wählt passend zum Layout.")), 26);
-    auto* method = page.add(std::make_unique<Segmented>(juce::StringArray{tr("Automatisch"), "VBAP", "DBAP", "Ambisonics"}, false), 32);
-    method->setSelected(s.autoPanner ? 0 : 1 + static_cast<int>(s.panner));
-    method->onChange = [ctx](int i) {
-        ctx.scene->autoPanner = i == 0;
-        if (i > 0) ctx.scene->panner = static_cast<rk::PannerKind>(i - 1);
-        ctx.changed(true);
-        ctx.commit();
-        ctx.rebuild();
-    };
-    if (s.effectivePanner() == rk::PannerKind::DBAP) {
-        auto* ro = page.add(std::make_unique<ParamSlider>(tr("Abfall"), 3, 12, 0.5, "dB", 1, 3), 32);
-        ro->setTooltip(tr("Wie stark der Pegel mit doppeltem Abstand abnimmt."));
-        ro->setValue(s.dbapRolloffDb);
-        ro->onChange = [ctx](double v) { ctx.scene->dbapRolloffDb = (float)v; ctx.changed(true); };
-        ro->onCommit = ctx.commit;
-        auto* bl = page.add(std::make_unique<ParamSlider>(tr("Unschärfe"), 0.05, 3, 0.05, "m", 2, 0.05), 32);
-        bl->setTooltip(tr("Verhindert, dass eine Quelle direkt an einem Lautsprecher zu laut wird."));
-        bl->setValue(s.dbapBlur);
-        bl->onChange = [ctx](double v) { ctx.scene->dbapBlur = (float)v; ctx.changed(true); };
-        bl->onCommit = ctx.commit;
-        auto* di = page.add(std::make_unique<ParamSlider>(tr("Richtwirkung"), 0, 100, 1, "%", 0, 0), 32);
-        di->setTooltip(tr("Lautsprecher, die von der Quelle wegzeigen, tragen weniger bei. Wichtig für den Donut."));
-        di->setValue(s.dbapDirectivity * 100.0);
-        di->onChange = [ctx](double v) { ctx.scene->dbapDirectivity = (float)v / 100.0f; ctx.changed(true); };
-        di->onCommit = ctx.commit;
     }
 
     // Selected speaker.
@@ -291,6 +264,40 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         ctx.commit();
         ctx.rebuild();
     };
+    // Rarely needed: the panning method. "Automatisch" picks the right one for the layout.
+    page.add(std::make_unique<ExpandRow>(tr("Erweitert"), layoutAdvancedOpen, [ctx] {
+        layoutAdvancedOpen = !layoutAdvancedOpen;
+        ctx.rebuild();
+    }), 30);
+    if (layoutAdvancedOpen) {
+        page.add(std::make_unique<SectionHeader>(tr("Verfahren"), tr("VBAP für Lautsprecher rund um den Hörplatz, DBAP für Aufbauten ohne Mitte wie den Donut, Ambisonics für gleichmäßige Kuppeln. „Automatisch“ wählt passend zum Layout.")), 26);
+        auto* method = page.add(std::make_unique<Segmented>(juce::StringArray{tr("Automatisch"), "VBAP", "DBAP", "Ambisonics"}, false), 32);
+        method->setSelected(s.autoPanner ? 0 : 1 + static_cast<int>(s.panner));
+        method->onChange = [ctx](int i) {
+            ctx.scene->autoPanner = i == 0;
+            if (i > 0) ctx.scene->panner = static_cast<rk::PannerKind>(i - 1);
+            ctx.changed(true);
+            ctx.commit();
+            ctx.rebuild();
+        };
+        if (s.effectivePanner() == rk::PannerKind::DBAP) {
+            auto* ro = page.add(std::make_unique<ParamSlider>(tr("Abfall"), 3, 12, 0.5, "dB", 1, 3), 32);
+            ro->setTooltip(tr("Wie stark der Pegel mit doppeltem Abstand abnimmt."));
+            ro->setValue(s.dbapRolloffDb);
+            ro->onChange = [ctx](double v) { ctx.scene->dbapRolloffDb = (float)v; ctx.changed(true); };
+            ro->onCommit = ctx.commit;
+            auto* bl = page.add(std::make_unique<ParamSlider>(tr("Unschärfe"), 0.05, 3, 0.05, "m", 2, 0.05), 32);
+            bl->setTooltip(tr("Verhindert, dass eine Quelle direkt an einem Lautsprecher zu laut wird."));
+            bl->setValue(s.dbapBlur);
+            bl->onChange = [ctx](double v) { ctx.scene->dbapBlur = (float)v; ctx.changed(true); };
+            bl->onCommit = ctx.commit;
+            auto* di = page.add(std::make_unique<ParamSlider>(tr("Richtwirkung"), 0, 100, 1, "%", 0, 0), 32);
+            di->setTooltip(tr("Lautsprecher, die von der Quelle wegzeigen, tragen weniger bei. Wichtig für den Donut."));
+            di->setValue(s.dbapDirectivity * 100.0);
+            di->onChange = [ctx](double v) { ctx.scene->dbapDirectivity = (float)v / 100.0f; ctx.changed(true); };
+            di->onCommit = ctx.commit;
+        }
+    }
     page.addDetails(tr("Die Nummer eines Lautsprechers ist sein Ausgang am Audio-Interface. Lautsprecher 1 spielt auf Ausgang 1 und so weiter.\n\n"
                        "Abstand und Azimut zählen vom Hörplatz aus, 0° ist vorne, positive Winkel liegen links.\n\n"
                        "Beim Donut zeigt der Innenring nach außen und der Außenring nach innen. Die Ausrichtung jedes Lautsprechers lässt sich einzeln ändern."));
@@ -299,59 +306,49 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
 void buildRoomPage(FormPage& page, PageContext ctx) {
     page.clear();
     Scene& s = *ctx.scene;
-    auto* view = page.add(std::make_unique<ReverbView>(), 170);
-    view->setTooltip(tr("Farbig: was die Lautsprecher gerade spielen, tief links, hoch rechts. Die Linie zeigt, wie lange der Hall je Tonhöhe nachklingt."));
-    view->setParams(s.reverb, s.reverbWetDb);
-    if (ctx.reverbView) ctx.reverbView(view);
-    ctx.changed = [orig = ctx.changed, view, sc = ctx.scene](bool structural) {
-        if (orig) orig(structural);
-        view->setParams(sc->reverb, sc->reverbWetDb);
+    // Every change also re-reads the values, because the three reverb times depend on each other.
+    auto set = [ctx](std::function<void(Scene&)> f) {
+        return [ctx, f](double) { f(*ctx.scene); ctx.changed(false); };
     };
-    page.add(std::make_unique<SectionHeader>(tr("Raum"), tr("Der Hall kommt aus allen Lautsprechern, jeweils leicht verschieden. Wie viel jede Quelle abgibt, steht unter Quellen beim Hallanteil.")), 26);
-    auto* preset = page.add(std::make_unique<Segmented>(juce::StringArray{tr("Trocken"), tr("Studio"), tr("Saal"), tr("Kirche")}, false), 32);
-    preset->setSelected(s.reverbWetDb <= -79.0f ? 0 : (s.reverb.decaySec < 1.0f ? 1 : (s.reverb.decaySec < 3.0f ? 2 : 3)));
-    preset->onChange = [ctx](int i) {
-        Scene& sc = *ctx.scene;
-        switch (i) {
-        case 0: sc.reverbWetDb = -80.0f; break;
-        case 1: sc.reverb = {0.6f, 9000.0f, 5.0f, 0.5f}; sc.reverbWetDb = -10.0f; break;
-        case 2: sc.reverb = {2.2f, 6000.0f, 20.0f, 1.2f}; sc.reverbWetDb = -6.0f; break;
-        default: sc.reverb = {5.5f, 4000.0f, 35.0f, 2.0f}; sc.reverbWetDb = -4.0f; break;
-        }
-        ctx.changed(false);
-        ctx.commit();
-        ctx.rebuild();
-    };
-    page.add(std::make_unique<SectionHeader>(tr("Hall")), 26);
-    auto* decay = page.add(std::make_unique<ParamSlider>(tr("Nachhallzeit"), 0.2, 12, 0.05, "s", 2, 0.2), 32);
-    decay->setSkewForCentre(2.0);
-    decay->setValue(s.reverb.decaySec);
-    decay->onChange = [ctx](double v) { ctx.scene->reverb.decaySec = (float)v; ctx.changed(false); };
-    decay->onCommit = ctx.commit;
-    auto* size = page.add(std::make_unique<ParamSlider>(tr("Raumgröße"), 30, 200, 1, "%", 0, 30), 32);
-    size->setValue(s.reverb.size * 100.0);
-    size->onChange = [ctx](double v) { ctx.scene->reverb.size = (float)v / 100.0f; ctx.changed(false); };
+
+    page.add(std::make_unique<SectionHeader>(tr("Raum"), tr("Der Hall kommt aus allen Lautsprechern, jeweils leicht verschieden, wie in einem echten Raum. Wie viel jede Quelle davon abgibt, regelt ihr Raumanteil, in der App unter Quellen oder im Plugin.")), 26);
+    auto* size = page.add(std::make_unique<ParamSlider>(tr("Raumgröße"), 0.3, 2.0, 0.01, juce::String(), 0, 0.3), 32);
+    size->formatter = [](double v) { return juce::String(juce::roundToInt(roomVolume((float)v) / 10.0f) * 10) + juce::String::fromUTF8(" m\xc2\xb3"); };
+    size->setValue(s.reverb.size);
+    size->onChange = set([size](Scene& sc) { sc.reverb.size = (float)size->getValue(); });
     size->onCommit = ctx.commit;
-    auto* damp = page.add(std::make_unique<ParamSlider>(tr("Höhendämpfung"), 1000, 20000, 10, "Hz", 0, 20000), 32);
-    damp->setSkewForCentre(5000.0);
-    damp->setValue(s.reverb.dampingHz);
-    damp->formatter = [](double v) { return v >= 1000 ? num(v / 1000.0, 1) + " kHz" : num(v, 0) + " Hz"; };
-    damp->setValue(s.reverb.dampingHz);
-    damp->onChange = [ctx](double v) { ctx.scene->reverb.dampingHz = (float)v; ctx.changed(false); };
-    damp->onCommit = ctx.commit;
     auto* pre = page.add(std::make_unique<ParamSlider>(tr("Vorverzögerung"), 0, 250, 1, "ms", 0, 0), 32);
     pre->setValue(s.reverb.preDelayMs);
-    pre->onChange = [ctx](double v) { ctx.scene->reverb.preDelayMs = (float)v; ctx.changed(false); };
+    pre->onChange = set([pre](Scene& sc) { sc.reverb.preDelayMs = (float)pre->getValue(); });
     pre->onCommit = ctx.commit;
-    auto* wet = page.add(std::make_unique<ParamSlider>(tr("Hallpegel"), -80, 6, 0.5, "dB", 1, -80), 32);
-    wet->setSkewForCentre(-12.0);
-    wet->formatter = dbText;
-    wet->setValue(s.reverbWetDb);
-    wet->onChange = [ctx](double v) { ctx.scene->reverbWetDb = (float)v; ctx.changed(false); };
-    wet->onCommit = ctx.commit;
-    page.addDetails(tr("Nachhallzeit: wie lange der Hall braucht, um um 60 dB abzuklingen.\n\n"
-                       "Höhendämpfung: oberhalb dieser Frequenz klingt der Hall schneller ab, wie in einem Raum mit Vorhängen und Publikum.\n\n"
-                       "Vorverzögerung: Zeit zwischen dem direkten Klang und dem Einsetzen des Halls. Größere Werte lassen den Raum größer wirken."));
+
+    page.add(std::make_unique<SectionHeader>(tr("Nachhallzeit"), tr("Wie lange der Raum nachklingt, bis er um 60 dB leiser ist: Tiefen bei 100 Hz, Mitten bei 1 kHz, Höhen bei 8 kHz. Die Höhen klingen höchstens so lange wie die Mitten. Die Punkte lassen sich auch in der Kurve ziehen.")), 26);
+    const juce::String bandNames[3] = {tr("Tiefen"), tr("Mitten"), tr("Höhen")};
+    for (int b = 0; b < 3; ++b) {
+        auto* sl = page.add(std::make_unique<ParamSlider>(bandNames[b], 0.1, 12, 0.05, "s", 1, 0.1), 32);
+        sl->setSkewForCentre(2.0);
+        sl->setValue(reverbBandRt(s.reverb, b));
+        sl->onChange = set([sl, b](Scene& sc) { setReverbBandRt(sc.reverb, b, (float)sl->getValue()); });
+        sl->onCommit = [ctx] { ctx.commit(); ctx.rebuild(); };
+    }
+
+    page.add(std::make_unique<SectionHeader>(tr("Anteile"), tr("Gesamt regelt den ganzen Hall. Frühe Reflexionen sind die ersten Echos von Wänden und Decke, der Cluster die dichten Reflexionen danach, der Nachhall das lange Ausklingen.")), 26);
+    auto addDb = [&page, &set, ctx](const juce::String& label, float value, std::function<void(Scene&, float)> apply) {
+        auto* sl = page.add(std::make_unique<ParamSlider>(label, -80, 6, 0.5, "dB", 1, -80), 32);
+        sl->setSkewForCentre(-12.0);
+        sl->formatter = dbText;
+        sl->setValue(value);
+        sl->onChange = set([sl, apply](Scene& sc) { apply(sc, (float)sl->getValue()); });
+        sl->onCommit = ctx.commit;
+    };
+    addDb(tr("Gesamt"), s.reverbWetDb, [](Scene& sc, float v) { sc.reverbWetDb = v; });
+    addDb(tr("Frühe Reflexionen"), s.reverb.earlyDb, [](Scene& sc, float v) { sc.reverb.earlyDb = v; });
+    addDb(tr("Cluster"), s.reverb.clusterDb, [](Scene& sc, float v) { sc.reverb.clusterDb = v; });
+    addDb(tr("Nachhall"), s.reverb.tailDb, [](Scene& sc, float v) { sc.reverb.tailDb = v; });
+
+    page.addDetails(tr("Links einen Raumtyp wählen und danach anpassen. Jede Änderung macht daraus einen eigenen Raum.\n\n"
+                       "Raumgröße: Abstand der Wände. Größere Räume haben spätere und weiter auseinanderliegende Reflexionen.\n\n"
+                       "Vorverzögerung: Zeit zwischen dem direkten Klang und den ersten Reflexionen. Größere Werte lassen den Raum größer wirken und halten Sprache verständlich."));
 }
 
 /// Speaker direction as (rotation from "towards the centre", tilt), in degrees.
