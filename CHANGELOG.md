@@ -8,6 +8,11 @@
 - **Raumklang Return**: Raumansicht mit allen Spuren und Pegel je Lautsprecher.
 - **Raumklang Raum entfällt**: Den Raum gibt es nur noch einmal, in der App und im Raumanteil jeder Quelle, wie bei Spat.
 - **Ausgabe**: Der Schutzbegrenzer wird erklärt.
+- **DAW-Spuren in der App bewegen**: Ziehen in der Raumansicht oder die Regler im Schritt Quellen schicken die Position an das Plugin zurück, die DAW nimmt sie als Automation auf.
+- **Szenen**: den ganzen Mix speichern und mit Überblendzeit abrufen, Leiste unter der Raumansicht mit Vorherige, Nächste, Aktualisieren und Neue Szene. Positionen blenden auf dem kürzesten Bogen über.
+- **Seitenleiste wie bei Spat**: M und S direkt in jeder Quellenzeile, unten fest ein Ausgang-Streifen mit Gesamtpegel und Pegelanzeige. Abtastrate und Latenz stehen unter dem Projektnamen.
+- **Kopfhörer**: Das Kopfmodell bekommt Ohrmuschel-Echos und eine Höhenabsenkung von hinten, damit vorne, hinten, oben und unten unterscheidbar werden. Neuer Modus *Binaural*: die Quellen erklingen frei um den Kopf, unabhängig von den Lautsprechern.
+- **Abstrahlung**: Bündelung und Ausrichtung je Quelle. Abgewandt klingt eine gerichtete Quelle leiser und dumpfer, der Raumanteil bleibt. Dazu ein Doppler-Effekt für bewegte Quellen.
 - **Einmessen mit Mikrofon**: Gleitton über jeden Lautsprecher, Laufzeit und Pegel angleichen, mit 4 bis 12 Messpunkten auch die Positionen (Multilateration, Verzögerung des Interfaces wird herausgerechnet). Hinweis auf vertauschte Kabel, Vorschau mit gestrichelter alter Position, Rückgängig.
 - **iPhone-App „Raumklang Messen“**: Lautsprecher mit LiDAR antippen, Position und Ausrichtung als Datei an Raumklang. Laden oder auf das Fenster ziehen.
 - **Testraum**: `RAUMKLANG_TESTRAUM=1` startet die App mit einem simulierten Raum und Mikrofon, zum Ausprobieren ohne Aufbau.

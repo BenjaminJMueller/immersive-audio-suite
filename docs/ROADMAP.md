@@ -38,7 +38,7 @@ Was SpatGRIS kann und Raumklang noch fehlt:
 - Mehrere Räume / Hall-Zonen, Frühreflexionen abhängig von der Quellposition
 
 - Entzerrung (EQ) je Lautsprecher beim Einmessen. Position, Laufzeit und Pegel werden schon gemessen (Mikrofon oder iPhone).
-- Szenen und Übergänge für Theater und Installationen
+- Szenen und Übergänge für Theater und Installationen (Grundlage erledigt: Szenen mit Überblendzeit)
 - Bass-Management mit mehreren Subwoofern
 
 ## Phase 5 · Veröffentlichung (1.0)

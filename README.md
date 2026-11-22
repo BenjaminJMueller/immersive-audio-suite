@@ -48,7 +48,9 @@ Daraus ergaben sich die Anforderungen an dieses Werkzeug:
 1. **Lautsprecher.** Vorlage wählen (Stereo, Quadrofonie, 5.1, 7.1.4, Ring, Kuppel, Würfel, Donut) oder Lautsprecher frei setzen und ziehen. Raumklang prüft das Layout und sagt in Klartext, ob es passt und welches Verfahren es nimmt. *Abstände ausgleichen* gleicht Laufzeit und Pegel an, wenn Lautsprecher unterschiedlich weit weg stehen.
 2. **Quellen.** Jede Quelle ist ein Eingang des Audio-Interfaces oder ein eingebautes Testsignal (rosa Rauschen, Sinuston, Klicks). Quellen werden in der Draufsicht gezogen oder über Azimut, Elevation und Abstand gesetzt, dazu Pegel, Breite, Hallanteil und Entfernungswirkung. *Kreisen* bewegt eine Quelle von selbst um den Hörplatz.
 3. **Raum.** Hall mit Vorlagen (Trocken, Studio, Saal, Kirche) und Reglern für Nachhallzeit, Raumgröße, Höhendämpfung und Vorverzögerung.
-4. **Ausgabe.** Audiogerät, Abtastrate und Puffer wählen. Gesamtpegel, Schutzbegrenzer, Kopfhörer-Vorschau und *Lautsprecher einzeln anspielen* zum Prüfen der Verkabelung.
+4. **Ausgabe.** Audiogerät, Abtastrate und Puffer wählen. Gesamtpegel, Schutzbegrenzer und *Lautsprecher einzeln anspielen* zum Prüfen der Verkabelung. Unter *Hören über* gibt es neben den Lautsprechern zwei Kopfhörer-Arten: *Kopfhörer* spielt die eigene Lautsprecher-Anlage im Kopfhörer, *Binaural* stellt die Quellen frei um den Kopf, unabhängig von den Lautsprechern.
+
+Unter der Raumansicht liegt die Leiste *Szenen*: Sie speichert den ganzen Mix und ruft ihn mit Überblendzeit wieder ab, mit Pfeilen für die vorherige und nächste Szene. Jede Quelle hat in der Seitenleiste M (stumm) und S (solo), unten steht fest der Ausgang mit Gesamtpegel und Pegelanzeige.
 
 <p>
   <img src="docs/screenshots/02-quellen.png" width="49%" alt="Quellen">
@@ -100,7 +102,9 @@ Das Lautsprecher-Setup teilen sich App und Plugins über eine Datei im Benutzero
 
 **Hall.** Feedback Delay Network mit 16 Leitungen, Hadamard-Rückkopplung, Eingangsdiffusion und frequenzabhängiger Dämpfung. Jeder Lautsprecher bekommt eine eigene, dekorrelierte Mischung.
 
-**Kopfhörer-Vorschau.** Kugelkopfmodell nach Brown und Duda: Laufzeitunterschied und Kopfschatten je Lautsprecher, ohne gemessene HRTF-Daten.
+**Kopfhörer.** Strukturmodell nach Brown und Duda: Laufzeitunterschied, Kopfschatten und Ohrmuschel-Echos, die von Richtung und Höhe abhängen, dazu eine sanfte Höhenabsenkung von hinten. Ohne gemessene HRTF-Daten. Im Modus *Binaural* laufen die Quellen über 19 virtuelle Richtungen um den Kopf.
+
+**Abstrahlung.** Jede Quelle hat eine Bündelung und eine Ausrichtung. Abgewandt wird der Direktschall leiser (bis 12 dB) und dumpfer, der Raumanteil bleibt. Der Doppler-Effekt verzögert eine Quelle um ihren Abstand, so ändert Bewegung die Tonhöhe.
 
 **Stabilität.** Der Audio-Thread reserviert keinen Speicher, sperrt nichts und wartet auf nichts. Layoutwechsel werden außerhalb des Audio-Threads vorbereitet und mit kurzer Blende übernommen. Alle Eingaben (auch NaN und Unendlich aus fehlerhaften Plugins) werden abgefangen, ein Schutzbegrenzer hält jeden Ausgang unter −0,1 dBFS. Projektdateien werden atomar geschrieben und beim Laden vollständig geprüft.
 
@@ -133,7 +137,7 @@ Bekannte Grenzen:
 - Noch nicht an echten Mehrkanal-Aufbauten erprobt, nur in Tests und Simulation.
 - Die Plugins rechnen in der DAW. DAWs ohne Mehrkanal-Spuren (z. B. Ableton Live, Logic außerhalb von Surround) können die Lautsprecherkanäle nicht weiterreichen. Eine direkte Verbindung vom Plugin zur App steht auf der [Roadmap](docs/ROADMAP.md).
 - Bei Layoutwechseln während der Wiedergabe gibt es eine kurze Blende (20 ms). Beim Ziehen von Lautsprechern während der Wiedergabe ist das hörbar.
-- Kopfhörer-Vorschau ohne individuelle HRTF, Elevation wird kaum abgebildet.
+- Kopfhörer ohne individuelle HRTF: Vorne, hinten und Höhe sind über ein Modell angedeutet, nicht gemessen.
 - Keine OSC-Fernsteuerung, keine Ambisonics-Eingänge, keine Entzerrung (EQ) beim Einmessen (siehe Roadmap).
 - Das Einmessen mit Mikrofon misst Position, Laufzeit und Pegel, nicht die Ausrichtung. Die Genauigkeit hängt von Zahl und Abstand der Messpunkte ab. In der Simulation eines Rings mit 3 m Radius liegen 8 Messpunkte im Mittel 4 cm daneben, höchstens etwa 15 cm, mit 5 Punkten etwa doppelt so viel. Ein gemessener Abstand (Zollstock, Laser) macht es genauer. Raumklang zeigt die Genauigkeit je Lautsprecher an. Die iPhone-App ist noch nicht auf einem echten Gerät erprobt.
 - Mac-App und Plugins sind nicht von Apple signiert. Beim ersten Start *Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen*, oder im Terminal `xattr -dr com.apple.quarantine "/Applications/Raumklang.app"`. Unter Windows bei SmartScreen *Weitere Informationen → Trotzdem ausführen*.
