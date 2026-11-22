@@ -233,7 +233,7 @@ MainComponent::MainComponent()
         if (row == selSource_) rebuildInspector();
     };
     addAndMakeVisible(outputStrip_);
-    outputStrip_.setTooltip(tr("Gesamtpegel aller Ausgänge. Doppelklick setzt auf 0 dB."));
+    outputStrip_.setTooltip(tr("Master-Pegel aller Ausgänge. Doppelklick setzt auf 0 dB."));
     outputStrip_.onChange = [this](float db) {
         scene_.masterGainDb = db;
         applyScene(false);
@@ -598,7 +598,7 @@ void MainComponent::buildDawTrackPage(int j) {
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Klang")), 26);
     add(tr("Pegel"), -60, 12, "dB", 1);
     add(tr("Breite"), 0, 100, "%", 0);
-    add(tr("Raumanteil"), -80, 6, "dB", 1);
+    add(tr("Hall-Send"), -80, 6, "dB", 1);
     if (dawSliders_.size() > 2) dawSliders_[2]->setSkewForCentre(5.0);
     refreshDawValues();
     inspector_.addDetails(tr("Ein Plugin „Raumklang Quelle“ pro Spur in der DAW. Steht sein Ziel auf „Automatisch“ oder „An die App“, spielt die App die Spur über ihr Audiogerät, die Spur in der DAW bleibt still.\n\n"
@@ -994,20 +994,20 @@ void MainComponent::buildSourcesPage() {
     addParam(tr("Pegel"), -60, 12, 0.1, "dB", 1, 0, s.gainDb, [](rkui::SourceInfo& x, double v) { x.gainDb = (float)v; });
     addParam(tr("Breite"), 0, 100, 1, "%", 0, 0, s.spread * 100.0, [](rkui::SourceInfo& x, double v) { x.spread = (float)v / 100.0f; })
         ->setTooltip(tr("0 % klingt punktförmig, 100 % verteilt die Quelle auf mehrere Lautsprecher."));
-    auto* send = addParam(tr("Raumanteil"), -80, 6, 0.5, "dB", 1, -80, s.reverbSendDb, [](rkui::SourceInfo& x, double v) { x.reverbSendDb = (float)v; });
+    auto* send = addParam(tr("Hall-Send"), -80, 6, 0.5, "dB", 1, -80, s.reverbSendDb, [](rkui::SourceInfo& x, double v) { x.reverbSendDb = (float)v; });
     send->formatter = [](double v) { return v <= -79.9 ? u8("\xe2\x88\x92\xe2\x88\x9e dB") : rkui::num(v, 1) + " dB"; };
     send->setValue(s.reverbSendDb);
-    addParam(tr("Entfernung"), 0, 200, 1, "%", 0, 0, s.distanceAmount * 100.0, [](rkui::SourceInfo& x, double v) { x.distanceAmount = (float)v / 100.0f; })
+    addParam(tr("Distanzeffekt"), 0, 200, 1, "%", 0, 0, s.distanceAmount * 100.0, [](rkui::SourceInfo& x, double v) { x.distanceAmount = (float)v / 100.0f; })
         ->setTooltip(tr("Wie stark Abstand hörbar wird: leiser, dumpfer und später. 0 % schaltet das aus."));
 
-    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Abstrahlung"), tr("Ein Sänger klingt von vorne hell und direkt, von hinten leiser und dumpfer. Der Raumanteil bleibt dabei gleich.")), 26);
-    auto* bundle = addParam(tr("Bündelung"), 0, 100, 1, "%", 0, 0, s.directivity * 100.0, [](rkui::SourceInfo& x, double v) { x.directivity = (float)v / 100.0f; });
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Abstrahlverhalten"), tr("Ein Sänger klingt von vorne hell und direkt, von hinten leiser und dumpfer. Der Hall-Send bleibt dabei gleich.")), 26);
+    auto* bundle = addParam(tr("Richtwirkung"), 0, 100, 1, "%", 0, 0, s.directivity * 100.0, [](rkui::SourceInfo& x, double v) { x.directivity = (float)v / 100.0f; });
     bundle->setTooltip(tr("0 % strahlt in alle Richtungen gleich, 100 % stark nach vorne gerichtet."));
     auto* yaw = addParam(tr("Ausrichtung"), -180, 180, 1, degree(), 0, 0, s.yawDeg, [](rkui::SourceInfo& x, double v) { x.yawDeg = (float)v; });
-    yaw->setTooltip(tr("0° schaut zum Hörplatz, 180° abgewandt. Wirkt nur mit Bündelung."));
+    yaw->setTooltip(tr("0° schaut zum Hörplatz, 180° abgewandt. Wirkt nur mit Richtwirkung."));
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Bewegung")), 26);
-    auto* motion = inspector_.add(std::make_unique<rkui::Segmented>(juce::StringArray{tr("Aus"), tr("Kreisen")}, false), 32);
+    auto* motion = inspector_.add(std::make_unique<rkui::Segmented>(juce::StringArray{tr("Aus"), tr("Kreisbahn")}, false), 32);
     motion->setSelected(s.orbit ? 1 : 0);
     motion->onChange = [this, i](int m) {
         if (i >= (int)scene_.sources.size()) return;
@@ -1057,8 +1057,8 @@ void MainComponent::buildSourcesPage() {
         commit();
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
     };
-    inspector_.addDetails(tr("Pegel, Breite und Hallanteil lassen sich mit einem Doppelklick auf den Regler zurücksetzen, ein Doppelklick auf den Wert erlaubt die Eingabe von Zahlen.\n\n"
-                             "„Kreisen“ bewegt die Quelle von selbst um den Hörplatz, gut zum Prüfen eines Aufbaus.\n\n"
+    inspector_.addDetails(tr("Pegel, Breite und Hall-Send lassen sich mit einem Doppelklick auf den Regler zurücksetzen, ein Doppelklick auf den Wert erlaubt die Eingabe von Zahlen.\n\n"
+                             "„Kreisbahn“ bewegt die Quelle von selbst um den Hörplatz, gut zum Prüfen eines Aufbaus.\n\n"
                              "Aus der DAW kommen Spuren über das Plugin „Raumklang Quelle“ dazu, ohne zusätzliche Programme für das Routing."));
 }
 
@@ -1178,7 +1178,7 @@ void MainComponent::buildOutputPage() {
     }
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Ausgabe")), 26);
-    auto* master = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Gesamtpegel"), -60, 12, 0.1, "dB", 1, 0), 32);
+    auto* master = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Master-Pegel"), -60, 12, 0.1, "dB", 1, 0), 32);
     master->setValue(scene_.masterGainDb);
     master->onChange = [this](double v) { scene_.masterGainDb = (float)v; applyScene(false); };
     master->onCommit = [this] { commit(); };
@@ -1196,8 +1196,8 @@ void MainComponent::buildOutputPage() {
                               : scene_.binaural ? tr("Die Quellen erklingen frei um den Kopf, unabhängig von den Lautsprechern. Zum Mischen für Kopfhörer.")
                                                 : tr("Die Lautsprecher-Anlage im Kopfhörer: jeder Lautsprecher klingt aus seiner Richtung. Zum Vorbereiten ohne Lautsprecher.");
     inspector_.add(std::make_unique<rkui::NoteRow>(hpNote), 52);
-    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Schutz"), tr("Der Schutzbegrenzer sitzt hinter allem anderen, direkt vor jedem Ausgang. Unterhalb der Grenze verändert er nichts.")), 26);
-    auto* lim = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Schutzbegrenzer")), 28);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Schutz"), tr("Der Limiter sitzt hinter allem anderen, direkt vor jedem Ausgang. Unterhalb des Thresholds verändert er nichts.")), 26);
+    auto* lim = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Limiter")), 28);
     lim->setToggleState(scene_.limiter, juce::dontSendNotification);
     lim->setTooltip(tr("Nur für Messungen ausschalten."));
     lim->onClick = [this, lim] { scene_.limiter = lim->getToggleState(); applyScene(false); commit(); };
@@ -1376,7 +1376,7 @@ void MainComponent::timerCallback() {
         }
     }
 
-    // Moving sources ("Kreisen").
+    // Moving sources ("Kreisbahn").
     const double dt = lastOrbitTime_ > 0.0 ? juce::jlimit(0.0, 0.2, (now - lastOrbitTime_) * 0.001) : 0.0;
     lastOrbitTime_ = now;
     bool moved = false;

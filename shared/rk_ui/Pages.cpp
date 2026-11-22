@@ -24,7 +24,7 @@ bool describeLayout(const Scene& s, StatusCard& card) {
     } else if (has("single_speaker")) {
         card.set(StatusCard::Kind::Warn, tr("Nur ein Lautsprecher"), tr("Damit gibt es keine Richtung."));
     } else if (has("unequal_distances")) {
-        card.set(StatusCard::Kind::Warn, tr("Abstände sehr verschieden"), counts + dot + method + dot + tr("„Abstände ausgleichen“ hilft."));
+        card.set(StatusCard::Kind::Warn, tr("Abstände sehr verschieden"), counts + dot + method + dot + tr("„Laufzeit und Pegel ausgleichen“ hilft."));
     } else {
         return false;
     }
@@ -255,7 +255,7 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         ctx.commit();
         selectSpeaker((int)v.size() - 1);
     };
-    auto* align = page.add(makeButton(tr("Abstände ausgleichen")), 32);
+    auto* align = page.add(makeButton(tr("Laufzeit und Pegel ausgleichen")), 32);
     // Order matters: buttons fill a row from the right, so the main action ends up rightmost.
     align->setTooltip(tr("Gleicht Laufzeit und Pegel aus, als stünden alle Lautsprecher so weit weg wie der fernste."));
     align->onClick = [ctx] {
@@ -281,12 +281,12 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
             ctx.rebuild();
         };
         if (s.effectivePanner() == rk::PannerKind::DBAP) {
-            auto* ro = page.add(std::make_unique<ParamSlider>(tr("Abfall"), 3, 12, 0.5, "dB", 1, 3), 32);
+            auto* ro = page.add(std::make_unique<ParamSlider>(tr("Rolloff"), 3, 12, 0.5, "dB", 1, 3), 32);
             ro->setTooltip(tr("Wie stark der Pegel mit doppeltem Abstand abnimmt."));
             ro->setValue(s.dbapRolloffDb);
             ro->onChange = [ctx](double v) { ctx.scene->dbapRolloffDb = (float)v; ctx.changed(true); };
             ro->onCommit = ctx.commit;
-            auto* bl = page.add(std::make_unique<ParamSlider>(tr("Unschärfe"), 0.05, 3, 0.05, "m", 2, 0.05), 32);
+            auto* bl = page.add(std::make_unique<ParamSlider>(tr("Spatial Blur"), 0.05, 3, 0.05, "m", 2, 0.05), 32);
             bl->setTooltip(tr("Verhindert, dass eine Quelle direkt an einem Lautsprecher zu laut wird."));
             bl->setValue(s.dbapBlur);
             bl->onChange = [ctx](double v) { ctx.scene->dbapBlur = (float)v; ctx.changed(true); };
@@ -311,13 +311,13 @@ void buildRoomPage(FormPage& page, PageContext ctx) {
         return [ctx, f](double) { f(*ctx.scene); ctx.changed(false); };
     };
 
-    page.add(std::make_unique<SectionHeader>(tr("Raum"), tr("Der Hall kommt aus allen Lautsprechern, jeweils leicht verschieden, wie in einem echten Raum. Wie viel jede Quelle davon abgibt, regelt ihr Raumanteil, in der App unter Quellen oder im Plugin.")), 26);
+    page.add(std::make_unique<SectionHeader>(tr("Raum"), tr("Der Hall kommt aus allen Lautsprechern, jeweils leicht verschieden, wie in einem echten Raum. Wie viel jede Quelle davon abgibt, regelt ihr Hall-Send, in der App unter Quellen oder im Plugin.")), 26);
     auto* size = page.add(std::make_unique<ParamSlider>(tr("Raumgröße"), 0.3, 2.0, 0.01, juce::String(), 0, 0.3), 32);
     size->formatter = [](double v) { return juce::String(juce::roundToInt(roomVolume((float)v) / 10.0f) * 10) + juce::String::fromUTF8(" m\xc2\xb3"); };
     size->setValue(s.reverb.size);
     size->onChange = set([size](Scene& sc) { sc.reverb.size = (float)size->getValue(); });
     size->onCommit = ctx.commit;
-    auto* pre = page.add(std::make_unique<ParamSlider>(tr("Vorverzögerung"), 0, 250, 1, "ms", 0, 0), 32);
+    auto* pre = page.add(std::make_unique<ParamSlider>(tr("Pre-Delay"), 0, 250, 1, "ms", 0, 0), 32);
     pre->setValue(s.reverb.preDelayMs);
     pre->onChange = set([pre](Scene& sc) { sc.reverb.preDelayMs = (float)pre->getValue(); });
     pre->onCommit = ctx.commit;
@@ -348,7 +348,7 @@ void buildRoomPage(FormPage& page, PageContext ctx) {
 
     page.addDetails(tr("Links einen Raumtyp wählen und danach anpassen. Jede Änderung macht daraus einen eigenen Raum.\n\n"
                        "Raumgröße: Abstand der Wände. Größere Räume haben spätere und weiter auseinanderliegende Reflexionen.\n\n"
-                       "Vorverzögerung: Zeit zwischen dem direkten Klang und den ersten Reflexionen. Größere Werte lassen den Raum größer wirken und halten Sprache verständlich."));
+                       "Pre-Delay: Zeit zwischen dem direkten Klang und den ersten Reflexionen. Größere Werte lassen den Raum größer wirken und halten Sprache verständlich."));
 }
 
 /// Speaker direction as (rotation from "towards the centre", tilt), in degrees.

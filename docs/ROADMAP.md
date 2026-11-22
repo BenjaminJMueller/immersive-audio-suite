@@ -4,7 +4,7 @@ Stabilität geht vor neuen Funktionen. Jede Phase wird erst abgeschlossen, wenn 
 
 ## Phase 1 · Grundlage (0.1, erledigt)
 
-- Engine ohne Abhängigkeiten: VBAP 2D/3D, DBAP mit Richtwirkung (Donut), Ambisonics 3. Ordnung, FDN-Hall, Kopfhörer-Vorschau, Schutzbegrenzer
+- Engine ohne Abhängigkeiten: VBAP 2D/3D, DBAP mit Richtwirkung (Donut), Ambisonics 3. Ordnung, FDN-Hall, Kopfhörer-Vorschau, Limiter
 - Standalone-App mit vier Schritten (Lautsprecher, Quellen, Raum, Ausgabe), Einführung mit Demo, Rückgängig, automatisches Sichern
 - Plugins *Raumklang Quelle* und *Raumklang Return* (VST3, AU, Standalone) mit gemeinsamem Lautsprecher-Setup
 - Tests: Unit, Echtzeit-Sicherheit (keine Speicherreservierung im Audio-Thread), Stress, Fuzzing, ASan/UBSan/TSan, Plugin-Host-Stresstest, pluginval
@@ -31,7 +31,7 @@ Was SpatGRIS kann und Raumklang noch fehlt:
 - Kopfhörer-Vorschau mit gemessenen HRTF (SOFA-Dateien)
 - bis 256 Lautsprecher und Quellen
 - Ambisonics-Eingänge (1. bis 3. Ordnung) und Ambisonics-Ausgang bzw. -Aufnahme
-- Bahnen für Quellen (Kreis, Ellipse, Spirale, Pendel, Zufall) zusätzlich zu *Kreisen*
+- Bahnen für Quellen (Kreis, Ellipse, Spirale, Pendel, Zufall) zusätzlich zu *Kreisbahn*
 
 ## Phase 4 · Aufbau vor Ort (0.4)
 

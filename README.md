@@ -2,7 +2,7 @@
 
 Deutsch · [English](README.en.md)
 
-Raumklang ist ein freies Werkzeug für räumlichen Klang auf macOS und Windows. Es verteilt Klangquellen frei im Raum auf beliebig viele Lautsprecher, vom Stereopaar über Ring, Kuppel und 7.1.4 bis zum *Donut*, bei dem sich zwei Lautsprecherringe gegenüberstehen. Dazu gibt es Hall, eine Kopfhörer-Vorschau und drei Plugins für die DAW. Ein Audio-Interface genügt: Die App spricht es direkt an, zusätzliche Programme für das Routing sind nicht nötig.
+Raumklang ist ein freies Werkzeug für räumlichen Klang auf macOS und Windows. Es verteilt Klangquellen frei im Raum auf beliebig viele Lautsprecher, vom Stereopaar über Ring, Kuppel und 7.1.4 bis zum *Donut*, bei dem sich zwei Lautsprecherringe gegenüberstehen. Dazu gibt es Hall, Kopfhörer-Wiedergabe (binaural) und drei Plugins für die DAW. Ein Audio-Interface genügt: Die App spricht es direkt an, zusätzliche Programme für das Routing sind nicht nötig.
 
 ![Lautsprecher](docs/screenshots/01-lautsprecher.png)
 
@@ -39,25 +39,25 @@ Daraus ergaben sich die Anforderungen an dieses Werkzeug:
 - stabil: kein Absturz im Betrieb, auch nicht bei unsinnigen Eingaben, fehlerhaften Plugins oder Gerätewechseln, mit automatischen Tests auf allen Systemen
 - keine Zusatzprogramme: die App spricht das Audio-Interface direkt an, die Plugins arbeiten in der DAW
 - flexible Lautsprecher-Aufbauten bis zum Donut, mit einer verständlichen Rückmeldung, ob das Layout passt
-- Hall und Kopfhörer-Vorschau an einem Ort, damit auch ohne Lautsprecher gearbeitet werden kann
+- Hall und Kopfhörer-Wiedergabe an einem Ort, damit auch ohne Lautsprecher gearbeitet werden kann
 - lauffähig auf einem normalen Rechner unter macOS und Windows, verständlich auch für Studierende ohne Vorerfahrung
 - frei und quelloffen, ohne Lizenzkosten
 
 ## Arbeitsablauf
 
-1. **Lautsprecher.** Vorlage wählen (Stereo, Quadrofonie, 5.1, 7.1.4, Ring, Kuppel, Würfel, Donut) oder Lautsprecher frei setzen und ziehen. Raumklang prüft das Layout und sagt in Klartext, ob es passt und welches Verfahren es nimmt. *Abstände ausgleichen* gleicht Laufzeit und Pegel an, wenn Lautsprecher unterschiedlich weit weg stehen.
-2. **Quellen.** Jede Quelle ist ein Eingang des Audio-Interfaces oder ein eingebautes Testsignal (rosa Rauschen, Sinuston, Klicks). Quellen werden in der Draufsicht gezogen oder über Azimut, Elevation und Abstand gesetzt, dazu Pegel, Breite, Hallanteil und Entfernungswirkung. *Kreisen* bewegt eine Quelle von selbst um den Hörplatz.
-3. **Raum.** Hall mit Vorlagen (Trocken, Studio, Saal, Kirche) und Reglern für Nachhallzeit, Raumgröße, Höhendämpfung und Vorverzögerung.
-4. **Ausgabe.** Audiogerät, Abtastrate und Puffer wählen. Gesamtpegel, Schutzbegrenzer und *Lautsprecher einzeln anspielen* zum Prüfen der Verkabelung. Unter *Hören über* gibt es neben den Lautsprechern zwei Kopfhörer-Arten: *Kopfhörer* spielt die eigene Lautsprecher-Anlage im Kopfhörer, *Binaural* stellt die Quellen frei um den Kopf, unabhängig von den Lautsprechern.
+1. **Lautsprecher.** Vorlage wählen (Stereo, Quadrofonie, 5.1, 7.1.4, Ring, Kuppel, Würfel, Donut) oder Lautsprecher frei setzen und ziehen. Raumklang prüft das Layout und sagt in Klartext, ob es passt und welches Verfahren es nimmt. *Laufzeit und Pegel ausgleichen* gleicht Laufzeit und Pegel an, wenn Lautsprecher unterschiedlich weit weg stehen.
+2. **Quellen.** Jede Quelle ist ein Eingang des Audio-Interfaces oder ein eingebautes Testsignal (rosa Rauschen, Sinuston, Klicks). Quellen werden in der Draufsicht gezogen oder über Azimut, Elevation und Abstand gesetzt, dazu Pegel, Breite, Hall-Send und Distanzeffekt. *Kreisbahn* bewegt eine Quelle von selbst um den Hörplatz.
+3. **Raum.** Hall mit Vorlagen (Trocken, Studio, Saal, Kirche) und Reglern für Nachhallzeit, Raumgröße, Höhendämpfung und Pre-Delay.
+4. **Ausgabe.** Audiogerät, Abtastrate und Puffer wählen. Master-Pegel, Limiter und *Lautsprecher einzeln anspielen* zum Prüfen der Verkabelung. Unter *Hören über* gibt es neben den Lautsprechern zwei Kopfhörer-Arten: *Kopfhörer* spielt die eigene Lautsprecher-Anlage im Kopfhörer, *Binaural* stellt die Quellen frei um den Kopf, unabhängig von den Lautsprechern.
 
-Unter der Raumansicht liegt die Leiste *Szenen*: Sie speichert den ganzen Mix und ruft ihn mit Überblendzeit wieder ab, mit Pfeilen für die vorherige und nächste Szene. Jede Quelle hat in der Seitenleiste M (stumm) und S (solo), unten steht fest der Ausgang mit Gesamtpegel und Pegelanzeige.
+Unter der Raumansicht liegt die Leiste *Szenen*: Sie speichert den ganzen Mix und ruft ihn mit Überblendzeit wieder ab, mit Pfeilen für die vorherige und nächste Szene. Jede Quelle hat in der Seitenleiste M (stumm) und S (solo), unten steht fest der Master mit Master-Pegel und Pegelanzeige.
 
 <p>
   <img src="docs/screenshots/02-quellen.png" width="49%" alt="Quellen">
   <img src="docs/screenshots/03-raum.png" width="49%" alt="Raum">
 </p>
 
-Projekte werden automatisch gesichert, alle Schritte lassen sich rückgängig machen (⌘Z / Strg+Z). Beim ersten Start bietet eine Einführung an, mit einer Demo zu beginnen. Hat das Audiogerät weniger Ausgänge als das Layout Lautsprecher, schaltet die Demo von selbst die Kopfhörer-Vorschau ein. Die Oberfläche ist auf Deutsch, Englisch lässt sich unter *Hilfe* (?) umstellen.
+Projekte werden automatisch gesichert, alle Schritte lassen sich rückgängig machen (⌘Z / Strg+Z). Beim ersten Start bietet eine Einführung an, mit einer Demo zu beginnen. Hat das Audiogerät weniger Ausgänge als das Layout Lautsprecher, schaltet die Demo von selbst die Kopfhörer-Wiedergabe ein. Die Oberfläche ist auf Deutsch, Englisch lässt sich unter *Hilfe* (?) umstellen.
 
 ## Lautsprecher einmessen
 
@@ -85,7 +85,7 @@ Am besten beide Wege zusammen: das iPhone für Position und Ausrichtung, danach 
 
 Zwei Plugins (VST3, auf dem Mac zusätzlich AU für Logic Pro):
 
-- **Raumklang Quelle** kommt auf jede Spur. Läuft die Raumklang-App, erscheint die Spur dort unter *Aus der DAW* und die App spielt sie über ihr Audio-Interface, ganz ohne Routing. Position, Breite, Pegel und Raumanteil sind in der DAW automatisierbar, die App zeigt die Spur mit und übernimmt jede Bewegung. Das Plugin zeigt den Raum von oben, von vorne oder in 3D, mit den anderen Spuren blass im Hintergrund. Ohne App gibt das Plugin einen Kanal pro Lautsprecher aus; die Spur braucht dann so viele Kanäle wie das Layout Lautsprecher.
+- **Raumklang Quelle** kommt auf jede Spur. Läuft die Raumklang-App, erscheint die Spur dort unter *Aus der DAW* und die App spielt sie über ihr Audio-Interface, ganz ohne Routing. Position, Breite, Pegel und Hall-Send sind in der DAW automatisierbar, die App zeigt die Spur mit und übernimmt jede Bewegung. Das Plugin zeigt den Raum von oben, von vorne oder in 3D, mit den anderen Spuren blass im Hintergrund. Ohne App gibt das Plugin einen Kanal pro Lautsprecher aus; die Spur braucht dann so viele Kanäle wie das Layout Lautsprecher.
 - **Raumklang Return** (der Rückweg) holt die Lautsprechersignale der App zurück in die DAW, zum Aufnehmen und für Bounces in Echtzeit. In Logic etwa auf einem Aux in 7.1.4 für zwölf Lautsprecher; bei mehr Lautsprechern übernehmen weitere Spuren den Rest.
 
 DAW und App müssen mit derselben Abtastrate laufen. Die Plugins sagen es, wenn nicht.
@@ -104,13 +104,13 @@ Das Lautsprecher-Setup teilen sich App und Plugins über eine Datei im Benutzero
 
 **Kopfhörer.** Strukturmodell nach Brown und Duda: Laufzeitunterschied, Kopfschatten und Ohrmuschel-Echos, die von Richtung und Höhe abhängen, dazu eine sanfte Höhenabsenkung von hinten. Ohne gemessene HRTF-Daten. Im Modus *Binaural* laufen die Quellen über 19 virtuelle Richtungen um den Kopf.
 
-**Abstrahlung.** Jede Quelle hat eine Bündelung und eine Ausrichtung. Abgewandt wird der Direktschall leiser (bis 12 dB) und dumpfer, der Raumanteil bleibt. Der Doppler-Effekt verzögert eine Quelle um ihren Abstand, so ändert Bewegung die Tonhöhe.
+**Abstrahlverhalten.** Jede Quelle hat eine Richtwirkung und eine Ausrichtung. Abgewandt wird der Direktschall leiser (bis 12 dB) und dumpfer, der Hall-Send bleibt. Der Doppler-Effekt verzögert eine Quelle um ihren Abstand, so ändert Bewegung die Tonhöhe.
 
-**Stabilität.** Der Audio-Thread reserviert keinen Speicher, sperrt nichts und wartet auf nichts. Layoutwechsel werden außerhalb des Audio-Threads vorbereitet und mit kurzer Blende übernommen. Alle Eingaben (auch NaN und Unendlich aus fehlerhaften Plugins) werden abgefangen, ein Schutzbegrenzer hält jeden Ausgang unter −0,1 dBFS. Projektdateien werden atomar geschrieben und beim Laden vollständig geprüft.
+**Stabilität.** Der Audio-Thread reserviert keinen Speicher, sperrt nichts und wartet auf nichts. Layoutwechsel werden außerhalb des Audio-Threads vorbereitet und mit kurzer Blende übernommen. Alle Eingaben (auch NaN und Unendlich aus fehlerhaften Plugins) werden abgefangen, ein Limiter hält jeden Ausgang unter −0,1 dBFS. Projektdateien werden atomar geschrieben und beim Laden vollständig geprüft.
 
 **Tests.** Bei jedem Push laufen in der CI:
 
-- Unit-Tests für Geometrie, alle Panning-Verfahren, Hall, Kopfhörer-Vorschau und Engine
+- Unit-Tests für Geometrie, alle Panning-Verfahren, Hall, Kopfhörer-Wiedergabe und Engine
 - ein Test, der beweist, dass der Audio-Thread nie Speicher reserviert oder freigibt
 - Stresstests mit gleichzeitigem Audio- und Bedien-Thread, zufälligen Layouts, Blockgrößen, Abtastraten und unsinnigen Werten
 - dieselben Tests unter AddressSanitizer, UndefinedBehaviorSanitizer und ThreadSanitizer
@@ -128,7 +128,7 @@ Das Lautsprecher-Setup teilen sich App und Plugins über eine Datei im Benutzero
 | Quellen | bis 64 in der App, Eingänge des Audio-Interfaces oder Testsignale, mono oder stereo im Plugin |
 | Verfahren | VBAP (2D/3D), DBAP mit Richtwirkung, Ambisonics 3. Ordnung |
 | Hall | ein gemeinsamer Raum, FDN, Vorlagen und Regler |
-| Ausgabe | direkt auf das Audiogerät (Core Audio, WASAPI, ASIO wenn mit SDK gebaut), Kopfhörer-Vorschau, Lautsprechertest, Schutzbegrenzer |
+| Ausgabe | direkt auf das Audiogerät (Core Audio, WASAPI, ASIO wenn mit SDK gebaut), Kopfhörer und Binaural, Lautsprechertest, Limiter |
 | Sprachen | Deutsch (Standard), Englisch |
 | Systeme | macOS 11 oder neuer (Apple Silicon und Intel), Windows 10/11 64 Bit, Linux |
 
@@ -165,7 +165,7 @@ Aufbau:
 
 | Ordner | Inhalt |
 |---|---|
-| `core/` | Engine ohne Abhängigkeiten: Layouts, Panning, Hall, Kopfhörer-Vorschau, Ausgangsstufe |
+| `core/` | Engine ohne Abhängigkeiten: Layouts, Panning, Hall, Kopfhörer-Wiedergabe, Ausgangsstufe |
 | `shared/` | Oberfläche und Projektdatei, gemeinsam für App und Plugins |
 | `app/` | Standalone-App |
 | `plugins/` | *Raumklang Quelle* und *Raumklang Return* |

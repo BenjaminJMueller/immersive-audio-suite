@@ -4,15 +4,15 @@
 
 - **Neue Oberfläche**: eine gemeinsame Raumansicht in App und Plugins, wahlweise von oben, von vorne, beides nebeneinander oder in 3D. Weniger Text, Hinweise nur noch, wenn etwas nicht stimmt.
 - **Raum (Schritt 3)**: Nachhallzeit über die Frequenz als Kurve mit ziehbaren Punkten für Tiefen, Mitten und Höhen, darunter der Zeitverlauf mit Direktschall, frühen Reflexionen, Cluster und Nachhall. Raumtypen Studio, Kammer, Saal, Kirche und Platte. Der Hall hat dafür eine eigene Nachhallzeit für die Tiefen und getrennt regelbare frühe Reflexionen, Cluster und Nachhall bekommen.
-- **Raumklang Quelle**: Raumansicht mit den anderen DAW-Spuren, Name und Farbe der DAW-Spur, „Raumanteil“ statt Hallanteil, selten gebrauchte Einstellungen unter *Erweitert*. Spielt das Plugin ohne App, rechnet es Laufzeit und Pegel der Lautsprecher selbst ein.
+- **Raumklang Quelle**: Raumansicht mit den anderen DAW-Spuren, Name und Farbe der DAW-Spur, „Hall-Send“ statt Hall-Send, selten gebrauchte Einstellungen unter *Erweitert*. Spielt das Plugin ohne App, rechnet es Laufzeit und Pegel der Lautsprecher selbst ein.
 - **Raumklang Return**: Raumansicht mit allen Spuren und Pegel je Lautsprecher.
-- **Raumklang Raum entfällt**: Den Raum gibt es nur noch einmal, in der App und im Raumanteil jeder Quelle, wie bei Spat.
-- **Ausgabe**: Der Schutzbegrenzer wird erklärt.
+- **Raumklang Raum entfällt**: Den Raum gibt es nur noch einmal, in der App und im Hall-Send jeder Quelle, wie bei Spat.
+- **Ausgabe**: Der Limiter wird erklärt.
 - **DAW-Spuren in der App bewegen**: Ziehen in der Raumansicht oder die Regler im Schritt Quellen schicken die Position an das Plugin zurück, die DAW nimmt sie als Automation auf.
 - **Szenen**: den ganzen Mix speichern und mit Überblendzeit abrufen, Leiste unter der Raumansicht mit Vorherige, Nächste, Aktualisieren und Neue Szene. Positionen blenden auf dem kürzesten Bogen über.
-- **Seitenleiste wie bei Spat**: M und S direkt in jeder Quellenzeile, unten fest ein Ausgang-Streifen mit Gesamtpegel und Pegelanzeige. Abtastrate und Latenz stehen unter dem Projektnamen.
+- **Seitenleiste wie bei Spat**: M und S direkt in jeder Quellenzeile, unten fest ein Master-Streifen mit Master-Pegel und Pegelanzeige. Abtastrate und Latenz stehen unter dem Projektnamen.
 - **Kopfhörer**: Das Kopfmodell bekommt Ohrmuschel-Echos und eine Höhenabsenkung von hinten, damit vorne, hinten, oben und unten unterscheidbar werden. Neuer Modus *Binaural*: die Quellen erklingen frei um den Kopf, unabhängig von den Lautsprechern.
-- **Abstrahlung**: Bündelung und Ausrichtung je Quelle. Abgewandt klingt eine gerichtete Quelle leiser und dumpfer, der Raumanteil bleibt. Dazu ein Doppler-Effekt für bewegte Quellen.
+- **Abstrahlverhalten**: Richtwirkung und Ausrichtung je Quelle. Abgewandt klingt eine gerichtete Quelle leiser und dumpfer, der Hall-Send bleibt. Dazu ein Doppler-Effekt für bewegte Quellen.
 - **Einmessen mit Mikrofon**: Gleitton über jeden Lautsprecher, Laufzeit und Pegel angleichen, mit 4 bis 12 Messpunkten auch die Positionen (Multilateration, Verzögerung des Interfaces wird herausgerechnet). Hinweis auf vertauschte Kabel, Vorschau mit gestrichelter alter Position, Rückgängig.
 - **iPhone-App „Raumklang Messen“**: Lautsprecher mit LiDAR antippen, Position und Ausrichtung als Datei an Raumklang. Laden oder auf das Fenster ziehen.
 - **Testraum**: `RAUMKLANG_TESTRAUM=1` startet die App mit einem simulierten Raum und Mikrofon, zum Ausprobieren ohne Aufbau.

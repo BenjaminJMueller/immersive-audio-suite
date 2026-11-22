@@ -2,7 +2,7 @@
 
 [Deutsch](README.md) · English
 
-Raumklang is a free tool for spatial audio on macOS and Windows. It places sound sources freely in space on any number of speakers, from a stereo pair through rings, domes and 7.1.4 to a *donut*, where two speaker rings face each other. It also has reverb, a headphone preview and two plugins for the DAW. An audio interface is all you need: the app talks to it directly, no extra routing software is required.
+Raumklang is a free tool for spatial audio on macOS and Windows. It places sound sources freely in space on any number of speakers, from a stereo pair through rings, domes and 7.1.4 to a *donut*, where two speaker rings face each other. It also has reverb, headphone playback (binaural) and two plugins for the DAW. An audio interface is all you need: the app talks to it directly, no extra routing software is required.
 
 ![Speakers](docs/screenshots/01-lautsprecher.png)
 
@@ -39,7 +39,7 @@ This led to the requirements for this tool:
 - stable: no crash during operation, not even with nonsensical input, faulty plugins or device changes, with automated tests on all systems
 - no extra software: the app talks to the audio interface directly, the plugins work inside the DAW
 - flexible speaker setups up to the donut, with understandable feedback on whether the layout works
-- reverb and headphone preview in one place, so work is possible without speakers too
+- reverb and headphone playback in one place, so work is possible without speakers too
 - runs on a normal computer under macOS and Windows, understandable for students without prior experience
 - free and open source, no licence costs
 
@@ -48,7 +48,7 @@ This led to the requirements for this tool:
 1. **Speakers.** Pick a preset (stereo, quad, 5.1, 7.1.4, ring, dome, cube, donut) or place and drag speakers freely. Raumklang checks the layout and says in plain words whether it works and which method it uses. *Align distances* compensates delay and level when speakers stand at different distances.
 2. **Sources.** Each source is an input of the audio interface or a built-in test signal (pink noise, sine, clicks). Sources are dragged in the top view or set with azimuth, elevation and distance, plus level, width, reverb send and distance effect. *Orbit* moves a source around the listening spot by itself.
 3. **Room.** Reverb with presets (dry, studio, hall, church) and controls for decay time, room size, high damping and pre-delay.
-4. **Output.** Audio device, sample rate and buffer. Master level, protection limiter and *play speakers one by one* to check the wiring. Under *Listen on*, besides the speakers there are two headphone modes: *Headphones* plays your own speaker system in the headphones, *Binaural* places the sources freely around your head, independent of the speakers.
+4. **Output.** Audio device, sample rate and buffer. Master level, limiter and *play speakers one by one* to check the wiring. Under *Listen on*, besides the speakers there are two headphone modes: *Headphones* plays your own speaker system in the headphones, *Binaural* places the sources freely around your head, independent of the speakers.
 
 Below the room view sits the *Scenes* bar: it stores the whole mix and recalls it with a fade time, with arrows for the previous and next scene. Every source has M (mute) and S (solo) in the sidebar, and the output with master level and meter is pinned at the bottom.
 
@@ -57,13 +57,13 @@ Below the room view sits the *Scenes* bar: it stores the whole mix and recalls i
   <img src="docs/screenshots/03-raum.png" width="49%" alt="Room">
 </p>
 
-Projects are saved automatically, every step can be undone (⌘Z / Ctrl+Z). On first start an introduction offers to begin with a demo. If the audio device has fewer outputs than the layout has speakers, the demo switches on the headphone preview by itself. The interface is in German, English can be selected under *Help* (?).
+Projects are saved automatically, every step can be undone (⌘Z / Ctrl+Z). On first start an introduction offers to begin with a demo. If the audio device has fewer outputs than the layout has speakers, the demo switches on headphone playback by itself. The interface is in German, English can be selected under *Help* (?).
 
 ## In the DAW
 
 Two plugins (VST3, on the Mac also AU):
 
-- **Raumklang Quelle** (source) goes on every track. It places the track in space and outputs one channel per speaker. Position, width, level and room amount can be automated. The track needs as many channels as the layout has speakers (e.g. in Reaper, Nuendo/Cubase or Pro Tools Ultimate).
+- **Raumklang Quelle** (source) goes on every track. It places the track in space and outputs one channel per speaker. Position, width, level and reverb send can be automated. The track needs as many channels as the layout has speakers (e.g. in Reaper, Nuendo/Cubase or Pro Tools Ultimate).
 - **Raumklang Return** brings the app's speaker signals back into the DAW, for recording and real-time bounces.
 
 App and plugins share the speaker setup through a file in the user folder (`Raumklang/Lautsprecher-Setup.json`). A layout set up in the app is immediately available in the DAW, and all source plugins of a session always use the same room. The DAW project stores the layout too.
@@ -80,11 +80,11 @@ App and plugins share the speaker setup through a file in the user folder (`Raum
 
 **Headphone preview.** Spherical head model after Brown and Duda: interaural time difference and head shadow per speaker, without measured HRTF data.
 
-**Stability.** The audio thread never allocates memory, locks or waits. Layout changes are prepared outside the audio thread and taken over with a short fade. All input (including NaN and infinity from faulty plugins) is caught, a protection limiter keeps every output below −0.1 dBFS. Project files are written atomically and fully validated when loaded.
+**Stability.** The audio thread never allocates memory, locks or waits. Layout changes are prepared outside the audio thread and taken over with a short fade. All input (including NaN and infinity from faulty plugins) is caught, a limiter keeps every output below −0.1 dBFS. Project files are written atomically and fully validated when loaded.
 
 **Tests.** Every push runs in CI:
 
-- unit tests for geometry, all panning methods, reverb, headphone preview and engine
+- unit tests for geometry, all panning methods, reverb, headphone playback and engine
 - a test proving the audio thread never allocates or frees memory
 - stress tests with concurrent audio and UI threads, random layouts, block sizes, sample rates and nonsensical values
 - the same tests under AddressSanitizer, UndefinedBehaviorSanitizer and ThreadSanitizer
@@ -102,7 +102,7 @@ App and plugins share the speaker setup through a file in the user folder (`Raum
 | Sources | up to 64 in the app, audio interface inputs or test signals, mono or stereo in the plugin |
 | Methods | VBAP (2D/3D), DBAP with directivity, 3rd-order Ambisonics |
 | Reverb | one shared room, FDN, presets and controls |
-| Output | directly to the audio device (Core Audio, WASAPI, ASIO when built with the SDK), headphone preview, speaker test, protection limiter |
+| Output | directly to the audio device (Core Audio, WASAPI, ASIO when built with the SDK), headphones and binaural, speaker test, limiter |
 | Languages | German (default), English |
 | Systems | macOS 11 or later (Apple Silicon and Intel), Windows 10/11 64-bit, Linux |
 
@@ -139,7 +139,7 @@ Layout:
 
 | Folder | Contents |
 |---|---|
-| `core/` | Engine without dependencies: layouts, panning, reverb, headphone preview, output stage |
+| `core/` | Engine without dependencies: layouts, panning, reverb, headphone rendering, output stage |
 | `shared/` | UI and project file, shared by app and plugins |
 | `app/` | Standalone app |
 | `plugins/` | *Raumklang Quelle* and *Raumklang Return* |

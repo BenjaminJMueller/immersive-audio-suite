@@ -16,9 +16,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout makeLayout() {
     p.push_back(std::make_unique<P>(juce::ParameterID{"distance", 1}, "Abstand", dr, 2.0f, A().withLabel("m")));
     p.push_back(std::make_unique<P>(juce::ParameterID{"spread", 1}, "Breite", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f, A().withLabel("%")));
     p.push_back(std::make_unique<P>(juce::ParameterID{"gain", 1}, "Pegel", juce::NormalisableRange<float>(-60.0f, 12.0f, 0.1f), 0.0f, A().withLabel("dB")));
-    p.push_back(std::make_unique<P>(juce::ParameterID{"reverbSend", 1}, "Hallanteil", juce::NormalisableRange<float>(-80.0f, 6.0f, 0.1f), -12.0f, A().withLabel("dB")));
+    p.push_back(std::make_unique<P>(juce::ParameterID{"reverbSend", 1}, "Hall-Send", juce::NormalisableRange<float>(-80.0f, 6.0f, 0.1f), -12.0f, A().withLabel("dB")));
     p.push_back(std::make_unique<P>(juce::ParameterID{"stereoWidth", 1}, "Stereobreite", juce::NormalisableRange<float>(0.0f, 180.0f, 0.1f), 60.0f, A().withLabel(juce::String::fromUTF8("\xc2\xb0"))));
-    p.push_back(std::make_unique<P>(juce::ParameterID{"distanceAmount", 1}, "Entfernung", juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 100.0f, A().withLabel("%")));
+    p.push_back(std::make_unique<P>(juce::ParameterID{"distanceAmount", 1}, "Distanzeffekt", juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 100.0f, A().withLabel("%")));
     p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"route", 1}, "Ausgabe",
                                                              juce::StringArray{"Automatisch", "An die App", "In der DAW"}, 0));
     return {p.begin(), p.end()};

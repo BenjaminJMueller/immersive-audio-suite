@@ -544,7 +544,7 @@ void OutputStrip::paint(juce::Graphics& g) {
     g.fillRect(0.0f, 0.0f, (float)getWidth(), 1.0f);
     g.setColour(p.text);
     g.setFont(uiFont(13.0f, true));
-    g.drawText(tr("Ausgang"), 16, 8, getWidth() / 2, 18, juce::Justification::centredLeft, false);
+    g.drawText(tr("Master"), 16, 8, getWidth() / 2, 18, juce::Justification::centredLeft, false);
     g.setColour(p.text2);
     g.setFont(uiFont(12.0f));
     const juce::String v = gainDb_ <= kMinDb + 0.01f ? juce::String::fromUTF8("\xe2\x88\x92\xe2\x88\x9e") : num(gainDb_, 1) + " dB";

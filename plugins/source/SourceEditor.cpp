@@ -112,8 +112,8 @@ void SourceEditor::buildPage() {
                   tr("Raum"), L("Wie viel von dieser Spur in den Hall geht. Den Hall selbst stellst du in der Raumklang-App unter \xe2\x80\x9e" "3 Raum\xe2\x80\x9c ein.",
                                 "How much of this track goes into the reverb. The reverb itself is set in the Raumklang app under \"3 Room\".")),
               26);
-    addSlider("reverbSend", L("Raumanteil", "Room amount"), "dB", 1, -80, {});
-    addSlider("distanceAmount", L("Entfernungseffekt", "Distance effect"), "%", 0, 0,
+    addSlider("reverbSend", L("Hall-Send", "Reverb send"), "dB", 1, -80, {});
+    addSlider("distanceAmount", L("Distanzeffekt", "Distance effect"), "%", 0, 0,
               L("Wie stark Abstand leiser und dumpfer macht", "How much distance makes the source quieter and duller"));
 
     page_.addSpace(6);
