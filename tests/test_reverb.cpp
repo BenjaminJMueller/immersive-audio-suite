@@ -109,3 +109,76 @@ TEST_CASE("reverb: parameter changes while running and garbage input") {
     FdnReverb unprepared;
     unprepared.process(in.data(), outs, 2, 512, 1.0f); // must not crash
 }
+
+TEST_CASE("reverb: rt60At follows the parameters and dampingForRt inverts it") {
+    ReverbParams p;
+    p.decaySec = 2.0f;
+    p.dampingHz = 20000.0f;
+    CHECK(rt60At(p, 1000.0f) == doctest::Approx(2.0f).epsilon(0.1));
+    p.lowRatio = 2.0f;
+    CHECK(rt60At(p, 50.0f) > 3.4f);
+    CHECK(rt60At(p, 1000.0f) < 2.4f);
+    p.lowRatio = 1.0f;
+    p.dampingHz = 3000.0f;
+    CHECK(rt60At(p, 8000.0f) < rt60At(p, 1000.0f));
+    const float d = dampingForRt(p, 8000.0f, 0.8f);
+    p.dampingHz = d;
+    CHECK(rt60At(p, 8000.0f) == doctest::Approx(0.8f).epsilon(0.05));
+}
+
+TEST_CASE("reverb: early and cluster arrive before the tail, levels switch parts off") {
+    const int sr = 48000;
+    ReverbParams p;
+    p.preDelayMs = 0.0f;
+    p.tailDb = -80.0f;
+    p.clusterDb = -80.0f;
+    p.earlyDb = 0.0f;
+    Ir ir = impulseResponse(p, 4, sr);
+    double early = 0, late = 0;
+    for (const auto& c : ir.ch) {
+        early += energy(c, 0, static_cast<size_t>(sr * 0.08));
+        late += energy(c, static_cast<size_t>(sr * 0.08), static_cast<size_t>(sr));
+    }
+    CHECK(early > 0.01);
+    CHECK(late < 1e-9);
+
+    p.earlyDb = -80.0f;
+    ir = impulseResponse(p, 4, sr);
+    for (const auto& c : ir.ch) CHECK(energy(c, 0, static_cast<size_t>(sr)) < 1e-12);
+
+    p.clusterDb = 0.0f;
+    ir = impulseResponse(p, 4, sr);
+    double cl = 0, after = 0;
+    for (const auto& c : ir.ch) {
+        cl += energy(c, 0, static_cast<size_t>(sr * 0.16));
+        after += energy(c, static_cast<size_t>(sr * 0.2), static_cast<size_t>(sr));
+    }
+    CHECK(cl > 0.001);
+    CAPTURE(cl);
+    CHECK(after < cl * 0.03);
+}
+
+TEST_CASE("reverb: longer low decay keeps low frequencies ringing longer") {
+    const int sr = 48000;
+    ReverbParams p;
+    p.preDelayMs = 0.0f;
+    p.earlyDb = -80.0f;
+    p.clusterDb = -80.0f;
+    p.decaySec = 1.0f;
+    p.dampingHz = 20000.0f;
+    auto lateLowEnergy = [&](float ratio) {
+        p.lowRatio = ratio;
+        const Ir ir = impulseResponse(p, 2, sr * 2);
+        // Crude low-pass (one-pole at ~150 Hz) and energy after 0.8 s.
+        double e = 0;
+        for (const auto& c : ir.ch) {
+            float lp = 0;
+            for (size_t i = 0; i < c.size(); ++i) {
+                lp += 0.02f * (c[i] - lp);
+                if (i > static_cast<size_t>(sr * 0.8)) e += static_cast<double>(lp) * lp;
+            }
+        }
+        return e;
+    };
+    CHECK(lateLowEnergy(2.5f) > 10.0 * lateLowEnergy(1.0f));
+}

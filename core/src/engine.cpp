@@ -86,6 +86,10 @@ Engine::Engine() {
     reverbParams_[1].store(def.dampingHz);
     reverbParams_[2].store(def.preDelayMs);
     reverbParams_[3].store(def.size);
+    reverbParams_[4].store(def.lowRatio);
+    reverbParams_[5].store(def.earlyDb);
+    reverbParams_[6].store(def.clusterDb);
+    reverbParams_[7].store(def.tailDb);
     config_.layout = presets::stereo();
     for (int i = 0; i < kMaxSources; ++i) sources_[static_cast<size_t>(i)].inputChannel.store(-1);
 }
@@ -150,6 +154,10 @@ void Engine::setReverb(const ReverbParams& raw) noexcept {
     reverbParams_[1].store(p.dampingHz);
     reverbParams_[2].store(p.preDelayMs);
     reverbParams_[3].store(p.size);
+    reverbParams_[4].store(p.lowRatio);
+    reverbParams_[5].store(p.earlyDb);
+    reverbParams_[6].store(p.clusterDb);
+    reverbParams_[7].store(p.tailDb);
     reverbVersion_.fetch_add(1, std::memory_order_release);
 }
 
@@ -159,6 +167,10 @@ ReverbParams Engine::reverb() const noexcept {
     p.dampingHz = reverbParams_[1].load();
     p.preDelayMs = reverbParams_[2].load();
     p.size = reverbParams_[3].load();
+    p.lowRatio = reverbParams_[4].load();
+    p.earlyDb = reverbParams_[5].load();
+    p.clusterDb = reverbParams_[6].load();
+    p.tailDb = reverbParams_[7].load();
     return p;
 }
 

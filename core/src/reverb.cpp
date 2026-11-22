@@ -35,7 +35,65 @@ ReverbParams sanitize(ReverbParams p) {
     p.dampingHz = safeClamp(p.dampingHz, 1000.0f, 20000.0f, 6000.0f);
     p.preDelayMs = safeClamp(p.preDelayMs, 0.0f, kMaxPreDelayMs, 15.0f);
     p.size = safeClamp(p.size, 0.3f, kMaxSize, 1.0f);
+    p.lowRatio = safeClamp(p.lowRatio, 0.3f, 3.0f, 1.0f);
+    p.earlyDb = safeClamp(p.earlyDb, -80.0f, 6.0f, -6.0f);
+    p.clusterDb = safeClamp(p.clusterDb, -80.0f, 6.0f, -9.0f);
+    p.tailDb = safeClamp(p.tailDb, -80.0f, 6.0f, 0.0f);
     return p;
+}
+
+namespace {
+float levelGain(float db) { return db <= -79.9f ? 0.0f : std::pow(10.0f, db / 20.0f); }
+
+double onePoleCoef(double hz, double sr) { return std::clamp(1.0 - std::exp(-kTwoPi * hz / sr), 0.01, 1.0); }
+
+/// |H| of y += a (x - y) at angular frequency w.
+double onePoleMag(double a, double w) {
+    const double b = 1.0 - a;
+    return a / std::sqrt(std::max(1e-12, 1.0 - 2.0 * b * std::cos(w) + b * b));
+}
+
+/// |(1 - H) * gMid + H * gLow| / gMid for the low-decay shelf (complex sum).
+double shelfMag(double a, double w, double ratio) {
+    const double b = 1.0 - a;
+    // H = a / (1 - b e^{-jw})
+    const double re = 1.0 - b * std::cos(w), im = b * std::sin(w);
+    const double den = re * re + im * im;
+    const double hr = a * re / den, hi = -a * im / den;
+    const double r = ratio;
+    const double outR = (1.0 - hr) + r * hr, outI = -hi + r * hi;
+    return std::sqrt(outR * outR + outI * outI);
+}
+} // namespace
+
+float rt60At(const ReverbParams& raw, float hz, double sr) noexcept {
+    const ReverbParams p = sanitize(raw);
+    if (!(sr > 1000.0)) sr = 48000.0;
+    const double w = kTwoPi * std::clamp(static_cast<double>(hz), 1.0, sr * 0.49) / sr;
+    // Mean line length decides how often per second the loop gain is applied.
+    double meanMs = 0;
+    for (float ms : kLineMs) meanMs += ms;
+    meanMs /= FdnReverb::kLines;
+    const double len = meanMs * p.size * 0.001 * sr;
+    const double gMid = std::pow(10.0, -3.0 * len / (p.decaySec * sr));
+    const double gLow = std::pow(10.0, -3.0 * len / (p.decaySec * p.lowRatio * sr));
+    const double loop = gMid * onePoleMag(onePoleCoef(p.dampingHz, sr), w) *
+                        shelfMag(onePoleCoef(kLowCrossoverHz, sr), w, gLow / gMid);
+    if (!(loop > 0.0) || loop >= 1.0) return p.decaySec * p.lowRatio;
+    return static_cast<float>(-3.0 * len / (sr * std::log10(loop)));
+}
+
+float dampingForRt(const ReverbParams& raw, float hz, float rtSec, double sr) noexcept {
+    ReverbParams p = sanitize(raw);
+    // RT at hz rises monotonically with the damping frequency: bisect in log space.
+    double lo = std::log(1000.0), hi = std::log(20000.0);
+    for (int i = 0; i < 40; ++i) {
+        const double mid = 0.5 * (lo + hi);
+        p.dampingHz = static_cast<float>(std::exp(mid));
+        if (rt60At(p, hz, sr) < rtSec) lo = mid;
+        else hi = mid;
+    }
+    return static_cast<float>(std::exp(0.5 * (lo + hi)));
 }
 
 float FdnReverb::Allpass::process(float x) noexcept {
@@ -52,6 +110,8 @@ void FdnReverb::prepare(double sampleRate) {
     pre_.buf.assign(static_cast<size_t>(samples(kMaxPreDelayMs)), 0.0f);
     for (int i = 0; i < 4; ++i) diffusers_[static_cast<size_t>(i)].buf.assign(static_cast<size_t>(samples(kDiffuserMs[i])), 0.0f);
     for (int j = 0; j < kLines; ++j) lines_[static_cast<size_t>(j)].buf.assign(static_cast<size_t>(samples(kLineMs[j] * kMaxSize)), 0.0f);
+    early_.buf.assign(static_cast<size_t>(samples(kEarlyMs[kEarlyTaps - 1] * kMaxSize)), 0.0f);
+    cluster_.buf.assign(static_cast<size_t>(samples(kClusterMs[kClusterTaps - 1] * kMaxSize)), 0.0f);
     prepared_ = true;
     reset();
     setParams(params_);
@@ -64,7 +124,12 @@ void FdnReverb::reset() noexcept {
     pre_.pos = 0;
     for (auto& d : diffusers_) { clear(d.buf); d.pos = 0; }
     for (auto& l : lines_) { clear(l.buf); l.pos = 0; }
+    clear(early_.buf);
+    early_.pos = 0;
+    clear(cluster_.buf);
+    cluster_.pos = 0;
     lpState_.fill(0.0f);
+    lowState_.fill(0.0f);
 }
 
 void FdnReverb::setParams(const ReverbParams& raw) noexcept {
@@ -76,9 +141,24 @@ void FdnReverb::setParams(const ReverbParams& raw) noexcept {
         auto& l = lines_[static_cast<size_t>(j)];
         l.length = std::clamp(static_cast<int>(kLineMs[j] * params_.size * 0.001 * sr), 1, static_cast<int>(l.buf.size()) - 1);
         feedback_[static_cast<size_t>(j)] = static_cast<float>(std::pow(10.0, -3.0 * l.length / (params_.decaySec * sr)));
+        lowFeedback_[static_cast<size_t>(j)] =
+            static_cast<float>(std::pow(10.0, -3.0 * l.length / (params_.decaySec * params_.lowRatio * sr)));
     }
-    lpCoef_ = static_cast<float>(1.0 - std::exp(-kTwoPi * params_.dampingHz / sr));
-    lpCoef_ = std::clamp(lpCoef_, 0.01f, 1.0f);
+    lpCoef_ = static_cast<float>(onePoleCoef(params_.dampingHz, sr));
+    lowCoef_ = static_cast<float>(onePoleCoef(kLowCrossoverHz, sr));
+    const int earlyMax = static_cast<int>(early_.buf.size()) - 1;
+    for (int k = 0; k < kEarlyTaps; ++k)
+        earlyLen_[static_cast<size_t>(k)] = std::clamp(static_cast<int>(kEarlyMs[k] * params_.size * 0.001 * sr), 1, earlyMax);
+    const int clusterMax = static_cast<int>(cluster_.buf.size()) - 1;
+    for (int k = 0; k < kClusterTaps; ++k) {
+        const float ms = kClusterMs[k] * params_.size;
+        clusterLen_[static_cast<size_t>(k)] = std::clamp(static_cast<int>(ms * 0.001 * sr), 1, clusterMax);
+        // The cluster fades like the room: -60 dB after decaySec.
+        clusterGain_[static_cast<size_t>(k)] = 0.45f * std::pow(10.0f, -3.0f * ms * 0.001f / params_.decaySec);
+    }
+    earlyLevel_ = levelGain(params_.earlyDb);
+    clusterLevel_ = levelGain(params_.clusterDb);
+    tailLevel_ = levelGain(params_.tailDb);
 }
 
 void FdnReverb::process(const float* input, float* const* out, int numOut, int n, float gain) noexcept {
@@ -86,13 +166,29 @@ void FdnReverb::process(const float* input, float* const* out, int numOut, int n
     numOut = std::clamp(numOut, 0, 256);
     int idx[256][4];
     float sgn[256][4];
+    // Each output hears its own four early taps and four cluster taps, so reflections
+    // arrive from different directions, like walls at different distances.
+    int eTap[256][4], cTap[256][4];
+    float eG[256][4], cG[256][4];
     for (int c = 0; c < numOut; ++c) {
         const int row = (c / 4) % 4;
         for (int k = 0; k < 4; ++k) {
             idx[c][k] = (c * 3 + k * 4 + c / 16) % kLines;
-            sgn[c][k] = kH4[row][k] * 0.5f * gain;
+            sgn[c][k] = kH4[row][k] * 0.5f * gain * tailLevel_;
+            const int e = (c * 5 + k * 2 + (k > 1 ? 1 : 0)) % kEarlyTaps;
+            eTap[c][k] = earlyLen_[static_cast<size_t>(e)];
+            eG[c][k] = kH4[(row + c) % 4][k] * kEarlyGain[e] * 0.5f * gain * earlyLevel_;
+            const int q = (c * 7 + k * 4 + c / 4) % kClusterTaps;
+            cTap[c][k] = clusterLen_[static_cast<size_t>(q)];
+            cG[c][k] = kH4[(row + 1) % 4][k] * clusterGain_[static_cast<size_t>(q)] * gain * clusterLevel_;
         }
     }
+    const bool doEarly = earlyLevel_ > 0.0f && gain != 0.0f;
+    const bool doCluster = clusterLevel_ > 0.0f && gain != 0.0f;
+    auto tap = [](const Delay& dl, int len) noexcept {
+        const int sz = static_cast<int>(dl.buf.size());
+        return dl.buf[static_cast<size_t>((dl.pos - len + sz) % sz)];
+    };
     float y[kLines];
     float d[kLines];
     for (int i = 0; i < n; ++i) {
@@ -104,21 +200,35 @@ void FdnReverb::process(const float* input, float* const* out, int numOut, int n
         } else {
             x = in;
         }
+        early_.write(x);
+        if (doEarly)
+            for (int c = 0; c < numOut; ++c)
+                out[c][i] += eG[c][0] * tap(early_, eTap[c][0]) + eG[c][1] * tap(early_, eTap[c][1]) +
+                             eG[c][2] * tap(early_, eTap[c][2]) + eG[c][3] * tap(early_, eTap[c][3]);
         for (auto& ap : diffusers_) x = ap.process(x);
+        cluster_.write(x);
+        if (doCluster)
+            for (int c = 0; c < numOut; ++c)
+                out[c][i] += cG[c][0] * tap(cluster_, cTap[c][0]) + cG[c][1] * tap(cluster_, cTap[c][1]) +
+                             cG[c][2] * tap(cluster_, cTap[c][2]) + cG[c][3] * tap(cluster_, cTap[c][3]);
 
         for (int j = 0; j < kLines; ++j) {
             y[j] = lines_[static_cast<size_t>(j)].read();
             float& lp = lpState_[static_cast<size_t>(j)];
             lp += lpCoef_ * (y[j] - lp);
             lp = sanitizeSample(lp);
-            d[j] = lp * feedback_[static_cast<size_t>(j)];
+            // Two-band decay: below the crossover the line uses its own (longer or shorter) feedback.
+            float& lo = lowState_[static_cast<size_t>(j)];
+            lo += lowCoef_ * (lp - lo);
+            lo = sanitizeSample(lo);
+            d[j] = (lp - lo) * feedback_[static_cast<size_t>(j)] + lo * lowFeedback_[static_cast<size_t>(j)];
         }
         hadamard16(d);
         for (int j = 0; j < kLines; ++j) {
             const float inj = (j & 1) ? -0.25f * x : 0.25f * x;
             lines_[static_cast<size_t>(j)].write(d[j] + inj);
         }
-        if (gain != 0.0f)
+        if (gain != 0.0f && tailLevel_ > 0.0f)
             for (int c = 0; c < numOut; ++c)
                 out[c][i] += sgn[c][0] * y[idx[c][0]] + sgn[c][1] * y[idx[c][1]] + sgn[c][2] * y[idx[c][2]] + sgn[c][3] * y[idx[c][3]];
     }
