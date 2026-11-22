@@ -253,7 +253,14 @@ MainComponent::MainComponent()
             scene_.sources[(size_t)i].position = p;
             applyScene(false);
             refreshSidebar();
-            if (i == selSource_ && step_ == StepSources) rebuildInspector();
+            // Only the three position sliders change while dragging: update them in place
+            // instead of rebuilding the whole inspector on every mouse move.
+            if (i == selSource_ && step_ == StepSources && posSliders_[0] != nullptr) {
+                const rk::Polar pol = rk::toPolar(p);
+                posSliders_[0]->setValue(pol.azimuthDeg);
+                posSliders_[1]->setValue(pol.elevationDeg);
+                posSliders_[2]->setValue(pol.distance);
+            }
         } else {
             const rk::Polar pol = rk::toPolar(p);
             moveDawTrack(i - (int)scene_.sources.size(), pol.azimuthDeg, pol.elevationDeg, pol.distance);
@@ -868,6 +875,7 @@ void MainComponent::setStep(int step) {
 }
 
 void MainComponent::rebuildInspector() {
+    posSliders_ = {};
     dawPageTrack_ = -1;
     dawSliders_.clear();
     dawCard_ = nullptr;
@@ -967,6 +975,7 @@ void MainComponent::buildSourcesPage() {
     di->setValue(pol.distance);
     di->onChange = [setPolar](double v) { setPolar(2, v); };
     di->onCommit = [this] { commit(); };
+    posSliders_ = {az, el, di};
 
     auto addParam = [this, i](const juce::String& label, double lo, double hi, double step, const juce::String& unit, int dec,
                               double origin, double value, std::function<void(rkui::SourceInfo&, double)> set) {
@@ -1385,8 +1394,20 @@ void MainComponent::timerCallback() {
         scanDaw();
         if (!dawTracks_.empty() && (step_ == StepSources || step_ == StepRoom)) refreshSidebar();
     }
-    if (moved || !dawTracks_.empty()) showStage();
+    if (!dawTracks_.empty()) {
+        // DAW tracks: redraw only when one of them moved or changed, not on every frame.
+        juce::String key;
+        for (const auto& t : dawTracks_) {
+            const auto p = host_.bridgeParams(t.slot);
+            key << t.slot << ':' << p.azimuthDeg << ',' << p.elevationDeg << ',' << p.distance << ',' << p.spread << ',' << p.stereoWidthDeg << ';';
+        }
+        for (const auto& mv : dawMoves_) if (now < mv.until) key << 'm';
+        if (key != dawStageKey_) { dawStageKey_ = key; moved = true; }
+    }
+    if (moved) showStage();
     if (moved && (step_ == StepSources || step_ == StepRoom)) refreshSidebar();
+    if (moved && posSliders_[0] != nullptr && selSource_ >= 0 && selSource_ < (int)scene_.sources.size() && scene_.sources[(size_t)selSource_].orbit)
+        posSliders_[0]->setValue(rk::toPolar(scene_.sources[(size_t)selSource_].position).azimuthDeg);
     refreshDawValues();
 
     // Meters.

@@ -23,7 +23,11 @@ public:
     void setEditTarget(EditTarget t) { target_ = t; repaint(); }
     void setSelectedSource(int i) { selSource_ = i; repaint(); }
     void setSelectedSpeaker(int i) { selSpeaker_ = i; repaint(); }
-    void setSpeakerLevels(const std::vector<float>& l) { speakerLevels_ = l; repaint(); }
+    void setSpeakerLevels(const std::vector<float>& l) {
+        if (!levelsDiffer(speakerLevels_, l)) return;
+        speakerLevels_ = l;
+        repaint();
+    }
     /// 0..1 per source, drawn as a ring around the source.
     void setSourceLevels(const std::vector<float>& l);
     /// 0..1: how much reverb fills the room right now (a soft glow over the stage).
@@ -100,6 +104,7 @@ private:
     int selSource_ = -1, selSpeaker_ = -1;
     int dragSource_ = -1, dragSpeaker_ = -1;
     bool dragging_ = false;
+    bool panningBuilt_ = false, panningStale_ = false;
     float scale_ = 40.0f; // pixels per metre
     float zoom_ = 1.0f;
     juce::Point<float> centre_;

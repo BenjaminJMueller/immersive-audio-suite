@@ -223,13 +223,19 @@ void SourceEditor::scanOtherTracks() {
 }
 
 void SourceEditor::refreshStage() {
-    const rkui::Scene setup = proc_.setupSnapshot();
-    const juce::String json = rkui::sceneToJson(setup);
-    if (json != shownSetupJson_) {
-        shownSetupJson_ = json;
-        shown_ = setup;
-        rk::DbapPanner::Params d{shown_.dbapRolloffDb, shown_.dbapBlur, shown_.dbapDirectivity};
-        panner_.prepare(shown_.layout, shown_.effectivePanner(), d, 3);
+    // The speaker setup changes rarely: compare it five times a second, not on every frame.
+    bool setupChanged = false;
+    if (--setupCountdown_ <= 0) {
+        setupCountdown_ = 6;
+        const rkui::Scene setup = proc_.setupSnapshot();
+        const juce::String json = rkui::sceneToJson(setup);
+        if (json != shownSetupJson_) {
+            shownSetupJson_ = json;
+            shown_ = setup;
+            rk::DbapPanner::Params d{shown_.dbapRolloffDb, shown_.dbapBlur, shown_.dbapDirectivity};
+            panner_.prepare(shown_.layout, shown_.effectivePanner(), d, 3);
+            setupChanged = true;
+        }
     }
     shown_.sources.resize(1 + otherTracks_.size());
     auto& own = shown_.sources[0];
@@ -246,6 +252,12 @@ void SourceEditor::refreshStage() {
         s.position = rk::toCartesian({t.azimuthDeg, t.elevationDeg, t.distance});
         colours.push_back(juce::Colours::transparentBlack);
     }
+    // Redraw the room only when something in it moved, not 30 times a second.
+    juce::String key = ownColour().toString();
+    for (const auto& src : shown_.sources)
+        key << '|' << src.name << ':' << src.position.x << ',' << src.position.y << ',' << src.position.z << ',' << src.spread;
+    if (!setupChanged && key == shownSourcesKey_) return;
+    shownSourcesKey_ = key;
     room_.setSourceStyle(colours, 1, true);
     room_.setScene(shown_);
 }

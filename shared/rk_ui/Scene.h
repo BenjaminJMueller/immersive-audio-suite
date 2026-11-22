@@ -79,6 +79,9 @@ struct Scene {
     std::vector<SourceInfo> sources;
     std::vector<Snapshot> snapshots;
 
+    /// True when the speakers and panner settings equal those of `o` (what the views' panners
+    /// are built from). Cheap; lets views skip rebuilding when only sources moved.
+    bool samePanning(const Scene& o) const;
     /// The panner actually used (resolves "automatic").
     rk::PannerKind effectivePanner() const;
     rk::EngineConfig engineConfig() const;

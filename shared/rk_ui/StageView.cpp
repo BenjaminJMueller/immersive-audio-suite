@@ -22,6 +22,7 @@ void StageView::resized() {
 }
 
 void StageView::setSourceLevels(const std::vector<float>& l) {
+    if (!levelsDiffer(sourceLevels_, l)) return;
     sourceLevels_ = l;
     repaint();
 }
@@ -225,8 +226,11 @@ void StageView::mouseMove(const juce::MouseEvent& e) {
 }
 
 void StageView::setScene(const Scene& s) {
-    const bool layoutChanged = s.layout.speakers.size() != scene_.layout.speakers.size() || s.effectivePanner() != scene_.effectivePanner() ||
-                               s.layout.name != scene_.layout.name || !dragging_;
+    // While a speaker is dragged the panner is rebuilt once the drag ends, not on every move.
+    if (!panningBuilt_ || !s.samePanning(scene_)) panningStale_ = true;
+    const bool layoutChanged = panningStale_ && (!dragging_ || !panningBuilt_);
+    if (layoutChanged) panningStale_ = false;
+    panningBuilt_ = true;
     scene_ = s;
     if (layoutChanged) {
         rk::DbapPanner::Params d{s.dbapRolloffDb, s.dbapBlur, s.dbapDirectivity};
@@ -591,6 +595,11 @@ void StageView::mouseUp(const juce::MouseEvent&) {
     const bool was = dragging_;
     dragging_ = false;
     dragSource_ = dragSpeaker_ = -1;
+    if (panningStale_) {
+        panningStale_ = false;
+        rk::DbapPanner::Params d{scene_.dbapRolloffDb, scene_.dbapBlur, scene_.dbapDirectivity};
+        panner_.prepare(scene_.layout, scene_.effectivePanner(), d, 3);
+    }
     if (was && onDragEnd) onDragEnd();
     updateScale();
     repaint();

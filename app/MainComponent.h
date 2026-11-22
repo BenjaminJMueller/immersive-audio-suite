@@ -143,10 +143,12 @@ private:
     juce::String dawKey_;
     double lastDawScan_ = 0.0;
     int dawPageTrack_ = -1;                       // DAW track the inspector shows, -1 none
+    std::array<rkui::ParamSlider*, 3> posSliders_{}; // azimuth, elevation, distance of the selected source (owned by inspector_)
     std::vector<rkui::ParamSlider*> dawSliders_;  // owned by inspector_, valid while dawPageTrack_ >= 0
     rkui::StatusCard* dawCard_ = nullptr;
     rkui::SpectrumAnalyzer analyzer_;
     juce::String statusText_;
+    juce::String dawStageKey_;   // positions of the DAW tracks last drawn
     juce::String deviceSummary_; // sample rate and latency, under the project name
     double deviceSummaryAt_ = 0.0;
     std::array<bool, rk::kMaxSources> sourceHasSignal_{};

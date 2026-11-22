@@ -22,8 +22,8 @@ constexpr float kStand = 1.2f; // ear height (z = 0) above the floor
 View3D::View3D() { setOpaque(true); }
 
 void View3D::setScene(const Scene& s) {
-    const bool layoutChanged = s.layout.speakers.size() != scene_.layout.speakers.size() || s.effectivePanner() != scene_.effectivePanner() ||
-                               s.layout.name != scene_.layout.name;
+    const bool layoutChanged = !panningBuilt_ || !s.samePanning(scene_);
+    panningBuilt_ = true;
     scene_ = s;
     if (layoutChanged) {
         rk::DbapPanner::Params d{s.dbapRolloffDb, s.dbapBlur, s.dbapDirectivity};

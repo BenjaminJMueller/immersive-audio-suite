@@ -15,8 +15,16 @@ public:
     View3D();
     void setScene(const Scene& s);
     void setSelectedSource(int i) { sel_ = i; repaint(); }
-    void setSpeakerLevels(const std::vector<float>& l) { speakerLevels_ = l; repaint(); }
-    void setSourceLevels(const std::vector<float>& l) { sourceLevels_ = l; repaint(); }
+    void setSpeakerLevels(const std::vector<float>& l) {
+        if (!levelsDiffer(speakerLevels_, l)) return;
+        speakerLevels_ = l;
+        repaint();
+    }
+    void setSourceLevels(const std::vector<float>& l) {
+        if (!levelsDiffer(sourceLevels_, l)) return;
+        sourceLevels_ = l;
+        repaint();
+    }
     /// Same meaning as StageView::setSourceStyle.
     void setSourceStyle(std::vector<juce::Colour> colours, int dimFrom, bool names);
     void resetView();
@@ -39,6 +47,7 @@ private:
 
     Scene scene_;
     rk::Panner panner_;
+    bool panningBuilt_ = false;
     std::vector<float> speakerLevels_, sourceLevels_;
     std::vector<juce::Colour> sourceColours_;
     int dimFrom_ = 1 << 30;

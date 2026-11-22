@@ -51,6 +51,23 @@ rk::Vec3 getVec(const juce::var& o, const char* key, rk::Vec3 def) {
 
 } // namespace
 
+bool Scene::samePanning(const Scene& o) const {
+    if (layout.speakers.size() != o.layout.speakers.size() || autoPanner != o.autoPanner || panner != o.panner ||
+        layout.name != o.layout.name)
+        return false;
+    if (std::abs(dbapRolloffDb - o.dbapRolloffDb) > 1e-6f || std::abs(dbapBlur - o.dbapBlur) > 1e-6f ||
+        std::abs(dbapDirectivity - o.dbapDirectivity) > 1e-6f)
+        return false;
+    for (size_t m = 0; m < layout.speakers.size(); ++m) {
+        const auto& a = layout.speakers[m];
+        const auto& b = o.layout.speakers[m];
+        if (a.enabled != b.enabled || a.isSubwoofer != b.isSubwoofer || rk::length(a.position - b.position) > 1e-6f ||
+            rk::length(a.aim - b.aim) > 1e-6f)
+            return false;
+    }
+    return true;
+}
+
 rk::PannerKind Scene::effectivePanner() const {
     return autoPanner ? rk::analyze(layout).recommended : panner;
 }
