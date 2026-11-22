@@ -1,4 +1,5 @@
 #include "StageView.h"
+#include "Visuals.h"
 
 #include "Strings.h"
 
@@ -350,10 +351,13 @@ void StageView::paint(juce::Graphics& g) {
         else if (proj_ == Projection::Top) g.fillPath(nose);
     }
 
-    // ---- Signal paths --------------------------------------------------------------------
-    // Fine lines from each sounding source to the speakers it plays on, fading towards the speaker.
+    // ---- Sound particles -----------------------------------------------------------------
+    // Glowing dots between each sounding source and the speakers it plays on; their density
+    // shows how much of the source each speaker gets (gain squared times level).
     const int nSpk = (int)scene_.layout.speakers.size();
     std::array<float, rk::kMaxSpeakers> gains{};
+    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    int particles = 0;
     for (int s = 0; s < (int)scene_.sources.size() && s < dimFrom_; ++s) {
         const auto& src = scene_.sources[(size_t)s];
         const float lvl = s < (int)sourceLevels_.size() ? sourceLevels_[(size_t)s] : 0.0f;
@@ -362,16 +366,23 @@ void StageView::paint(juce::Graphics& g) {
         panner_.compute({src.position, src.spread}, gains.data());
         const auto a = toScreen(src.position);
         const juce::Colour col = sourceColour(s);
+        const float width = src.spread * 18.0f;
+        const float srcEnergy = std::max(std::sqrt(lvl), sel ? 0.10f : 0.0f);
+        particles += drawSoundCloud(g, a, col, srcEnergy, 13.0f, 30.0f + src.spread * 40.0f, (uint32_t)(s * 977 + 7), now);
         for (int m = 0; m < nSpk; ++m) {
             const float gm = gains[(size_t)m];
-            if (gm < 0.06f) continue;
+            if (gm < 0.04f) continue;
             const auto b = toScreen(scene_.layout.speakers[(size_t)m].position);
-            const float alpha = juce::jlimit(0.0f, 0.85f, std::max(sel ? 0.55f * gm * gm + 0.12f : 0.0f, 0.9f * gm * std::sqrt(lvl)));
-            if (alpha < 0.02f) continue;
-            juce::ColourGradient grad(col.withAlpha(alpha), a.x, a.y, col.withAlpha(alpha * 0.25f), b.x, b.y, false);
-            g.setGradientFill(grad);
-            g.drawLine(juce::Line<float>(a, b), 1.0f);
+            const float energy = std::max(gm * gm * std::sqrt(lvl), sel ? 0.10f * gm * gm : 0.0f);
+            particles += drawSoundParticles(g, a, b, col, energy, (uint32_t)(s * 131 + m + 1), now, width);
+            // Where the energy lands: a small cloud around the speaker.
+            particles += drawSoundCloud(g, b, col, energy, 12.0f, 18.0f, (uint32_t)(s * 131 + m + 5000), now);
         }
+    }
+    animating_ = particles > 0;
+    if (animating_ != isTimerRunning()) {
+        if (animating_) startTimerHz(30);
+        else stopTimer();
     }
 
     paintCalibrationBelow(g);

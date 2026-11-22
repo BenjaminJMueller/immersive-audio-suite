@@ -10,7 +10,7 @@
 
 namespace rkui {
 
-class View3D : public juce::Component {
+class View3D : public juce::Component, private juce::Timer {
 public:
     View3D();
     void setScene(const Scene& s);
@@ -48,6 +48,11 @@ private:
     Scene scene_;
     rk::Panner panner_;
     bool panningBuilt_ = false;
+    bool animating_ = false; // sound particles are visible: keep them twinkling
+    void timerCallback() override {
+        if (animating_ && isShowing()) repaint();
+        else stopTimer();
+    }
     std::vector<float> speakerLevels_, sourceLevels_;
     std::vector<juce::Colour> sourceColours_;
     int dimFrom_ = 1 << 30;

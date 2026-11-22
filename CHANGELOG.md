@@ -12,6 +12,7 @@
 - **Szenen**: den ganzen Mix speichern und mit Überblendzeit abrufen, Leiste unter der Raumansicht mit Vorherige, Nächste, Aktualisieren und Neue Szene. Positionen blenden auf dem kürzesten Bogen über.
 - **Seitenleiste wie bei Spat**: M und S direkt in jeder Quellenzeile, unten fest ein Master-Streifen mit Master-Pegel und Pegelanzeige. Abtastrate und Latenz stehen unter dem Projektnamen.
 - **Kopfhörer**: Das Kopfmodell bekommt Ohrmuschel-Echos und eine Höhenabsenkung von hinten, damit vorne, hinten, oben und unten unterscheidbar werden. Neuer Modus *Binaural*: die Quellen erklingen frei um den Kopf, unabhängig von den Lautsprechern.
+- **Schallteilchen wie bei Spat**: Zwischen jeder spielenden Quelle und ihren Lautsprechern leuchten viele kleine Teilchen. Ihre Dichte zeigt, wie viel Energie jeder Lautsprecher von der Quelle bekommt; sie funkeln an Ort und Stelle, in der Draufsicht, von vorne und in 3D.
 - **Abstrahlverhalten**: Richtwirkung und Ausrichtung je Quelle. Abgewandt klingt eine gerichtete Quelle leiser und dumpfer, der Hall-Send bleibt. Dazu ein Doppler-Effekt für bewegte Quellen.
 - **Einmessen mit Mikrofon**: Gleitton über jeden Lautsprecher, Laufzeit und Pegel angleichen, mit 4 bis 12 Messpunkten auch die Positionen (Multilateration, Verzögerung des Interfaces wird herausgerechnet). Hinweis auf vertauschte Kabel, Vorschau mit gestrichelter alter Position, Rückgängig.
 - **iPhone-App „Raumklang Messen“**: Lautsprecher mit LiDAR antippen, Position und Ausrichtung als Datei an Raumklang. Laden oder auf das Fenster ziehen.

@@ -27,4 +27,17 @@ private:
     bool init_ = false;
 };
 
+/// Sound particles ("fireflies") between a source and a speaker, like the energy display in
+/// Spat: many small glowing dots whose density shows how much of the source this speaker
+/// plays. They do not travel; they sit scattered along the path and twinkle softly.
+/// `energy` 0..1 (gain squared times level), `seed` keeps each path's pattern stable,
+/// `widthPx` widens the cloud (source width). Returns the number of dots drawn.
+int drawSoundParticles(juce::Graphics& g, juce::Point<float> from, juce::Point<float> to, juce::Colour colour,
+                       float energy, uint32_t seed, double timeSec, float widthPx = 0.0f, float sizeScale = 1.0f);
+
+/// A cloud of the same particles around a point (a sounding source or a speaker that plays
+/// it), starting just outside `innerPx` and thinning out over `radiusPx`.
+int drawSoundCloud(juce::Graphics& g, juce::Point<float> centre, juce::Colour colour, float energy, float innerPx,
+                   float radiusPx, uint32_t seed, double timeSec, float sizeScale = 1.0f);
+
 } // namespace rkui

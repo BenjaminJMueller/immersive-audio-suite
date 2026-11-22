@@ -12,7 +12,7 @@
 
 namespace rkui {
 
-class StageView : public juce::Component {
+class StageView : public juce::Component, private juce::Timer {
 public:
     enum class EditTarget { Sources, Speakers, None };
     /// Top: x right, y front (azimuth). Front: x right, z up. Side: y front (to the right), z up (elevation).
@@ -104,6 +104,11 @@ private:
     int selSource_ = -1, selSpeaker_ = -1;
     int dragSource_ = -1, dragSpeaker_ = -1;
     bool dragging_ = false;
+    bool animating_ = false; // sound particles are visible: keep them twinkling
+    void timerCallback() override {
+        if (animating_ && isShowing()) repaint();
+        else stopTimer();
+    }
     bool panningBuilt_ = false, panningStale_ = false;
     float scale_ = 40.0f; // pixels per metre
     float zoom_ = 1.0f;
