@@ -7,6 +7,8 @@ target_sources(rk_shared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Scene.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Widgets.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/StageView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/RoomView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/View3D.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Visuals.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Pages.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Survey.cpp)

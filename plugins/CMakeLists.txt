@@ -48,4 +48,13 @@ if(RK_BUILD_TESTS)
     target_link_libraries(rk_plugin_tests PRIVATE rk_shared
         juce::juce_audio_utils juce::juce_audio_processors juce::juce_recommended_config_flags)
     add_test(NAME rk_plugin_tests COMMAND rk_plugin_tests)
+
+    # Renders the plugin windows to PNG (README screenshots, design review). Not a test.
+    juce_add_console_app(rk_plugin_shots PRODUCT_NAME "Raumklang Plugin Shots")
+    target_sources(rk_plugin_shots PRIVATE tests/Screenshots.cpp
+        source/SourceProcessor.cpp source/SourceEditor.cpp return/ReturnProcessor.cpp return/ReturnEditor.cpp)
+    target_compile_definitions(rk_plugin_shots PRIVATE RK_NO_PLUGIN_ENTRY=1 JucePlugin_Name="Raumklang Shots" JUCE_MODAL_LOOPS_PERMITTED=1
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(rk_plugin_shots PRIVATE rk_shared
+        juce::juce_audio_utils juce::juce_audio_processors juce::juce_recommended_config_flags)
 endif()

@@ -55,6 +55,8 @@ public:
     juce::String displayName() const;
     juce::String customName() const;
     juce::String dawTrackName() const;
+    /// Colour of the DAW track, transparent if the host does not tell.
+    juce::Colour dawTrackColour() const;
     /// Message thread. Empty: follow the DAW track's name again.
     void setCustomName(const juce::String& name);
 
@@ -98,6 +100,7 @@ private:
     std::atomic<double> appSampleRate_{0.0};
     juce::CriticalSection nameLock_;
     juce::String trackName_;
+    juce::Colour trackColour_;
     juce::String customName_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SourceProcessor)

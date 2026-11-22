@@ -24,7 +24,7 @@ public:
     void setSelectedSource(int i) { selSource_ = i; repaint(); }
     void setSelectedSpeaker(int i) { selSpeaker_ = i; repaint(); }
     void setSpeakerLevels(const std::vector<float>& l) { speakerLevels_ = l; repaint(); }
-    /// 0..1 per source. Rising levels send out a ripple from the source.
+    /// 0..1 per source, drawn as a ring around the source.
     void setSourceLevels(const std::vector<float>& l);
     /// 0..1: how much reverb fills the room right now (a soft glow over the stage).
     void setAmbience(float a) { ambience_ = a; }
@@ -34,6 +34,17 @@ public:
     /// Sources from this index on are shown but cannot be dragged (e.g. tracks from the DAW).
     void setFirstLockedSource(int i) { firstLocked_ = i; repaint(); }
     void setProjection(Projection p);
+    /// Look of the sources: their colours (transparent or missing = list colour), from which
+    /// index on they are drawn dimmed (other tracks seen from a plugin), and whether they
+    /// carry their name instead of a number.
+    void setSourceStyle(std::vector<juce::Colour> colours, int dimFrom, bool names);
+    /// Embedded in a RoomView, which has its own view switch and draws one legend.
+    void setShowViewSwitch(bool on);
+    void setShowLegend(bool on) { showLegend_ = on; repaint(); }
+    /// Legend at the bottom left instead of the top left (no coach bar in this view).
+    void setLegendAtBottom(bool on) { legendBottom_ = on; repaint(); }
+    /// Small caption at the top left ("Oben", "Vorne") when two views sit side by side.
+    void setCaption(juce::String c) { caption_ = std::move(c); repaint(); }
 
     /// Calibration overlay: measuring points for the microphone and, after a measurement, where
     /// the speakers were before (thin dashed outline joined to the new position).
@@ -76,7 +87,7 @@ private:
     void paintCalibrationAbove(juce::Graphics& g);
     void paintCoach(juce::Graphics& g);
     void paintGrid(juce::Graphics& g, float step);
-    void paintField(juce::Graphics& g, const std::function<juce::Colour(int)>& speakerColour);
+    juce::Colour sourceColour(int s) const;
     juce::Point<float> plane(rk::Vec3 p) const; // view-plane coordinates in metres
     int hitSource(juce::Point<float> p) const;
     int hitSpeaker(juce::Point<float> p) const;
@@ -90,10 +101,12 @@ private:
     float scale_ = 40.0f; // pixels per metre
     float zoom_ = 1.0f;
     juce::Point<float> centre_;
-    std::vector<float> speakerLevels_, sourceLevels_, prevSourceLevels_;
-    struct Ripple { int source; double start; };
-    std::vector<Ripple> ripples_;
+    std::vector<float> speakerLevels_, sourceLevels_;
     float ambience_ = 0.0f;
+    std::vector<juce::Colour> sourceColours_;
+    int dimFrom_ = 1 << 30;
+    bool sourceNames_ = false, showLegend_ = true, legendBottom_ = false;
+    juce::String caption_;
     juce::String coachBadge_, coachTitle_, coachText_;
     bool coachOk_ = false;
     int firstLocked_ = 1 << 30;

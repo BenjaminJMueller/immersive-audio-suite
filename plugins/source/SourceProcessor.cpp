@@ -53,6 +53,12 @@ SourceProcessor::~SourceProcessor() {
 void SourceProcessor::updateTrackProperties(const TrackProperties& properties) {
     const juce::ScopedLock sl(nameLock_);
     trackName_ = properties.name.value_or(juce::String());
+    trackColour_ = properties.colourARGB.has_value() ? juce::Colour((juce::uint32)*properties.colourARGB) : juce::Colours::transparentBlack;
+}
+
+juce::Colour SourceProcessor::dawTrackColour() const {
+    const juce::ScopedLock sl(nameLock_);
+    return trackColour_;
 }
 
 juce::String SourceProcessor::customName() const {
