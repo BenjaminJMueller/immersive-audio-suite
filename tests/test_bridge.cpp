@@ -159,6 +159,41 @@ TEST_CASE("bridge: names, parameters, channel count and release are visible to t
     CHECK(rx.scan().empty());
 }
 
+TEST_CASE("bridge: the app moves a track, the plugin picks it up once, a new owner ignores old moves") {
+    Names nm;
+    Sender tx;
+    Receiver rx;
+    REQUIRE(tx.open(nm.name));
+    REQUIRE(rx.open(nm.name));
+    float az = 0, el = 0, dist = 0;
+    CHECK_FALSE(rx.requestMove(0, 10.0f, 0.0f, 2.0f)); // nobody owns slot 0
+    const int slot = tx.claim();
+    REQUIRE(slot >= 0);
+    CHECK_FALSE(tx.takeMove(az, el, dist));
+    REQUIRE(rx.requestMove(slot, -120.0f, 15.0f, 4.5f));
+    REQUIRE(tx.takeMove(az, el, dist));
+    CHECK(az == doctest::Approx(-120.0f));
+    CHECK(el == doctest::Approx(15.0f));
+    CHECK(dist == doctest::Approx(4.5f));
+    CHECK_FALSE(tx.takeMove(az, el, dist)); // only once
+
+    // Garbage from the app is clamped, never passed on as NaN.
+    REQUIRE(rx.requestMove(slot, NAN, 1.0e9f, -5.0f));
+    REQUIRE(tx.takeMove(az, el, dist));
+    CHECK(std::isfinite(az));
+    CHECK(el <= 90.0f);
+    CHECK(dist >= 0.0f);
+
+    REQUIRE(rx.requestMove(slot, 30.0f, 0.0f, 2.0f));
+    tx.release();
+    Sender other;
+    REQUIRE(other.open(nm.name));
+    REQUIRE(other.claim() == slot);
+    CHECK_FALSE(other.takeMove(az, el, dist)); // meant for the previous plugin
+    CHECK_FALSE(rx.requestMove(-1, 0, 0, 1));
+    CHECK_FALSE(rx.requestMove(kSlots, 0, 0, 1));
+}
+
 TEST_CASE("bridge: slots are limited and freed slots are reused") {
     Names nm;
     std::vector<std::unique_ptr<Sender>> senders;

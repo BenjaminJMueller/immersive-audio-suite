@@ -485,7 +485,7 @@ void StageView::paint(juce::Graphics& g) {
                 g.drawEllipse(c.x - 21.5f, c.y - 21.5f, 43.0f, 43.0f, 1.2f);
             }
         }
-        if (s >= firstLocked_ && !sourceNames_) { // from the DAW: small marker
+        if (s >= firstDaw_ && !sourceNames_) { // from the DAW: small marker
             g.setColour(p.text3);
             g.setFont(uiFont(9.5f, true));
             g.drawText("DAW", juce::Rectangle<float>(c.x - 20, c.y - 34, 40, 12), juce::Justification::centred);

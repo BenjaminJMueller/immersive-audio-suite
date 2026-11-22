@@ -66,6 +66,10 @@ private:
     int dawTrackLevelIndex(int track) const;
     void selectSource(int i);
     void selectRoomPreset(int i);
+    /// Moves DAW track `j` (index into dawTracks_): sent to its plugin, shown here at once.
+    void moveDawTrack(int j, float azimuthDeg, float elevationDeg, float distance);
+    struct DawMove { rk::Vec3 position; double until = 0.0; };
+    std::array<DawMove, rk::bridge::kSlots> dawMoves_{}; // shown until the plugin has caught up
     void selectSpeaker(int i);
     void addSource();
     void startDemo();

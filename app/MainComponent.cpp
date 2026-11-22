@@ -233,6 +233,9 @@ MainComponent::MainComponent()
             applyScene(false);
             refreshSidebar();
             if (i == selSource_ && step_ == StepSources) rebuildInspector();
+        } else {
+            const rk::Polar pol = rk::toPolar(p);
+            moveDawTrack(i - (int)scene_.sources.size(), pol.azimuthDeg, pol.elevationDeg, pol.distance);
         }
     };
     stage_.onSpeakerMoved = [this](int i, rk::Vec3 p) {
@@ -464,6 +467,8 @@ rkui::Scene MainComponent::stageScene() const {
         rkui::SourceInfo info;
         info.name = juce::String::fromUTF8(t.name.c_str());
         info.position = rk::toCartesian({p.azimuthDeg, p.elevationDeg, p.distance});
+        const auto& mv = dawMoves_[(size_t)juce::jlimit(0, rk::bridge::kSlots - 1, t.slot)];
+        if (juce::Time::getMillisecondCounterHiRes() < mv.until) info.position = mv.position;
         info.spread = juce::jlimit(0.0f, 1.0f, p.spread + (t.channels == 2 ? p.stereoWidthDeg / 360.0f : 0.0f));
         info.mute = !t.sending || t.sampleRateMismatch;
         s.sources.push_back(info);
@@ -472,7 +477,8 @@ rkui::Scene MainComponent::stageScene() const {
 }
 
 void MainComponent::showStage() {
-    stage_.setFirstLockedSource((int)scene_.sources.size());
+    // DAW tracks can be dragged too: the position goes back to the track's plugin.
+    stage_.setFirstLockedSource((int)scene_.sources.size() + (int)dawTracks_.size(), (int)scene_.sources.size());
     rkui::Scene s = stageScene();
     if (calibrating_ && proposal_) s.layout = rkui::applyProposal(scene_.layout, *proposal_, proposalOpts_);
     stage_.setScene(s);
@@ -516,7 +522,7 @@ void MainComponent::buildDawTrackPage(int j) {
     dawPageTrack_ = j;
     juce::String name = juce::String::fromUTF8(t.name.c_str());
     if (name.isEmpty()) name = tr("Spur") + " " + juce::String(j + 1);
-    inspector_.add(std::make_unique<rkui::SectionHeader>(name, tr("Diese Spur kommt über das Plugin „Raumklang Quelle“ aus der DAW. Position und Klang stellst du im Plugin ein, dort lassen sie sich automatisieren.")), 26);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(name, tr("Diese Spur kommt über das Plugin „Raumklang Quelle“ aus der DAW. Die Position lässt sich hier und in der Ansicht ziehen, das Plugin übernimmt sie. Liest die DAW gerade Automation, gewinnt die Automation.")), 26);
     // Only a problem gets a card. A connected track needs no message, the list shows it playing.
     if (t.sampleRateMismatch) {
         dawCard_ = inspector_.add(std::make_unique<rkui::StatusCard>(), 72);
@@ -527,10 +533,20 @@ void MainComponent::buildDawTrackPage(int j) {
     }
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Position")), 26);
-    auto add = [this](const juce::String& label, double lo, double hi, const juce::String& unit, int dec) {
+    auto add = [this, j](const juce::String& label, double lo, double hi, const juce::String& unit, int dec) {
         auto* sl = inspector_.add(std::make_unique<rkui::ParamSlider>(label, lo, hi, 0.01, unit, dec, 0.0), 32);
-        sl->setEnabledState(false);
-        sl->setTooltip(tr("Im Plugin in der DAW einstellen."));
+        const bool position = dawSliders_.size() < 3;
+        if (position) {
+            // Position can be changed here as well; the plugin takes it over (and the DAW records it).
+            sl->setTooltip(tr("Ändert die Position im Plugin. Steht die Spur in der DAW auf Automation schreiben, wird die Bewegung aufgenommen."));
+            sl->onChange = [this, j](double) {
+                if (dawSliders_.size() < 3) return;
+                moveDawTrack(j, (float)dawSliders_[0]->getValue(), (float)dawSliders_[1]->getValue(), (float)dawSliders_[2]->getValue());
+            };
+        } else {
+            sl->setEnabledState(false);
+            sl->setTooltip(tr("Im Plugin in der DAW einstellen."));
+        }
         dawSliders_.push_back(sl);
     };
     add(tr("Azimut"), -180, 180, degree(), 1);
@@ -548,9 +564,12 @@ void MainComponent::buildDawTrackPage(int j) {
 
 void MainComponent::refreshDawValues() {
     if (dawPageTrack_ < 0 || dawPageTrack_ >= (int)dawTracks_.size() || dawSliders_.size() < 6) return;
-    const auto p = host_.bridgeParams(dawTracks_[(size_t)dawPageTrack_].slot);
+    const int slot = dawTracks_[(size_t)dawPageTrack_].slot;
+    const auto p = host_.bridgeParams(slot);
     const double v[6] = {p.azimuthDeg, p.elevationDeg, p.distance, p.gainDb, p.spread * 100.0, p.reverbSendDb};
-    for (int i = 0; i < 6; ++i)
+    // While the user moves the track here, the plugin's values lag behind: leave position alone.
+    const bool moving = slot >= 0 && slot < rk::bridge::kSlots && juce::Time::getMillisecondCounterHiRes() < dawMoves_[(size_t)slot].until;
+    for (int i = moving ? 3 : 0; i < 6; ++i)
         if (std::abs(dawSliders_[(size_t)i]->getValue() - v[i]) > 1e-4) dawSliders_[(size_t)i]->setValue(v[i]);
 }
 
@@ -653,6 +672,18 @@ void MainComponent::selectSource(int i) {
     stage_.setSelectedSource(i);
     sidebar_.setSelected(i);
     rebuildInspector();
+}
+
+void MainComponent::moveDawTrack(int j, float azimuthDeg, float elevationDeg, float distance) {
+    if (j < 0 || j >= (int)dawTracks_.size()) return;
+    const int slot = dawTracks_[(size_t)j].slot;
+    if (slot < 0 || slot >= rk::bridge::kSlots) return;
+    if (!host_.requestBridgeMove(slot, azimuthDeg, elevationDeg, distance)) return;
+    // The plugin applies it within a few tens of milliseconds; until its parameters come
+    // back through the bridge, show the dragged position so the track does not jump.
+    dawMoves_[(size_t)slot] = {rk::toCartesian({azimuthDeg, elevationDeg, distance}), juce::Time::getMillisecondCounterHiRes() + 600.0};
+    showStage();
+    refreshSidebar();
 }
 
 void MainComponent::selectRoomPreset(int i) {

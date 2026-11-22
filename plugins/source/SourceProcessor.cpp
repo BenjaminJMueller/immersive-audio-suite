@@ -41,12 +41,15 @@ SourceProcessor::SourceProcessor()
     distAmt_ = params.getRawParameterValue("distanceAmount");
     route_ = params.getRawParameterValue("route");
     reloadSetup(true);
-    timerCallback(); // connect to the app right away
-    startTimer(500);
+    housekeeping(); // connect to the app right away
+    startTimer(40);
 }
 
 SourceProcessor::~SourceProcessor() {
     stopTimer();
+    if (appGesture_) // a drag from the app was still open: close it for the host
+        for (const char* id : {"azimuth", "elevation", "distance"})
+            if (auto* prm = params.getParameter(id)) prm->endChangeGesture();
     sender_.release();
 }
 
@@ -161,6 +164,29 @@ void SourceProcessor::setSourcePosition(rk::Vec3 p) {
 }
 
 void SourceProcessor::timerCallback() {
+    // Fast part: the user drags this track in the app. Applied as a normal parameter change
+    // inside a gesture, so the DAW records it as automation (touch/latch/write).
+    float az = 0.0f, el = 0.0f, dist = 0.0f;
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (sender_.takeMove(az, el, dist)) {
+        const char* ids[3] = {"azimuth", "elevation", "distance"};
+        const float vals[3] = {az, el, dist};
+        for (int k = 0; k < 3; ++k)
+            if (auto* prm = params.getParameter(ids[k])) {
+                if (!appGesture_) prm->beginChangeGesture();
+                prm->setValueNotifyingHost(prm->convertTo0to1(vals[k]));
+            }
+        appGesture_ = true;
+        lastAppMoveMs_ = now;
+    } else if (appGesture_ && now - lastAppMoveMs_ > 300.0) {
+        for (const char* id : {"azimuth", "elevation", "distance"})
+            if (auto* prm = params.getParameter(id)) prm->endChangeGesture();
+        appGesture_ = false;
+    }
+    if (++tick_ % 12 == 0) housekeeping(); // about twice a second
+}
+
+void SourceProcessor::housekeeping() {
     reloadSetup(false);
     engine.collectGarbage();
     // Bridge housekeeping (message thread): open, claim a slot while the app runs, stay alive.

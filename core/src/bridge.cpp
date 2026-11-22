@@ -46,6 +46,10 @@ struct Slot {
     std::atomic<uint32_t> nameSeq;     // seqlock for name: odd while writing
     std::atomic<uint32_t> name[kNameWords];
     std::atomic<float> params[kNumParams];
+    // App -> plugin: a position the user set by dragging the track in the app.
+    // The app writes movePos first, then bumps moveSeq (release); the plugin polls moveSeq.
+    std::atomic<uint32_t> moveSeq;
+    std::atomic<float> movePos[3]; // azimuth, elevation, distance
     std::atomic<uint64_t> writePos;    // frames written since the slot was claimed
     std::atomic<int64_t> lastWriteMs;
     std::atomic<float> audio[kMaxChannels][kRingFrames];
@@ -79,9 +83,9 @@ static_assert(std::is_standard_layout_v<Shared>);
 
 const char* defaultName() {
 #if defined(_WIN32)
-    return "Local\\RaumklangBridgeV1";
+    return "Local\\RaumklangBridgeV2";
 #else
-    return "/raumklang-bridge-v1";
+    return "/raumklang-bridge-v2";
 #endif
 }
 
@@ -333,6 +337,7 @@ int Sender::claim() {
             s.writePos.store(0);
             s.lastWriteMs.store(0);
             s.channels.store(1);
+            moveSeen_ = s.moveSeq.load(std::memory_order_acquire); // ignore moves meant for a previous owner
             token_ = token;
             slot_.store(i, std::memory_order_release);
             return i;
@@ -498,6 +503,35 @@ void Receiver::heartbeat(double sampleRate) {
     if (shared_ == nullptr) return;
     shared_->appSampleRate.store((uint32_t)std::clamp(sampleRate, 0.0, 1.0e6));
     shared_->appHeartbeatMs.store(nowMs());
+}
+
+bool Sender::takeMove(float& azimuthDeg, float& elevationDeg, float& distance) noexcept {
+    const int i = slot();
+    if (shared_ == nullptr || i < 0) return false;
+    Slot& s = shared_->slots[i];
+    const uint32_t seq = s.moveSeq.load(std::memory_order_acquire);
+    if (seq == moveSeen_) return false;
+    moveSeen_ = seq;
+    TrackParams p;
+    p.azimuthDeg = s.movePos[0].load(std::memory_order_relaxed);
+    p.elevationDeg = s.movePos[1].load(std::memory_order_relaxed);
+    p.distance = s.movePos[2].load(std::memory_order_relaxed);
+    p = p.sanitized(); // shared memory is hostile
+    azimuthDeg = p.azimuthDeg;
+    elevationDeg = p.elevationDeg;
+    distance = p.distance;
+    return true;
+}
+
+bool Receiver::requestMove(int slot, float azimuthDeg, float elevationDeg, float distance) noexcept {
+    if (shared_ == nullptr || slot < 0 || slot >= kSlots) return false;
+    Slot& s = shared_->slots[slot];
+    if (s.owner.load() == 0) return false;
+    s.movePos[0].store(azimuthDeg, std::memory_order_relaxed);
+    s.movePos[1].store(elevationDeg, std::memory_order_relaxed);
+    s.movePos[2].store(distance, std::memory_order_relaxed);
+    s.moveSeq.fetch_add(1, std::memory_order_release);
+    return true;
 }
 
 std::vector<TrackInfo> Receiver::scan() const {
