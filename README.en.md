@@ -48,7 +48,9 @@ This led to the requirements for this tool:
 1. **Speakers.** Pick a preset (stereo, quad, 5.1, 7.1.4, ring, dome, cube, donut) or place and drag speakers freely. Raumklang checks the layout and says in plain words whether it works and which method it uses. *Align distances* compensates delay and level when speakers stand at different distances.
 2. **Sources.** Each source is an input of the audio interface or a built-in test signal (pink noise, sine, clicks). Sources are dragged in the top view or set with azimuth, elevation and distance, plus level, width, reverb send and distance effect. *Orbit* moves a source around the listening spot by itself.
 3. **Room.** Reverb with presets (dry, studio, hall, church) and controls for decay time, room size, high damping and pre-delay.
-4. **Output.** Audio device, sample rate and buffer. Master level, protection limiter, headphone preview and *play speakers one by one* to check the wiring.
+4. **Output.** Audio device, sample rate and buffer. Master level, protection limiter and *play speakers one by one* to check the wiring. Under *Listen on*, besides the speakers there are two headphone modes: *Headphones* plays your own speaker system in the headphones, *Binaural* places the sources freely around your head, independent of the speakers.
+
+Below the room view sits the *Scenes* bar: it stores the whole mix and recalls it with a fade time, with arrows for the previous and next scene. Every source has M (mute) and S (solo) in the sidebar, and the output with master level and meter is pinned at the bottom.
 
 <p>
   <img src="docs/screenshots/02-quellen.png" width="49%" alt="Sources">
