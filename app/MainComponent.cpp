@@ -221,6 +221,27 @@ MainComponent::MainComponent()
         else if (step_ == StepRoom) selectRoomPreset(row);
         else selectSource(row);
     };
+    sidebar_.onToggle = [this](int row, int which) {
+        if (step_ != StepSources || row < 0 || row >= (int)scene_.sources.size()) return;
+        auto& s = scene_.sources[(size_t)row];
+        if (which == 0) s.mute = !s.mute;
+        else s.solo = !s.solo;
+        applyScene(false);
+        commit();
+        refreshSidebar();
+        showStage();
+        if (row == selSource_) rebuildInspector();
+    };
+    addAndMakeVisible(outputStrip_);
+    outputStrip_.setTooltip(tr("Gesamtpegel aller Ausgänge. Doppelklick setzt auf 0 dB."));
+    outputStrip_.onChange = [this](float db) {
+        scene_.masterGainDb = db;
+        applyScene(false);
+    };
+    outputStrip_.onCommit = [this] {
+        commit();
+        if (step_ == StepOutput) rebuildInspector();
+    };
     sidebarView_.setViewedComponent(&sidebar_, false);
     sidebarView_.setScrollBarsShown(true, false);
     sidebarView_.setScrollBarThickness(8);
@@ -643,6 +664,7 @@ void MainComponent::refreshSidebar() {
         sidebar_.setRows(rows);
         sidebar_.setSelected(match >= 0 ? match : (int)presets.size());
     } else {
+        const bool anySolo = std::any_of(scene_.sources.begin(), scene_.sources.end(), [](const rkui::SourceInfo& x) { return x.solo; });
         for (int i = 0; i < (int)scene_.sources.size(); ++i) {
             const auto& s = scene_.sources[(size_t)i];
             rkui::SidebarList::Row r;
@@ -650,8 +672,11 @@ void MainComponent::refreshSidebar() {
             r.colour = rkui::itemColour(i);
             r.title = s.name;
             r.subtitle = sourceSubtitle(i);
-            r.trailing = s.solo ? "Solo" : (s.mute ? tr("Stumm") : (s.orbit ? u8("\xe2\x9f\xb3") : juce::String()));
-            r.dim = s.mute;
+            r.trailing = s.orbit ? u8("\xe2\x9f\xb3") : juce::String();
+            r.toggles = step_ == StepSources;
+            r.mute = s.mute;
+            r.solo = s.solo;
+            r.dim = s.mute || (anySolo && !s.solo);
             r.group = dawTracks_.empty() ? juce::String() : tr("Im Projekt");
             rows.push_back(r);
         }
@@ -1310,6 +1335,14 @@ void MainComponent::showHelpMenu() {
 void MainComponent::timerCallback() {
     const double now = juce::Time::getMillisecondCounterHiRes();
     if (fading_) stepSnapshotFade(now);
+    if (now - deviceSummaryAt_ > 1000.0) {
+        deviceSummaryAt_ = now;
+        const juce::String d = host_.deviceSummary();
+        if (d != deviceSummary_) {
+            deviceSummary_ = d;
+            repaint(0, 0, kSidebar + 60, kTopBar);
+        }
+    }
 
     // Moving sources ("Kreisen").
     const double dt = lastOrbitTime_ > 0.0 ? juce::jlimit(0.0, 0.2, (now - lastOrbitTime_) * 0.001) : 0.0;
@@ -1357,6 +1390,12 @@ void MainComponent::timerCallback() {
         srcView.push_back(std::max(src[(size_t)e], src[(size_t)e + 1]));
     }
     stage_.setSourceLevels(srcView);
+    {
+        float outPeak = 0.0f;
+        for (int c = 0; c < juce::jmin(nOut, rk::kMaxSpeakers); ++c) outPeak = std::max(outPeak, spk[(size_t)c]);
+        outputStrip_.setLevel(outPeak);
+        outputStrip_.setGainDb(scene_.masterGainDb);
+    }
     if (step_ == StepSpeakers || step_ == StepOutput) sidebar_.setLevels(spkView);
     else sidebar_.setLevels(srcView);
 
@@ -1413,7 +1452,10 @@ void MainComponent::paint(juce::Graphics& g) {
     g.drawText(scene_.name.isEmpty() ? tr("Neues Projekt") : scene_.name, 16, 8, 220, 18, juce::Justification::left);
     g.setColour(p.text3);
     g.setFont(rkui::uiFont(11.5f));
-    g.drawText(tr("Automatisch gesichert"), 16, 26, 220, 16, juce::Justification::left);
+    juce::String sub = tr("Automatisch gesichert");
+    if (host_.simulating()) sub << u8(" \xc2\xb7 ") << tr("Testraum");
+    else if (deviceSummary_.isNotEmpty()) sub << u8(" \xc2\xb7 ") << deviceSummary_;
+    g.drawText(sub, 16, 26, kSidebar + 40, 16, juce::Justification::left, true);
     // Sidebar.
     g.setColour(p.side);
     g.fillRect(0, kTopBar, kSidebar, getHeight() - kTopBar);
@@ -1472,6 +1514,7 @@ void MainComponent::resized() {
 
     auto side = r.removeFromLeft(kSidebar);
     side.removeFromBottom(52);
+    outputStrip_.setBounds(side.removeFromBottom(64));
     if (addBtn_->isVisible()) addBtn_->setBounds(side.removeFromBottom(44).reduced(12, 6));
     sidebarView_.setBounds(side.reduced(0, 4));
     sidebar_.setSize(sidebarView_.getMaximumVisibleWidth(), sidebar_.contentHeight());

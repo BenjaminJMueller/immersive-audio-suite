@@ -123,6 +123,7 @@ private:
     rkui::RoomView stage_;
     rkui::ReverbPanel reverbPanel_; // replaces the room view in step 3
     rkui::SnapshotBar snapBar_;      // under the room view
+    rkui::OutputStrip outputStrip_;  // pinned at the bottom of the sidebar
 
     // Snapshots: storing, recalling with a fade, and the menu of one snapshot.
     void storeSnapshot();
@@ -146,6 +147,8 @@ private:
     rkui::StatusCard* dawCard_ = nullptr;
     rkui::SpectrumAnalyzer analyzer_;
     juce::String statusText_;
+    juce::String deviceSummary_; // sample rate and latency, under the project name
+    double deviceSummaryAt_ = 0.0;
     std::array<bool, rk::kMaxSources> sourceHasSignal_{};
     std::array<double, rk::kMaxSources> signalSeen_{};
     juce::TooltipWindow tooltips_{this, 600};

@@ -131,6 +131,8 @@ const std::map<std::string, const char*>& english() {
         {"Quelle", "Source"},
         {"aktiv", "active"},
         {"Ausgang", "Output"},
+        {"Testraum", "Test room"},
+        {"Gesamtpegel aller Ausgänge. Doppelklick setzt auf 0 dB.", "Overall level of all outputs. Double click resets to 0 dB."},
         {"0 % klingt punktförmig, 100 % verteilt die Quelle auf mehrere Lautsprecher.", "0 % sounds like a point, 100 % spreads the source over several speakers."},
         {"Abfall", "Rolloff"},
         {"Abstände ausgleichen", "Align distances"},

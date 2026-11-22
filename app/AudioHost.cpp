@@ -166,6 +166,19 @@ void AudioHost::audioDeviceAboutToStart(juce::AudioIODevice* device) {
     engine.prepare(sr, juce::jlimit(64, 4096, block));
 }
 
+juce::String AudioHost::deviceSummary() {
+    auto* d = devices.getCurrentAudioDevice();
+    if (d == nullptr || !d->isOpen()) return {};
+    const double sr = d->getCurrentSampleRate();
+    if (sr <= 0.0) return {};
+    const int samples = d->getCurrentBufferSizeSamples() + d->getOutputLatencyInSamples();
+    const juce::String dot = juce::String::fromUTF8(" \xc2\xb7 ");
+    const juce::String rate = std::abs(sr - std::round(sr / 1000.0) * 1000.0) < 1.0
+                                  ? juce::String(juce::roundToInt(sr / 1000.0))
+                                  : juce::String(sr / 1000.0, 1).replaceCharacter('.', ',');
+    return rate + " kHz" + dot + juce::String(1000.0 * samples / sr, 1).replaceCharacter('.', ',') + " ms";
+}
+
 void AudioHost::audioDeviceStopped() {}
 
 void AudioHost::audioDeviceError(const juce::String& message) {
