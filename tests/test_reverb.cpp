@@ -182,3 +182,48 @@ TEST_CASE("reverb: longer low decay keeps low frequencies ringing longer") {
     };
     CHECK(lateLowEnergy(2.5f) > 10.0 * lateLowEnergy(1.0f));
 }
+
+TEST_CASE("reverb: changing the size while it rings glides instead of clicking") {
+    rk::FdnReverb rv;
+    rv.prepare(48000.0);
+    rk::ReverbParams p;
+    p.size = 1.0f;
+    p.decaySec = 2.0f;
+    rv.setParams(p);
+    const int n = 256;
+    std::vector<float> in((size_t)n), out((size_t)n);
+    float* o[1] = {out.data()};
+    double phase = 0.0;
+    float prev = 0.0f;
+    auto run = [&](int blocks) {
+        float maxStep = 0.0f;
+        for (int b = 0; b < blocks; ++b) {
+            for (int i = 0; i < n; ++i) {
+                in[(size_t)i] = 0.5f * (float)std::sin(phase);
+                phase += 2.0 * 3.14159265358979 * 150.0 / 48000.0;
+            }
+            std::fill(out.begin(), out.end(), 0.0f);
+            rv.process(in.data(), o, 1, n, 1.0f);
+            for (float v : out) {
+                maxStep = std::max(maxStep, std::fabs(v - prev));
+                prev = v;
+            }
+        }
+        return maxStep;
+    };
+    run(200); // settle
+    const float steady = run(40);
+    REQUIRE(steady > 0.0f);
+    // A scene fade: the size changes a little in every block.
+    float during = 0.0f;
+    for (int k = 1; k <= 60; ++k) {
+        p.size = 1.0f + 0.6f * (float)k / 60.0f;
+        rv.setParams(p);
+        during = std::max(during, run(1));
+    }
+    run(200);
+    const float after = run(40);
+    MESSAGE("steady " << steady << " during " << during << " after " << after);
+    // The level at 150 Hz depends on the size (comb filtering), so compare with both ends.
+    CHECK(during < std::max(steady, after) * 1.5f);
+}

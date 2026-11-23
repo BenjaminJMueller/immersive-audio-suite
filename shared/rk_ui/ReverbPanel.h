@@ -32,7 +32,7 @@ void setReverbBandRt(rk::ReverbParams& p, int band, float seconds);
 /// Room size shown as a volume: size 1 is 1000 m³.
 float roomVolume(float size);
 
-class ReverbPanel : public juce::Component, public juce::SettableTooltipClient {
+class ReverbPanel : public juce::Component, public juce::SettableTooltipClient, private juce::Timer {
 public:
     ReverbPanel();
     void setParams(const rk::ReverbParams& p, float wetDb);
@@ -64,6 +64,11 @@ private:
     rk::ReverbParams params_;
     float wetDb_ = -6.0f;
     float scaleRt_ = 4.0f; // y range of the curve, held while dragging
+    float scaleTarget_ = 4.0f; // the range glides there (a scene fade changes it every frame)
+    float rangeMs_ = 0.0f, rangeTarget_ = 0.0f; // time axis of the lower diagram, glides too
+    static float timeRangeFor(const rk::ReverbParams& p);
+    void animateScaleTo(float target);
+    void timerCallback() override;
     int hover_ = -1, drag_ = -1;
     std::vector<std::array<float, SpectrumAnalyzer::kBands>> history_;
     juce::String coachBadge_, coachTitle_, coachText_;

@@ -45,10 +45,10 @@ public:
 private:
     struct Chip { juce::String name; juce::String fade; };
     // Hit targets: chips 0..n-1, then the fixed buttons.
-    enum { kPrev = 1000, kNext, kUpdate, kNew };
+    enum { kPrev = 1000, kNext, kUpdate, kNew, kInfo };
     struct Layout {
         std::vector<juce::Rectangle<float>> chips;
-        juce::Rectangle<float> prev, next, update, add;
+        juce::Rectangle<float> prev, next, update, add, info;
     };
     Layout layout() const;
     int hit(juce::Point<float> p) const;

@@ -1,6 +1,7 @@
 #include "Snapshots.h"
 
 #include "Strings.h"
+#include "Widgets.h"
 
 #include <cmath>
 
@@ -97,7 +98,7 @@ float fadeCurve(float t) {
 // ---------------------------------------------------------------------------------------
 
 SnapshotBar::SnapshotBar() {
-    setTooltip(tr("Szenen speichern den ganzen Mix: Positionen, Pegel, Raum. Klick ruft eine Szene ab und blendet hinüber, die Pfeile gehen zur vorigen und nächsten. Rechtsklick zum Umbenennen, Überblendzeit oder Löschen."));
+    // Explained in the (i) next to "Szenen".
 }
 
 void SnapshotBar::setSnapshots(const std::vector<Snapshot>& list) {
@@ -126,8 +127,10 @@ SnapshotBar::Layout SnapshotBar::layout() const {
     const float updW = juce::GlyphArrangement::getStringWidth(f, tr("Aktualisieren")) + 24.0f;
     l.update = {right - updW, y, updW, h};
     right -= updW + 14.0f;
-    // Left: label, previous, the snapshots, next.
-    float x = 78.0f;
+    // Left: label with its (i), previous, the snapshots, next.
+    const float labelW = juce::GlyphArrangement::getStringWidth(uiFont(12.0f, true), tr("Szenen"));
+    l.info = {16.0f + labelW + 5.0f, (float)getHeight() * 0.5f - 6.5f, 13.0f, 13.0f};
+    float x = std::max(78.0f, l.info.getRight() + 12.0f);
     l.prev = {x, y, 28.0f, h};
     x += 34.0f;
     const float nextX = right - 28.0f;
@@ -148,6 +151,7 @@ int SnapshotBar::hit(juce::Point<float> p) const {
     if (l.next.contains(p)) return kNext;
     if (l.update.contains(p)) return kUpdate;
     if (l.add.contains(p)) return kNew;
+    if (l.info.expanded(4.0f).contains(p)) return kInfo;
     return -1;
 }
 
@@ -160,6 +164,7 @@ void SnapshotBar::paint(juce::Graphics& g) {
     g.setFont(uiFont(12.0f, true));
     g.drawText(tr("Szenen"), juce::Rectangle<float>(16.0f, 0.0f, 60.0f, (float)getHeight()), juce::Justification::centredLeft);
     const auto l = layout();
+    drawIcon(g, Icon::Info, l.info, hover_ == kInfo ? p.accent : p.text3, 1.2f);
     auto button = [&](juce::Rectangle<float> r, int id, bool enabled) {
         g.setColour(!enabled ? p.field.withMultipliedAlpha(0.5f) : (hover_ == id ? p.hover : p.field));
         g.fillRoundedRectangle(r, 7.0f);
@@ -225,6 +230,14 @@ void SnapshotBar::mouseUp(const juce::MouseEvent& e) {
     const int h = hit(e.position);
     const int n = (int)chips_.size();
     if (h < 0) return;
+    if (h == kInfo) {
+        showInfoBubble(tr("Eine Szene speichert den ganzen Mix: Position, Pegel, Breite und Hall-Send jeder Quelle, die Positionen der DAW-Spuren und den Raum.\n\n"
+                          "„+ Neue Szene“ legt den aktuellen Mix als Szene an. Ein Klick auf eine Szene blendet in der eingestellten Überblendzeit dorthin über, die Pfeile gehen zur vorigen und nächsten Szene. "
+                          "„Aktualisieren“ überschreibt die aktive Szene mit dem aktuellen Mix.\n\n"
+                          "Rechtsklick auf eine Szene: Umbenennen, Überblendzeit, Löschen. So lassen sich etwa Strophe und Refrain oder Szenen eines Theaterstücks vorbereiten und live abrufen."),
+                       localAreaToGlobal(layout().info.toNearestInt().expanded(3)));
+        return;
+    }
     if (h == kNew) {
         if (onStore) onStore();
     } else if (h == kUpdate) {
