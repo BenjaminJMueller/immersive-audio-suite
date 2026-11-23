@@ -151,6 +151,20 @@ jobs:
           mkdir -p dist
           find build -path "*Release*" \( -name "*.vst3" -o -name "*.component" -o -name "*.app" -o -name "Raumklang.exe" -o -name "Raumklang" \) -maxdepth 6 -prune -exec cp -R {} dist/ \;
           ls -la dist
+      - name: Sign (macOS, ad hoc)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # Without a sealed signature macOS cannot remember the microphone permission and
+          # asks again whenever the audio device restarts, e.g. after standby. Ad hoc until the
+          # app has a Developer ID; each update then asks once.
+          for b in dist/*.component dist/*.vst3; do
+            codesign --force --deep --sign - --timestamp=none "$b"
+          done
+          codesign --force --deep --sign - --timestamp=none --options runtime \
+            --entitlements packaging/signing/Raumklang.entitlements dist/Raumklang.app
+          codesign --verify --deep --strict --verbose=2 dist/Raumklang.app
+          codesign -d --entitlements - --xml dist/Raumklang.app | grep -q audio-input
       - name: Package (macOS disk image, Windows zip)
         if: runner.os != 'Linux'
         shell: bash

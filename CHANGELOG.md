@@ -19,6 +19,7 @@
 - **Testraum**: `RAUMKLANG_TESTRAUM=1` startet die App mit einem simulierten Raum und Mikrofon, zum Ausprobieren ohne Aufbau.
 - **Schallteilchen überarbeitet**: Sie erscheinen nur, solange eine Quelle Signal hat, folgen dem Pegel, sind weicher und ohne festes Muster. In der Legende heißt der Eintrag jetzt *Schallenergie*.
 - **Schärfere Schrift**: Die Oberfläche nutzt jetzt die eingebettete Schrift Inter statt der Standardschrift von JUCE (auf dem Mac Lucida Grande), ohne die Stammverstärkung der macOS-Textglättung. Text wirkt dadurch auf Retina-Displays dünner und klarer. Leere Hinweiskarten passen ihre Höhe dem Text an, „vorne“ verschwindet in der geteilten Ansicht nicht mehr hinter der Legende.
+- **Mikrofon-Abfrage auf dem Mac**: App und Plugins werden jetzt vollständig (ad hoc) signiert, mit Hardened Runtime und der Berechtigung für Audio-Eingänge. Bisher konnte macOS die Erlaubnis nicht speichern und fragte nach jedem Neustart des Audiogeräts, etwa nach dem Ruhezustand, erneut. Nach einem Update fragt macOS einmal, bis die App eine Developer ID hat.
 - **3D-Ansicht**: Lautsprecher erscheinen als Boxen mit Abstrahlkegel, die Ausrichtung ist auf einen Blick zu sehen.
 - **Lautsprecher in der Seitenleiste**: über ⋯ oder Rechtsklick umbenennen, duplizieren, als Subwoofer markieren, abschalten, entfernen; *+ Lautsprecher hinzufügen* darunter.
 - **Einmessen**: eine ruhige Liste mit drei Wegen (Mikrofon, iPhone-Messung, Laufzeit und Pegel ausgleichen) statt vieler Knöpfe.
