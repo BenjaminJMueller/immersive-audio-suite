@@ -2,6 +2,10 @@
 
 ## Unveröffentlicht
 
+- **Hall fließt**: Von jeder klingenden Quelle fließen Teilchen in der Hallfarbe zu den Lautsprechern, die sie nicht direkt spielen, dort hört man sie nur als Hall. Wie viel, folgt dem Hall-Send und dem Hallpegel.
+- **Raumklang Return**: Die Spuren in der Raumansicht bewegen sich nur noch, wenn wirklich Audio zurückkommt.
+- **Tooltips mit runden Ecken** wie die Menüs.
+- **Englisch**: Einmessen und iPhone-Messung sind vollständig übersetzt.
 - **3D-Kompressor**: Ein Kompressor für alle Lautsprecher gemeinsam im Schritt Ausgabe, vor dem Limiter. Er misst den lautesten Ausgang und senkt alle um denselben Betrag ab, so bleibt die räumliche Abbildung stehen. Threshold, Ratio, Attack, Release, Knee und Make-up, Gain Reduction als Anzeige.
 - **Routing**: Im Schritt Ausgabe lässt sich jeder Lautsprecher auf einen beliebigen Ausgang des Audio-Interfaces legen oder ganz vom Interface trennen. Das Routing wird im Projekt gespeichert und gilt auch beim Einmessen.
 - **Menüs mit runden Ecken**: alle Menüs und Auswahllisten, auch das Hilfemenü (?).

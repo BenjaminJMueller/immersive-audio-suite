@@ -41,7 +41,7 @@ private:
     bool advancedOpen_ = false;
     // Declared after page_ so the bindings go first (they point at sliders in the page).
     std::vector<std::unique_ptr<ParamBinding>> bindings_;
-    juce::TooltipWindow tooltips_{this, 600};
+    rkui::RoundTooltipWindow tooltips_{this, 600};
 
     rkui::Scene shown_;
     juce::String shownSetupJson_;

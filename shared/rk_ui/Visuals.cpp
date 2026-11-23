@@ -263,4 +263,12 @@ void ParticleBatch::draw(juce::Graphics& g, juce::Rectangle<int> area, float glo
     items_.clear();
 }
 
+float reverbFlowEnergy(const SourceInfo& source, float level, float reverbWetDb) {
+    if (source.mute || level < 0.02f || reverbWetDb <= -79.0f) return 0.0f;
+    // -40 dB send and below shows nothing, 0 dB the full flow; the wet level scales it as well.
+    const float send = juce::jlimit(0.0f, 1.0f, (source.reverbSendDb + 40.0f) / 40.0f);
+    const float wet = juce::jlimit(0.0f, 1.0f, (reverbWetDb + 40.0f) / 40.0f);
+    return 0.12f * std::sqrt(level) * send * wet;
+}
+
 } // namespace rkui

@@ -1,6 +1,7 @@
 // Raumklang UI: a live spectrum of what the speakers play (shown inside the reverb curve).
 #pragma once
 
+#include "Scene.h"
 #include "Theme.h"
 
 #include <rk/reverb.hpp>
@@ -57,5 +58,9 @@ int drawSoundParticles(ParticleBatch& g, juce::Point<float> from, juce::Point<fl
 /// it), starting just outside `innerPx` and thinning out over `radiusPx`.
 int drawSoundCloud(ParticleBatch& g, juce::Point<float> centre, juce::Colour colour, float energy, float innerPx,
                    float radiusPx, uint32_t seed, double timeSec, float sizeScale = 1.0f);
+
+/// How strongly a sounding source flows into the reverb (0..1): its level and reverb send.
+/// Zero when the send is at its minimum or the source is silent.
+float reverbFlowEnergy(const SourceInfo& source, float level, float reverbWetDb);
 
 } // namespace rkui

@@ -107,6 +107,13 @@ private:
     juce::ComboBox box_;
 };
 
+/// Tooltip with rounded corners: JUCE's tooltip window is opaque, which leaves the corners
+/// of the rounded background undefined.
+class RoundTooltipWindow : public juce::TooltipWindow {
+public:
+    RoundTooltipWindow(juce::Component* parent, int delayMs) : juce::TooltipWindow(parent, delayMs) { setOpaque(false); }
+};
+
 /// A labelled text field.
 class TextRow : public juce::Component {
 public:
