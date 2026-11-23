@@ -48,7 +48,7 @@ public:
     int numDeviceOutputs() const noexcept { return numOutputs_.load(); }
     int numDeviceInputs() const noexcept { return numInputs_.load(); }
     double sampleRate() const noexcept { return sampleRate_.load(); }
-    /// Message thread: sample rate and output latency of the open device, like "48 kHz · 10,7 ms".
+    /// Message thread: sample rate and output latency of the open device, like "48 kHz, 10,7 ms latency".
     /// Empty when no device is open.
     juce::String deviceSummary();
     juce::String takeError();

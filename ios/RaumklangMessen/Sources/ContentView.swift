@@ -244,7 +244,7 @@ private struct SpeakerList: View {
                     Text("\(i + 1)").font(.system(size: 13, weight: .bold)).frame(width: 26, height: 26).background(Theme.accent, in: Circle())
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Lautsprecher \(i + 1)")
-                        Text(String(format: "%.0f° · %.0f° hoch · %.2f m", p.azimuth, p.elevation, p.distance))
+                        Text(String(format: "Azimut %.0f°, Elevation %.0f°, Abstand %.2f m", p.azimuth, p.elevation, p.distance))
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     Spacer()

@@ -160,7 +160,7 @@ void drawNoticePill(juce::Graphics& g, float leftLimit, float rightX, float cent
 void drawCoachBar(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& badge, const juce::String& title,
                   const juce::String& text, bool ok);
 
-/// Green/orange card with a plain-language verdict ("Sitzt gut").
+/// Green/orange card with a plain-language verdict ("Positionen bestimmt").
 class StatusCard : public juce::Component {
 public:
     enum class Kind { Ok, Warn, Info };

@@ -18,13 +18,13 @@ bool describeLayout(const Scene& s, StatusCard& card) {
     auto has = [&info](const char* id) { return std::find(info.hints.begin(), info.hints.end(), id) != info.hints.end(); };
     const juce::String method = juce::String(rk::pannerId(s.effectivePanner())).toUpperCase().replace("AMBISONICS", "Ambisonics");
     const juce::String counts = juce::String(info.numActive) + " " + tr("Lautsprecher") + (info.numSubs > 0 ? " + " + juce::String(info.numSubs) + " Sub" : juce::String());
-    const juce::String dot = u8(" \xc2\xb7 ");
+    const juce::String dot = ", ";
     if (info.numActive == 0) {
         card.set(StatusCard::Kind::Warn, tr("Keine Lautsprecher"), tr("Vorlage wählen oder Lautsprecher hinzufügen."));
     } else if (has("single_speaker")) {
-        card.set(StatusCard::Kind::Warn, tr("Nur ein Lautsprecher"), tr("Damit gibt es keine Richtung."));
+        card.set(StatusCard::Kind::Warn, tr("Nur ein Lautsprecher"), tr("Mit einem Lautsprecher lässt sich keine Richtung darstellen."));
     } else if (has("unequal_distances")) {
-        card.set(StatusCard::Kind::Warn, tr("Abstände sehr verschieden"), counts + dot + method + dot + tr("„Laufzeit und Pegel ausgleichen“ hilft."));
+        card.set(StatusCard::Kind::Warn, tr("Abstände sehr verschieden"), counts + ", " + method + ". " + tr("„Laufzeit und Pegel ausgleichen“ hilft."));
     } else {
         return false;
     }
@@ -287,7 +287,7 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
             ro->onChange = [ctx](double v) { ctx.scene->dbapRolloffDb = (float)v; ctx.changed(true); };
             ro->onCommit = ctx.commit;
             auto* bl = page.add(std::make_unique<ParamSlider>(tr("Spatial Blur"), 0.05, 3, 0.05, "m", 2, 0.05), 32);
-            bl->setTooltip(tr("Verhindert, dass eine Quelle direkt an einem Lautsprecher zu laut wird."));
+            bl->setTooltip(tr("Verhindert, dass eine Quelle genau an einem Lautsprecher nur aus diesem kommt. Größere Werte verteilen sie weicher auf die Nachbarn."));
             bl->setValue(s.dbapBlur);
             bl->onChange = [ctx](double v) { ctx.scene->dbapBlur = (float)v; ctx.changed(true); };
             bl->onCommit = ctx.commit;
@@ -311,7 +311,7 @@ void buildRoomPage(FormPage& page, PageContext ctx) {
         return [ctx, f](double) { f(*ctx.scene); ctx.changed(false); };
     };
 
-    page.add(std::make_unique<SectionHeader>(tr("Raum"), tr("Der Hall kommt aus allen Lautsprechern, jeweils leicht verschieden, wie in einem echten Raum. Wie viel jede Quelle davon abgibt, regelt ihr Hall-Send, in der App unter Quellen oder im Plugin.")), 26);
+    page.add(std::make_unique<SectionHeader>(tr("Raum"), tr("Der Hall kommt aus allen Lautsprechern, auf jedem dekorreliert, damit er diffus klingt. Wie viel jede Quelle davon abgibt, regelt ihr Hall-Send, in der App unter Quellen oder im Plugin.")), 26);
     auto* size = page.add(std::make_unique<ParamSlider>(tr("Raumgröße"), 0.3, 2.0, 0.01, juce::String(), 0, 0.3), 32);
     size->formatter = [](double v) { return juce::String(juce::roundToInt(roomVolume((float)v) / 10.0f) * 10) + juce::String::fromUTF8(" m\xc2\xb3"); };
     size->setValue(s.reverb.size);

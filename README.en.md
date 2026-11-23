@@ -1,6 +1,6 @@
 # Raumklang
 
-[Deutsch](README.md) · English
+Language: [Deutsch](README.md), English
 
 Raumklang is a free tool for spatial audio on macOS and Windows. It places sound sources freely in space on any number of speakers, from a stereo pair through rings, domes and 7.1.4 to a *donut*, where two speaker rings face each other. It also has reverb, headphone playback (binaural) and two plugins for the DAW. An audio interface is all you need: the app talks to it directly, no extra routing software is required.
 
@@ -8,7 +8,7 @@ Raumklang is a free tool for spatial audio on macOS and Windows. It places sound
 
 > **Early version (0.1).** Raumklang is new. The audio processing is extensively tested automatically, but hardly on real speaker setups yet. Bugs and gaps are likely, see [Features and limits](#features-and-limits). Raumklang was [developed with AI](#developed-with-ai). If it still helps someone with their own project, I'm glad.
 
-**Download:** [macOS (.dmg)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-mac.dmg) · [Windows (.zip)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-Windows.zip) · [Installation notes](#installation)
+**Download:** [macOS (.dmg)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-mac.dmg), [Windows (.zip)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-Windows.zip), [Installation notes](#installation)
 
 ## Background
 

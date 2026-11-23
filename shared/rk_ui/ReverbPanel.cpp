@@ -275,7 +275,7 @@ void ReverbPanel::paintCurve(juce::Graphics& g) {
         g.drawEllipse(r.reduced(1.0f), 2.0f);
         g.setFont(uiFont(12.5f, active));
         g.setColour(p.text);
-        const juce::String label = names[b] + juce::String::fromUTF8(" \xc2\xb7 ") + secText(reverbBandRt(params_, b));
+        const juce::String label = names[b] + ": " + secText(reverbBandRt(params_, b));
         g.drawText(label, juce::Rectangle<float>(h.x - 70.0f, h.y - 32.0f, 140.0f, 16.0f), juce::Justification::centred);
     }
 }

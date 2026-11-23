@@ -1,6 +1,6 @@
 # Raumklang
 
-Deutsch · [English](README.en.md)
+Sprache: Deutsch, [English](README.en.md)
 
 Raumklang ist ein freies Werkzeug für räumlichen Klang auf macOS und Windows. Es verteilt Klangquellen frei im Raum auf beliebig viele Lautsprecher, vom Stereopaar über Ring, Kuppel und 7.1.4 bis zum *Donut*, bei dem sich zwei Lautsprecherringe gegenüberstehen. Dazu gibt es Hall, Kopfhörer-Wiedergabe (binaural) und zwei Plugins für die DAW. Ein Audio-Interface genügt: Die App spricht es direkt an, zusätzliche Programme für das Routing sind nicht nötig.
 
@@ -8,7 +8,7 @@ Raumklang ist ein freies Werkzeug für räumlichen Klang auf macOS und Windows. 
 
 > **Frühe Version (0.1).** Raumklang ist neu. Die Klangberechnung ist ausführlich automatisch getestet, an echten Lautsprecheraufbauten aber noch kaum. Fehler und Lücken sind wahrscheinlich, siehe [Funktionsumfang und Grenzen](#funktionsumfang-und-grenzen). Raumklang ist [mit KI entwickelt](#mit-ki-entwickelt). Wenn es trotzdem jemandem bei einem eigenen Projekt weiterhilft, freue ich mich.
 
-**Herunterladen:** [macOS (.dmg)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-mac.dmg) · [Windows (.zip)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-Windows.zip) · [Hinweise zur Installation](#installation)
+**Herunterladen:** [macOS (.dmg)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-mac.dmg), [Windows (.zip)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-Windows.zip), [Hinweise zur Installation](#installation)
 
 ## Hintergrund
 

@@ -190,11 +190,11 @@ void Calibration::finishPoint() {
     } else if (heard * 2 < (int)order_.size()) {
         pointState_[(size_t)point_] = 2;
         message_ = tr("Nur") + " " + juce::String(heard) + " " + tr("von") + " " + juce::String(order_.size()) + " " +
-                   tr("Lautsprechern gehört. Mikrofoneingang und Pegel prüfen.");
+                   tr("Lautsprechern erkannt. Mikrofoneingang und Pegel prüfen.");
     } else {
         pointState_[(size_t)point_] = 1;
         // In a donut the column hides some speakers from some points: that is expected.
-        if (!missing.isEmpty() && !settings_.positions) message_ = tr("Nicht gehört") + ": " + missing.joinIntoString(", ");
+        if (!missing.isEmpty() && !settings_.positions) message_ = tr("Nicht erkannt") + ": " + missing.joinIntoString(", ");
     }
 }
 
@@ -297,7 +297,7 @@ bool Calibration::evaluate() {
             continue;
         }
         if (!heard[(size_t)i] || i >= (int)aligned.size() || !aligned[(size_t)i].measured) {
-            q.note = tr("Nicht gehört");
+            q.note = tr("Nicht erkannt");
             q.warn = true;
             continue;
         }
@@ -317,7 +317,7 @@ bool Calibration::evaluate() {
                 q.position = f.position;
                 worst = std::max(worst, q.uncertainty);
             } else if (!q.warn) {
-                q.note = tr("Position unsicher");
+                q.note = tr("Position nicht bestimmt");
                 q.warn = true;
             }
         }
@@ -338,8 +338,13 @@ bool Calibration::evaluate() {
     verdict_.total = (int)order_.size();
     if (hasOutput && good == verdict_.total) {
         verdict_.ok = true;
-        verdict_.title = !geometry ? tr("Sitzt gut") : worst < 0.10f ? tr("Sitzt sehr gut") : worst < 0.25f ? tr("Sitzt gut") : tr("Sitzt ungefähr");
-        verdict_.detail = geometry ? tr("Positionen auf") + u8(" \xc2\xb1 ") + juce::String(juce::jmax(1, juce::roundToInt(worst * 100.0f))) + " cm " + tr("genau")
+        // The per-speaker figure is twice the estimated standard deviation (about 95 % confidence).
+        verdict_.title = !geometry        ? tr("Laufzeit und Pegel gemessen")
+                         : worst < 0.10f ? tr("Positionen genau bestimmt")
+                         : worst < 0.25f ? tr("Positionen bestimmt")
+                                         : tr("Positionen nur grob bestimmt");
+        verdict_.detail = geometry ? tr("Größte Messunsicherheit") + u8(" \xc2\xb1 ") + juce::String(juce::jmax(1, juce::roundToInt(worst * 100.0f))) + " cm "
+                                         + tr("(2σ, etwa 95 % Vertrauen)")
                                    : tr("Laufzeit und Pegel am Messpunkt 1 ausgeglichen");
         if (geometry && worst >= 0.25f)
             verdict_.detail << ". " << tr("Mehr Messpunkte, weiter auseinander, oder ein gemessener Abstand machen es genauer.");

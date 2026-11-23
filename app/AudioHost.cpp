@@ -1,4 +1,5 @@
 #include "AudioHost.h"
+#include <rk_ui/Strings.h>
 
 namespace rkapp {
 
@@ -172,11 +173,11 @@ juce::String AudioHost::deviceSummary() {
     const double sr = d->getCurrentSampleRate();
     if (sr <= 0.0) return {};
     const int samples = d->getCurrentBufferSizeSamples() + d->getOutputLatencyInSamples();
-    const juce::String dot = juce::String::fromUTF8(" \xc2\xb7 ");
+    const juce::String dot = juce::String(", ");
     const juce::String rate = std::abs(sr - std::round(sr / 1000.0) * 1000.0) < 1.0
                                   ? juce::String(juce::roundToInt(sr / 1000.0))
                                   : juce::String(sr / 1000.0, 1).replaceCharacter('.', ',');
-    return rate + " kHz" + dot + juce::String(1000.0 * samples / sr, 1).replaceCharacter('.', ',') + " ms";
+    return rate + " kHz, " + juce::String(1000.0 * samples / sr, 1).replaceCharacter('.', ',') + " ms " + rkui::tr("Latenz");
 }
 
 void AudioHost::audioDeviceStopped() {}
