@@ -1,4 +1,5 @@
 #include "Theme.h"
+#include "RkFonts.h"
 
 namespace rkui {
 namespace {
@@ -78,8 +79,14 @@ juce::Colour itemColour(int index) {
     return juce::Colour(hues[((index % 8) + 8) % 8]);
 }
 
+juce::Typeface::Ptr uiTypeface(bool bold) {
+    static juce::Typeface::Ptr regular = juce::Typeface::createSystemTypefaceFor(RkFonts::InterRegular_ttf, (size_t)RkFonts::InterRegular_ttfSize);
+    static juce::Typeface::Ptr semi = juce::Typeface::createSystemTypefaceFor(RkFonts::InterSemiBold_ttf, (size_t)RkFonts::InterSemiBold_ttfSize);
+    return bold ? semi : regular;
+}
+
 juce::Font uiFont(float height, bool bold) {
-    return juce::Font(juce::FontOptions(height, bold ? juce::Font::bold : juce::Font::plain));
+    return juce::Font(juce::FontOptions(uiTypeface(bold)).withHeight(height));
 }
 
 juce::Path iconPath(Icon icon, juce::Rectangle<float> r) {
@@ -336,6 +343,20 @@ juce::Font LookAndFeel::getLabelFont(juce::Label& l) {
     return uiFont(13.5f);
 }
 juce::Font LookAndFeel::getPopupMenuFont() { return uiFont(14.0f); }
+juce::Typeface::Ptr LookAndFeel::getTypefaceForFont(const juce::Font& f) {
+    if (f.getTypefaceName() == juce::Font::getDefaultSansSerifFontName()) return uiTypeface(f.isBold());
+    return juce::LookAndFeel_V4::getTypefaceForFont(f);
+}
+
+void LookAndFeel::drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics& g, const juce::Path& path, juce::Image&) {
+    const Palette& p = palette();
+    g.setColour(juce::Colours::black.withAlpha(0.35f));
+    g.fillPath(path, juce::AffineTransform::translation(0.0f, 2.0f));
+    g.setColour(p.bar);
+    g.fillPath(path);
+    g.setColour(p.line);
+    g.strokePath(path, juce::PathStrokeType(1.0f));
+}
 
 void LookAndFeel::drawPopupMenuBackground(juce::Graphics& g, int w, int h) {
     const Palette& p = palette();

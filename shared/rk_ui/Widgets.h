@@ -10,16 +10,25 @@ namespace rkui {
 
 /// Section title inside the inspector ("Punkte", "Lautsprecher", ...). With an info text
 /// it shows a small (i) whose tooltip holds the longer explanation, so the form stays short.
-class SectionHeader : public juce::Component, public juce::SettableTooltipClient {
+/// Section title. With an info text, a click on the (i) opens a bubble with the explanation.
+class SectionHeader : public juce::Component {
 public:
     explicit SectionHeader(juce::String text, juce::String info = {});
+    /// Adds a further paragraph to the explanation (and shows the (i) if there was none).
+    void appendInfo(const juce::String& more);
+    const juce::String& info() const noexcept { return info_; }
     void paint(juce::Graphics& g) override;
+    void mouseUp(const juce::MouseEvent& e) override;
     void mouseEnter(const juce::MouseEvent&) override { repaint(); }
     void mouseExit(const juce::MouseEvent&) override { repaint(); }
 
 private:
+    juce::Rectangle<float> iconArea() const;
     juce::String text_, info_;
 };
+
+/// Opens a small bubble with an explanation next to `target` (screen area it points at).
+void showInfoBubble(const juce::String& text, juce::Rectangle<int> targetScreenArea);
 
 /// Square tool button with a line icon (toolbar: undo, redo, open, save, help).
 class IconButton : public juce::Button {
@@ -30,22 +39,6 @@ public:
 
 private:
     Icon icon_;
-};
-
-/// "Details und Hilfen": a collapsible block of explanatory text at the end of a page.
-class Disclosure : public juce::Component {
-public:
-    Disclosure(juce::String title, juce::String text);
-    /// Height for the given width in the current state.
-    int heightFor(int width) const;
-    std::function<void()> onToggle;
-    void paint(juce::Graphics& g) override;
-    void mouseUp(const juce::MouseEvent& e) override;
-    void mouseEnter(const juce::MouseEvent&) override { repaint(); }
-    void mouseExit(const juce::MouseEvent&) override { repaint(); }
-
-private:
-    juce::String title_, text_;
 };
 
 /// "› Erweitert": a row that opens and closes the rarely needed settings below it.
@@ -129,6 +122,43 @@ private:
 };
 
 /// Horizontal segmented control (also used for the numbered workflow steps).
+/// A short list of mutually exclusive choices, each with a title and a one-line explanation.
+class OptionCards : public juce::Component {
+public:
+    struct Option { juce::String title, text; };
+    explicit OptionCards(std::vector<Option> options);
+    void setSelected(int index);
+    int selected() const { return selected_; }
+    std::function<void(int)> onChange;
+    static constexpr int kRowHeight = 50;
+    int idealHeight() const { return (int)options_.size() * kRowHeight; }
+    void paint(juce::Graphics& g) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+
+private:
+    std::vector<Option> options_;
+    int selected_ = 0, hover_ = -1;
+};
+
+/// A few actions as rows with a title, a one-line explanation and a chevron.
+class ActionList : public juce::Component {
+public:
+    struct Action { juce::String title, text; std::function<void()> run; };
+    explicit ActionList(std::vector<Action> actions);
+    static constexpr int kRowHeight = 50;
+    int idealHeight() const { return (int)actions_.size() * kRowHeight; }
+    void paint(juce::Graphics& g) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+
+private:
+    std::vector<Action> actions_;
+    int hover_ = -1;
+};
+
 class Segmented : public juce::Component, public juce::SettableTooltipClient {
 public:
     Segmented(const juce::StringArray& items, bool numbered);
@@ -189,6 +219,7 @@ public:
         float level = 0.0f; // 0..1, drawn as a thin meter
         bool toggles = false; // show M (mute) and S (solo) buttons on the right
         bool mute = false, solo = false;
+        bool menu = false;    // "…" button on hover/selection and right-click open onMenu
     };
     void setRows(std::vector<Row> rows);
     void setSelected(int row);
@@ -197,6 +228,8 @@ public:
     std::function<void(int)> onSelect;
     /// A click on a row's M (which = 0) or S (which = 1) button.
     std::function<void(int row, int which)> onToggle;
+    /// The row's "…" button or a right-click: `area` is where to anchor the menu (screen).
+    std::function<void(int row, juce::Rectangle<int> area)> onMenu;
     int contentHeight() const;
     void paint(juce::Graphics& g) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -206,6 +239,7 @@ public:
 private:
     struct Item { int row; juce::Rectangle<int> bounds; };
     static juce::Rectangle<float> toggleRect(juce::Rectangle<float> row, int which);
+    static juce::Rectangle<float> menuRect(juce::Rectangle<float> row);
     int hover_ = -1;
     std::vector<Item> layoutItems() const;
     std::vector<Row> rows_;
@@ -252,7 +286,7 @@ public:
         return raw;
     }
     void addSpace(int height);
-    /// Adds the "Details und Hilfen" block at the end of the page.
+    /// Adds further explanation to the page: it goes into the (i) bubble of the first section.
     void addDetails(const juce::String& text);
     void setRowHeight(juce::Component* c, int height);
     void relayout();

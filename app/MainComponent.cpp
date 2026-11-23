@@ -7,47 +7,51 @@ using rkui::u8;
 namespace rkapp {
 
 // ---------------------------------------------------------------------------
-// First-run introduction, offers the demo (Projection Studio does the same).
+// First-run onboarding: what Raumklang does, the four areas of the app, then how to start.
+// It can be opened again from the help menu.
 // ---------------------------------------------------------------------------
 class IntroOverlay : public juce::Component {
 public:
     std::function<void()> onDemo, onEmpty;
+    std::function<void()> onSkip; // set when opened from the help menu: skipping keeps the project
 
     IntroOverlay() {
         skip_ = rkui::makeButton(tr("Überspringen"), false, true);
         next_ = rkui::makeButton(tr("Weiter"), true);
+        back_ = rkui::makeButton(tr("Zurück"), false, true);
         demo_ = rkui::makeButton({}, false, true);
         empty_ = rkui::makeButton({}, false, true);
-        back_ = rkui::makeButton(tr("Zurück"), false, true);
-        back_->onClick = [this] { setPage(0); };
         demo_->addMouseListener(this, false);
         empty_->addMouseListener(this, false);
-        addAndMakeVisible(*back_);
-        skip_->onClick = [this] { if (onEmpty) onEmpty(); };
-        next_->onClick = [this] { setPage(1); };
+        skip_->onClick = [this] { skip(); };
+        next_->onClick = [this] { setPage(page_ + 1); };
+        back_->onClick = [this] { setPage(page_ - 1); };
         demo_->onClick = [this] { if (onDemo) onDemo(); };
         empty_->onClick = [this] { if (onEmpty) onEmpty(); };
-        for (auto* b : {skip_.get(), next_.get(), demo_.get(), empty_.get()}) addAndMakeVisible(*b);
+        for (auto* b : {skip_.get(), next_.get(), back_.get(), demo_.get(), empty_.get()}) addAndMakeVisible(*b);
         setPage(0);
         setWantsKeyboardFocus(true);
     }
 
+    static constexpr int kPages = 5;
+
     void setPage(int p) {
-        page_ = p;
-        skip_->setVisible(p == 0);
-        next_->setVisible(p == 0);
-        demo_->setVisible(p == 1);
-        empty_->setVisible(p == 1);
-        back_->setVisible(p == 1);
+        page_ = juce::jlimit(0, kPages - 1, p);
+        const bool last = page_ == kPages - 1;
+        skip_->setVisible(!last);
+        next_->setVisible(!last);
+        back_->setVisible(page_ > 0);
+        demo_->setVisible(last);
+        empty_->setVisible(last);
         resized();
         repaint();
     }
 
-    juce::Rectangle<int> card() const { return getLocalBounds().withSizeKeepingCentre(620, 520); }
+    juce::Rectangle<int> card() const { return getLocalBounds().withSizeKeepingCentre(660, 540); }
 
     void paint(juce::Graphics& g) override {
         const auto& p = rkui::palette();
-        g.fillAll(juce::Colours::black.withAlpha(0.5f));
+        g.fillAll(juce::Colours::black.withAlpha(0.55f));
         auto c = card().toFloat();
         g.setColour(juce::Colours::black.withAlpha(0.35f));
         g.fillRoundedRectangle(c.translated(0, 12).expanded(6), 18.0f);
@@ -55,92 +59,52 @@ public:
         g.fillRoundedRectangle(c, 14.0f);
         g.setColour(p.lineStrong);
         g.drawRoundedRectangle(c.reduced(0.25f), 14.0f, 0.75f);
-        // Footer strip with page dots.
-        auto foot = c.removeFromBottom(56.0f);
+        // Footer with page dots.
+        auto foot = c.removeFromBottom(60.0f);
         g.setColour(p.line);
         g.drawHorizontalLine((int)foot.getY(), foot.getX(), foot.getRight());
-        for (int i = 0; i < 2; ++i) {
+        float dx = foot.getX() + 24.0f;
+        for (int i = 0; i < kPages; ++i) {
             const bool on = i == page_;
             g.setColour(on ? p.accent : p.lineStrong);
-            g.fillRoundedRectangle(foot.getX() + 24.0f + i * 12.0f + (i > page_ ? 10.0f : 0.0f), foot.getCentreY() - 2.5f, on ? 18.0f : 5.0f, 5.0f, 2.5f);
+            g.fillRoundedRectangle(dx, foot.getCentreY() - 2.5f, on ? 18.0f : 5.0f, 5.0f, 2.5f);
+            dx += on ? 26.0f : 13.0f;
         }
-        auto r = c.reduced(40.0f, 28.0f);
-        paintLogo(g, r.removeFromTop(78.0f).withSizeKeepingCentre(150.0f, 72.0f));
-        r.removeFromTop(8.0f);
-        g.setColour(p.text);
-        g.setFont(rkui::uiFont(24.0f, true));
-        g.drawText(page_ == 0 ? tr("Willkommen") : tr("Wie möchtest du beginnen?"), r.removeFromTop(32.0f), juce::Justification::centred);
-        g.setColour(p.text2);
-        g.setFont(rkui::uiFont(14.0f));
-        const juce::String sub = page_ == 0 ? tr("Verteile Klang frei im Raum, auf beliebig viele Lautsprecher, direkt über dein Audio-Interface.")
-                                            : tr("Die Demo spielt drei Testklänge, die um dich kreisen. Ohne Mehrkanal-Interface hörst du sie über Kopfhörer.");
-        g.drawFittedText(sub, r.removeFromTop(44.0f).toNearestInt(), juce::Justification::centred, 2);
-        r.removeFromTop(16.0f);
-        if (page_ != 0) {
-            const struct { juce::Component* b; rkui::Icon icon; const char* title; const char* text; } tiles[] = {
-                {demo_.get(), rkui::Icon::Source, "Mit Demo beginnen", "Ring aus 8 Lautsprechern, drei Testklänge kreisen. Sofort etwas zu hören."},
-                {empty_.get(), rkui::Icon::Speaker, "Eigenen Aufbau einrichten", "Mit den Lautsprechern beginnen: Vorlage wählen oder frei aufstellen."},
-            };
-            for (const auto& t : tiles) {
-                auto tr0 = t.b->getBounds().toFloat();
-                g.setColour(p.group);
-                g.fillRoundedRectangle(tr0, 12.0f);
-                g.setColour(t.b->isMouseOver() ? p.accent : p.line);
-                g.drawRoundedRectangle(tr0.reduced(0.5f), 12.0f, t.b->isMouseOver() ? 1.5f : 0.75f);
-                auto in = tr0.reduced(18.0f);
-                auto ic = in.removeFromTop(40.0f).removeFromLeft(40.0f);
-                g.setColour(p.accentSoft);
-                g.fillRoundedRectangle(ic, 10.0f);
-                rkui::drawIcon(g, t.icon, ic.withSizeKeepingCentre(20.0f, 20.0f), p.accent, 1.5f);
-                in.removeFromTop(12.0f);
-                g.setColour(p.text);
-                g.setFont(rkui::uiFont(15.0f, true));
-                g.drawText(tr(t.title), in.removeFromTop(22.0f), juce::Justification::centredLeft);
-                g.setColour(p.text2);
-                g.setFont(rkui::uiFont(13.0f));
-                g.drawFittedText(tr(t.text), in.removeFromTop(54.0f).toNearestInt(), juce::Justification::topLeft, 3);
-            }
-            return;
-        }
-        const struct { rkui::Icon icon; const char* title; const char* text; } steps[] = {
-            {rkui::Icon::Speaker, "Lautsprecher", "Vorlage wählen, vom Stereopaar bis zum Donut, oder frei aufstellen."},
-            {rkui::Icon::Source, "Quellen", "Eingänge des Interfaces oder Testklänge in der Ansicht platzieren."},
-            {rkui::Icon::Room, "Raum", "Hall wählen, von trocken bis Kirche."},
-            {rkui::Icon::Output, "Ausgabe", "Audiogerät wählen, Lautsprecher prüfen, fertig."},
-        };
-        for (const auto& st : steps) {
-            auto row = r.removeFromTop(54.0f);
-            auto ic = row.removeFromLeft(36.0f).withSizeKeepingCentre(36.0f, 36.0f).withY(row.getY() + 2.0f);
-            g.setColour(p.accentSoft);
-            g.fillRoundedRectangle(ic, 9.0f);
-            rkui::drawIcon(g, st.icon, ic.withSizeKeepingCentre(18.0f, 18.0f), p.accent, 1.4f);
-            row.removeFromLeft(14.0f);
-            g.setColour(p.text);
-            g.setFont(rkui::uiFont(14.0f, true));
-            g.drawText(tr(st.title), row.removeFromTop(20.0f), juce::Justification::centredLeft);
-            g.setColour(p.text2);
-            g.setFont(rkui::uiFont(13.0f));
-            g.drawText(tr(st.text), row.removeFromTop(20.0f), juce::Justification::centredLeft, true);
-        }
+        auto r = c.reduced(44.0f, 30.0f);
+        if (page_ == 0) paintWelcome(g, r);
+        else if (page_ < kPages - 1) paintArea(g, r, page_ - 1);
+        else paintStart(g, r);
     }
 
     void resized() override {
-        auto foot = card().removeFromBottom(56).reduced(16, 11);
+        auto foot = card().removeFromBottom(60).reduced(16, 13);
         next_->setBounds(foot.removeFromRight(110));
         foot.removeFromRight(8);
+        back_->setBounds(foot.removeFromRight(100));
+        foot.removeFromRight(8);
         skip_->setBounds(foot.removeFromRight(130));
-        back_->setBounds(card().removeFromBottom(56).reduced(16, 11).removeFromRight(110));
-        auto mid = card().withTrimmedTop(252).withTrimmedBottom(80).reduced(40, 0);
+        if (page_ == kPages - 1) back_->setBounds(card().removeFromBottom(60).reduced(16, 13).removeFromRight(100));
+        auto mid = card().withTrimmedTop(250).withTrimmedBottom(84).reduced(44, 0);
         const int tw = (mid.getWidth() - 16) / 2;
-        demo_->setBounds(mid.removeFromLeft(tw).withHeight(150));
+        demo_->setBounds(mid.removeFromLeft(tw).withHeight(160));
         mid.removeFromLeft(16);
-        empty_->setBounds(mid.removeFromLeft(tw).withHeight(150));
+        empty_->setBounds(mid.removeFromLeft(tw).withHeight(160));
     }
 
     bool keyPressed(const juce::KeyPress& k) override {
-        if (k == juce::KeyPress::returnKey) { if (page_ == 0) setPage(1); else if (onDemo) onDemo(); return true; }
-        if (k == juce::KeyPress::escapeKey) { if (onEmpty) onEmpty(); return true; }
+        if (k == juce::KeyPress::returnKey || k == juce::KeyPress::rightKey) {
+            if (page_ < kPages - 1) setPage(page_ + 1);
+            else if (k == juce::KeyPress::returnKey && onDemo) onDemo();
+            return true;
+        }
+        if (k == juce::KeyPress::leftKey) { setPage(page_ - 1); return true; }
+        if (k == juce::KeyPress::escapeKey) { skip(); return true; }
         return true;
+    }
+
+    void skip() {
+        if (onSkip) onSkip();
+        else if (onEmpty) onEmpty();
     }
 
     void mouseDown(const juce::MouseEvent&) override {} // block clicks to the UI below
@@ -149,6 +113,119 @@ public:
     void mouseExit(const juce::MouseEvent&) override { repaint(); }
 
 private:
+    struct Area { rkui::Icon icon; const char* title; const char* lead; const char* points[3]; };
+    static const Area& area(int i) {
+        static const Area areas[] = {
+            {rkui::Icon::Speaker, "Lautsprecher",
+             "Hier wird der Aufbau beschrieben, auf dem Raumklang spielt.",
+             {"Vorlage wählen, vom Stereopaar über Ring und Kuppel bis zum Donut, oder Lautsprecher frei setzen.",
+              "In der Ansicht ziehen verschiebt Lautsprecher, links in der Liste lassen sie sich bearbeiten.",
+              "Einmessen mit Mikrofon oder iPhone bestimmt Position, Laufzeit und Pegel jedes Lautsprechers."}},
+            {rkui::Icon::Source, "Quellen",
+             "Quellen sind die Klänge, die im Raum verteilt werden.",
+             {"Eine Quelle ist ein Eingang des Audio-Interfaces oder ein Testklang. Spuren aus der DAW kommen über das Plugin „Raumklang Quelle“.",
+              "Quellen in der Ansicht ziehen oder rechts Azimut, Elevation und Abstand einstellen.",
+              "Die leuchtenden Teilchen zeigen, wie viel Schall jeder Lautsprecher gerade von einer Quelle bekommt."}},
+            {rkui::Icon::Output, "Raum und Ausgabe",
+             "Zum Schluss Hall und Wiedergabe einrichten.",
+             {"Raum: Raumtyp wählen und die Nachhallzeit für Tiefen, Mitten und Höhen in der Kurve ziehen.",
+              "Ausgabe: Audiogerät wählen und mit „Lautsprecher einzeln anspielen“ die Verkabelung prüfen.",
+              "Ohne Lautsprecher: unter „Hören über“ auf Kopfhörer umschalten. Szenen speichern den ganzen Mix."}},
+        };
+        return areas[juce::jlimit(0, 2, i)];
+    }
+
+    void paintTitle(juce::Graphics& g, juce::Rectangle<float>& r, const juce::String& title, const juce::String& sub) const {
+        const auto& p = rkui::palette();
+        g.setColour(p.text);
+        g.setFont(rkui::uiFont(24.0f, true));
+        g.drawText(title, r.removeFromTop(34.0f), juce::Justification::centred);
+        g.setColour(p.text2);
+        g.setFont(rkui::uiFont(14.0f));
+        g.drawFittedText(sub, r.removeFromTop(44.0f).toNearestInt(), juce::Justification::centred, 2, 1.0f);
+    }
+
+    void paintWelcome(juce::Graphics& g, juce::Rectangle<float> r) const {
+        const auto& p = rkui::palette();
+        paintLogo(g, r.removeFromTop(80.0f).withSizeKeepingCentre(150.0f, 72.0f));
+        r.removeFromTop(8.0f);
+        paintTitle(g, r, tr("Willkommen bei Raumklang"),
+                   tr("Raumklang verteilt Klang frei im Raum, auf beliebig viele Lautsprecher, direkt über dein Audio-Interface."));
+        r.removeFromTop(14.0f);
+        g.setColour(p.text2);
+        g.setFont(rkui::uiFont(13.5f));
+        g.drawFittedText(tr("Oben wechselst du zwischen vier Bereichen: Lautsprecher, Quellen, Raum und Ausgabe. "
+                            "Die nächsten Seiten zeigen kurz, wofür sie da sind. Hinter jedem (i) steht eine Erklärung."),
+                         r.removeFromTop(64.0f).toNearestInt(), juce::Justification::centred, 3, 1.0f);
+        r.removeFromTop(18.0f);
+        const rkui::Icon icons[] = {rkui::Icon::Speaker, rkui::Icon::Source, rkui::Icon::Room, rkui::Icon::Output};
+        const char* names[] = {"Lautsprecher", "Quellen", "Raum", "Ausgabe"};
+        auto row = r.removeFromTop(78.0f);
+        const float w = row.getWidth() / 4.0f;
+        for (int i = 0; i < 4; ++i) {
+            auto cell = row.removeFromLeft(w);
+            auto ic = cell.removeFromTop(44.0f).withSizeKeepingCentre(44.0f, 44.0f);
+            g.setColour(p.accentSoft);
+            g.fillRoundedRectangle(ic, 11.0f);
+            rkui::drawIcon(g, icons[i], ic.withSizeKeepingCentre(22.0f, 22.0f), p.accent, 1.5f);
+            g.setColour(p.text);
+            g.setFont(rkui::uiFont(13.5f, true));
+            g.drawText(tr(names[i]), cell.withTrimmedTop(8.0f), juce::Justification::centredTop);
+        }
+    }
+
+    void paintArea(juce::Graphics& g, juce::Rectangle<float> r, int i) const {
+        const auto& p = rkui::palette();
+        const Area& a = area(i);
+        auto ic = r.removeFromTop(64.0f).withSizeKeepingCentre(56.0f, 56.0f);
+        g.setColour(p.accentSoft);
+        g.fillRoundedRectangle(ic, 14.0f);
+        rkui::drawIcon(g, a.icon, ic.withSizeKeepingCentre(28.0f, 28.0f), p.accent, 1.6f);
+        r.removeFromTop(12.0f);
+        paintTitle(g, r, tr(a.title), tr(a.lead));
+        r.removeFromTop(16.0f);
+        for (const char* pt : a.points) {
+            auto row = r.removeFromTop(66.0f);
+            auto dot = row.removeFromLeft(26.0f);
+            g.setColour(p.accent);
+            g.fillEllipse(dot.getX() + 6.0f, row.getY() + 7.0f, 7.0f, 7.0f);
+            g.setColour(p.text);
+            g.setFont(rkui::uiFont(14.0f));
+            g.drawFittedText(tr(pt), row.toNearestInt(), juce::Justification::topLeft, 3, 1.0f);
+        }
+    }
+
+    void paintStart(juce::Graphics& g, juce::Rectangle<float> r) const {
+        const auto& p = rkui::palette();
+        paintLogo(g, r.removeFromTop(80.0f).withSizeKeepingCentre(150.0f, 72.0f));
+        r.removeFromTop(8.0f);
+        paintTitle(g, r, tr("Wie möchtest du beginnen?"),
+                   tr("Die Demo spielt drei Testklänge, die um dich kreisen. Ohne Mehrkanal-Interface hörst du sie über Kopfhörer."));
+        const struct { juce::Component* b; rkui::Icon icon; const char* title; const char* text; } tiles[] = {
+            {demo_.get(), rkui::Icon::Source, "Mit Demo beginnen", "Ring aus 8 Lautsprechern, drei Testklänge kreisen. Sofort etwas zu hören."},
+            {empty_.get(), rkui::Icon::Speaker, "Eigenen Aufbau einrichten", "Mit den Lautsprechern beginnen: Vorlage wählen oder frei aufstellen."},
+        };
+        for (const auto& t : tiles) {
+            auto tr0 = t.b->getBounds().toFloat();
+            g.setColour(p.group);
+            g.fillRoundedRectangle(tr0, 12.0f);
+            g.setColour(t.b->isMouseOver() ? p.accent : p.line);
+            g.drawRoundedRectangle(tr0.reduced(0.5f), 12.0f, t.b->isMouseOver() ? 1.5f : 0.75f);
+            auto in = tr0.reduced(18.0f);
+            auto ic = in.removeFromTop(40.0f).removeFromLeft(40.0f);
+            g.setColour(p.accentSoft);
+            g.fillRoundedRectangle(ic, 10.0f);
+            rkui::drawIcon(g, t.icon, ic.withSizeKeepingCentre(20.0f, 20.0f), p.accent, 1.5f);
+            in.removeFromTop(12.0f);
+            g.setColour(p.text);
+            g.setFont(rkui::uiFont(15.0f, true));
+            g.drawText(tr(t.title), in.removeFromTop(22.0f), juce::Justification::centredLeft);
+            g.setColour(p.text2);
+            g.setFont(rkui::uiFont(13.0f));
+            g.drawFittedText(tr(t.text), in.removeFromTop(54.0f).toNearestInt(), juce::Justification::topLeft, 3, 1.0f);
+        }
+    }
+
     static void paintLogo(juce::Graphics& g, juce::Rectangle<float> r) {
         // Two facing speaker rings with sound arcs: the donut, the thing that makes Raumklang special.
         const auto c = r.getCentre();
@@ -169,7 +246,7 @@ private:
     }
 
     int page_ = 0;
-    std::unique_ptr<juce::TextButton> skip_, next_, demo_, empty_, back_;
+    std::unique_ptr<juce::TextButton> skip_, next_, back_, demo_, empty_;
 };
 
 // ---------------------------------------------------------------------------
@@ -188,7 +265,7 @@ juce::String degree() { return juce::String(juce::CharPointer_UTF8("\xc2\xb0"));
 } // namespace
 
 MainComponent::MainComponent()
-    : steps_(juce::StringArray{tr("Lautsprecher"), tr("Quellen"), tr("Raum"), tr("Ausgabe")}, true) {
+    : steps_(juce::StringArray{tr("Lautsprecher"), tr("Quellen"), tr("Raum"), tr("Ausgabe")}, false) {
     juce::PropertiesFile::Options opt;
     opt.applicationName = "Raumklang";
     opt.filenameSuffix = ".settings";
@@ -211,7 +288,7 @@ MainComponent::MainComponent()
     openBtn_.onClick = [this] { openProject(); };
     saveBtn_.onClick = [this] { saveProjectAs(); };
     helpBtn_.onClick = [this] { showHelpMenu(); };
-    addBtn_->onClick = [this] { addSource(); };
+    addBtn_->onClick = [this] { if (step_ == StepSpeakers) addSpeaker(); else addSource(); };
     for (juce::Component* b : {(juce::Component*)&undoBtn_, (juce::Component*)&redoBtn_, (juce::Component*)&openBtn_,
                                (juce::Component*)&saveBtn_, (juce::Component*)&helpBtn_, (juce::Component*)addBtn_.get()})
         addAndMakeVisible(*b);
@@ -231,6 +308,9 @@ MainComponent::MainComponent()
         refreshSidebar();
         showStage();
         if (row == selSource_) rebuildInspector();
+    };
+    sidebar_.onMenu = [this](int row, juce::Rectangle<int> area) {
+        if (step_ == StepSpeakers && !calibrating_) speakerMenu(row, area);
     };
     addAndMakeVisible(outputStrip_);
     outputStrip_.setTooltip(tr("Master-Pegel aller Ausgänge. Doppelklick setzt auf 0 dB."));
@@ -477,7 +557,8 @@ void MainComponent::refreshAll() {
     updateCoach();
     undoBtn_.setEnabled(!undo_.empty());
     redoBtn_.setEnabled(!redo_.empty());
-    addBtn_->setVisible(step_ == StepSources);
+    addBtn_->setVisible((step_ == StepSources || step_ == StepSpeakers) && !calibrating_);
+    addBtn_->setButtonText("+ " + (step_ == StepSpeakers ? tr("Lautsprecher hinzufügen") : tr("Quelle hinzufügen")));
     stage_.setVisible(step_ != StepRoom || calibrating_);
     reverbPanel_.setVisible(step_ == StepRoom && !calibrating_);
     reverbPanel_.setParams(scene_.reverb, scene_.reverbWetDb);
@@ -535,6 +616,12 @@ int MainComponent::dawTrackLevelIndex(int track) const {
 
 void MainComponent::scanDaw() {
     auto tracks = host_.scanBridge();
+    // Some hosts send no track name or a placeholder like "void". Such tracks get a
+    // numbered name instead, so they stay distinguishable until they are renamed.
+    for (auto& t : tracks) {
+        const juce::String n = juce::String::fromUTF8(t.name.c_str()).trim();
+        if (rkui::isPlaceholderTrackName(n)) t.name = (tr("DAW-Spur") + " " + juce::String(t.slot + 1)).toStdString();
+    }
     juce::String key;
     for (const auto& t : tracks)
         key << t.slot << ':' << juce::String::fromUTF8(t.name.c_str()) << ':' << t.channels << ':' << (int)t.sending << ':'
@@ -633,6 +720,7 @@ void MainComponent::refreshSidebar() {
             r.trailing = sp.isSubwoofer ? "Sub" : (sp.gainDb != 0.0f ? rkui::num(sp.gainDb, 1) + " dB" : juce::String());
             r.dim = !sp.enabled || (!scene_.headphones && m >= outs);
             r.check = !r.dim && r.trailing.isEmpty();
+            r.menu = !calibrating_;
             if (!scene_.headphones && m >= outs) r.subtitle = tr("Kein Ausgang") + ", " + rkui::num(p.azimuthDeg, 0) + degree();
             if (calibrating_) {
                 r.subtitle = calibrationSubtitle(m);
@@ -910,8 +998,10 @@ void MainComponent::buildSourcesPage() {
     auto ctx = pageContext();
     if (selSource_ < 0 || selSource_ >= (int)scene_.sources.size()) {
         auto card = std::make_unique<rkui::StatusCard>();
-        card->set(rkui::StatusCard::Kind::Info, tr("Noch keine Quelle"), tr("Ein Eingang des Interfaces oder ein Testklang."));
-        inspector_.add(std::move(card), 64);
+        card->set(rkui::StatusCard::Kind::Info, tr("Noch keine Quelle"),
+                  tr("Eine Quelle ist ein Eingang des Audio-Interfaces oder ein Testklang. Spuren aus der DAW kommen über das Plugin „Raumklang Quelle“."));
+        const int cardH = card->idealHeight(juce::jmax(200, inspector_.getWidth() - 24));
+        inspector_.add(std::move(card), cardH);
         auto* add = inspector_.add(rkui::makeButton("+ " + tr("Quelle hinzufügen"), true), 32);
         add->onClick = [this] { addSource(); };
         return;
@@ -1182,8 +1272,15 @@ void MainComponent::buildOutputPage() {
     master->setValue(scene_.masterGainDb);
     master->onChange = [this](double v) { scene_.masterGainDb = (float)v; applyScene(false); };
     master->onCommit = [this] { commit(); };
-    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Hören über")), 26);
-    auto* hp = inspector_.add(std::make_unique<rkui::Segmented>(juce::StringArray{tr("Lautsprecher"), tr("Kopfhörer"), tr("Binaural")}, false), 32);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Hören über"),
+                                                         tr("Lautsprecher: Jeder Lautsprecher bekommt seinen eigenen Ausgang am Audio-Interface.\n\n"
+                                                            "Kopfhörer, Anlage: Die eingerichteten Lautsprecher werden binaural in den Kopfhörer gerechnet, jeder aus seiner Richtung. So lässt sich ein Mix für die Anlage ohne Lautsprecher vorbereiten.\n\n"
+                                                            "Kopfhörer, frei: Die Quellen werden direkt binaural um den Kopf gerechnet, unabhängig vom Lautsprecher-Layout. Für Mischungen, die über Kopfhörer gehört werden sollen.")), 26);
+    auto* hp = inspector_.add(std::make_unique<rkui::OptionCards>(std::vector<rkui::OptionCards::Option>{
+                                  {tr("Lautsprecher"), tr("Ein Ausgang pro Lautsprecher")},
+                                  {tr("Kopfhörer, Anlage"), tr("Die Lautsprecher im Kopfhörer nachgebildet")},
+                                  {tr("Kopfhörer, frei"), tr("Quellen frei um den Kopf, ohne Layout")}}),
+                              3 * rkui::OptionCards::kRowHeight);
     hp->setSelected(!scene_.headphones ? 0 : (scene_.binaural ? 2 : 1));
     hp->onChange = [this](int m) {
         scene_.headphones = m > 0;
@@ -1192,10 +1289,6 @@ void MainComponent::buildOutputPage() {
         commit();
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshAll(); } });
     };
-    const juce::String hpNote = !scene_.headphones ? tr("Jeder Lautsprecher bekommt seinen eigenen Ausgang am Audio-Interface.")
-                              : scene_.binaural ? tr("Die Quellen erklingen frei um den Kopf, unabhängig von den Lautsprechern. Zum Mischen für Kopfhörer.")
-                                                : tr("Die Lautsprecher-Anlage im Kopfhörer: jeder Lautsprecher klingt aus seiner Richtung. Zum Vorbereiten ohne Lautsprecher.");
-    inspector_.add(std::make_unique<rkui::NoteRow>(hpNote), 52);
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Schutz"), tr("Der Limiter ist die letzte Stufe vor jedem Ausgang. Unterhalb des Thresholds verändert er das Signal nicht.")), 26);
     auto* lim = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Limiter")), 28);
     lim->setToggleState(scene_.limiter, juce::dontSendNotification);
@@ -1230,6 +1323,87 @@ void MainComponent::addSource() {
     applyScene(false);
     commit();
     refreshAll();
+}
+
+void MainComponent::addSpeaker() {
+    auto& v = scene_.layout.speakers;
+    if ((int)v.size() >= rk::kMaxSpeakers) return;
+    rk::Speaker sp;
+    sp.name = std::to_string(v.size() + 1);
+    // Next to the last one on the same ring, so it does not land on top of another.
+    const float r = v.empty() ? scene_.radius : rk::length(v.back().position);
+    const float az = v.empty() ? 0.0f : rk::toPolar(v.back().position).azimuthDeg - 30.0f;
+    sp.position = rk::toCartesian({std::fmod(az + 540.0f, 360.0f) - 180.0f, 0.0f, std::max(0.5f, r)});
+    if (!v.empty()) sp.group = v.back().group;
+    v.push_back(sp);
+    scene_.presetId = "custom";
+    applyScene(true);
+    commit();
+    selectSpeaker((int)v.size() - 1);
+}
+
+void MainComponent::speakerMenu(int i, juce::Rectangle<int> area) {
+    if (i < 0 || i >= (int)scene_.layout.speakers.size()) return;
+    const auto& sp = scene_.layout.speakers[(size_t)i];
+    juce::PopupMenu m;
+    m.addItem(1, tr("Umbenennen …"));
+    m.addItem(2, tr("Duplizieren"));
+    m.addItem(3, tr("Aktiv"), true, sp.enabled);
+    m.addItem(4, tr("Subwoofer"), true, sp.isSubwoofer);
+    m.addSeparator();
+    m.addItem(5, tr("Entfernen"));
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(area), [this, i](int r) {
+        auto& v = scene_.layout.speakers;
+        if (i >= (int)v.size() || r == 0) return;
+        if (r == 1) {
+            auto* w = new juce::AlertWindow(tr("Lautsprecher umbenennen"), {}, juce::MessageBoxIconType::NoIcon);
+            w->addTextEditor("name", juce::String::fromUTF8(v[(size_t)i].name.c_str()));
+            w->addButton(tr("Umbenennen"), 1, juce::KeyPress(juce::KeyPress::returnKey));
+            w->addButton(tr("Abbrechen"), 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            w->enterModalState(true, juce::ModalCallbackFunction::create([this, i, w](int ok) {
+                auto& vv = scene_.layout.speakers;
+                if (ok == 1 && i < (int)vv.size()) {
+                    const juce::String n = w->getTextEditorContents("name").trim().substring(0, 64);
+                    if (n.isNotEmpty()) {
+                        vv[(size_t)i].name = n.toStdString();
+                        commit();
+                        refreshSidebar();
+                        rebuildInspector();
+                    }
+                }
+            }), true);
+            return;
+        }
+        if (r == 2) {
+            if ((int)v.size() >= rk::kMaxSpeakers) return;
+            rk::Speaker copy = v[(size_t)i];
+            copy.name = std::to_string(v.size() + 1);
+            const rk::Polar p = rk::toPolar(copy.position);
+            copy.position = rk::toCartesian({std::fmod(p.azimuthDeg - 15.0f + 540.0f, 360.0f) - 180.0f, p.elevationDeg, p.distance});
+            copy.aim = {};
+            v.push_back(copy);
+            scene_.presetId = "custom";
+            applyScene(true);
+            commit();
+            selectSpeaker((int)v.size() - 1);
+            return;
+        }
+        if (r == 3) v[(size_t)i].enabled = !v[(size_t)i].enabled;
+        else if (r == 4) v[(size_t)i].isSubwoofer = !v[(size_t)i].isSubwoofer;
+        else if (r == 5) {
+            v.erase(v.begin() + i);
+            scene_.presetId = "custom";
+            applyScene(true);
+            commit();
+            selectSpeaker(juce::jmin(i, (int)v.size() - 1));
+            return;
+        }
+        if (r == 4) scene_.presetId = "custom"; // a subwoofer changes the layout, switching off does not
+        applyScene(true);
+        commit();
+        refreshSidebar();
+        rebuildInspector();
+    });
 }
 
 void MainComponent::startDemo() {
@@ -1332,7 +1506,7 @@ void MainComponent::showHelpMenu() {
     m.addSeparator();
     m.addSectionHeader(tr("Tastenkürzel"));
     const juce::String cmd = (juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? u8("\xe2\x8c\x98") : "Strg+";
-    m.addItem(10, cmd + "1 … " + cmd + "4   " + tr("Schritt wechseln"), false);
+    m.addItem(10, cmd + "1 … " + cmd + "4   " + tr("Bereich wechseln"), false);
     m.addItem(11, cmd + "Z / " + cmd + u8("\xe2\x87\xa7Z   ") + tr("Rückgängig / Wiederholen"), false);
     m.addItem(12, cmd + "O / " + cmd + "S   " + tr("Öffnen / Sichern unter"), false);
     m.addItem(13, u8("\xe2\x87\xa7 ") + tr("beim Ziehen   Position rastet ein"), false);
@@ -1345,7 +1519,6 @@ void MainComponent::showHelpMenu() {
             settings_->saveIfNeeded();
             steps_.setItems(juce::StringArray{tr("Lautsprecher"), tr("Quellen"), tr("Raum"), tr("Ausgabe")});
             updateTooltips();
-            addBtn_->setButtonText("+ " + tr("Quelle hinzufügen"));
             refreshAll();
         } else if (r == 3 || r == 4) {
             rkui::setDarkMode(r == 3);
@@ -1353,7 +1526,7 @@ void MainComponent::showHelpMenu() {
             settings_->saveIfNeeded();
             applyTheme();
         } else if (r == 5) {
-            showIntro();
+            showIntro(true);
         } else if (r == 7) {
             updater_.check(this, true);
         } else if (r == 6) {
@@ -1440,8 +1613,10 @@ void MainComponent::timerCallback() {
         outputStrip_.setLevel(outPeak);
         outputStrip_.setGainDb(scene_.masterGainDb);
     }
+    // Level bars only where the rows are speakers or sources; room types have no level.
     if (step_ == StepSpeakers || step_ == StepOutput) sidebar_.setLevels(spkView);
-    else sidebar_.setLevels(srcView);
+    else if (step_ == StepSources) sidebar_.setLevels(srcView);
+    else sidebar_.setLevels({});
 
     // Speaker test: 1.5 s per speaker, in order.
     if (speakerTestRunning_ && now >= speakerTestNext_) {
@@ -1577,13 +1752,22 @@ void MainComponent::updateTooltips() {
     helpBtn_.setTooltip(tr("Hilfe"));
 }
 
-void MainComponent::showIntro() {
+void MainComponent::showIntro(bool keepProject) {
     intro_ = std::make_unique<IntroOverlay>();
     intro_->onDemo = [this] { startDemo(); };
     intro_->onEmpty = [this] { startEmpty(); };
+    if (keepProject)
+        intro_->onSkip = [this] {
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] {
+                if (sp != nullptr) sp->intro_.reset();
+            });
+        };
     addAndMakeVisible(*intro_);
     resized();
-    intro_->grabKeyboardFocus();
+    // At first start the window is not on screen yet, so take the focus once it is.
+    juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] {
+        if (sp != nullptr && sp->intro_ != nullptr) sp->intro_->grabKeyboardFocus();
+    });
 }
 
 void MainComponent::updateCoach() {
@@ -1594,7 +1778,7 @@ void MainComponent::updateCoach() {
     const bool layoutOk = info.numActive > 0 && std::find(info.hints.begin(), info.hints.end(), "single_speaker") == info.hints.end();
     if (calibrating_) {
         if (phoneMode_) {
-            stage_.setCoach("1", tr("iPhone-Messung prüfen"), tr("Gestrichelt: bisher. Rechts die Zuordnung wählen und übernehmen."));
+            stage_.setCoach({}, tr("iPhone-Messung prüfen"), tr("Gestrichelt: bisher. Rechts die Zuordnung wählen und übernehmen."));
         } else if (proposal_) {
             stage_.setCoach({}, tr("Ergebnis prüfen"), tr("Gestrichelt: bisher. Rechts übernehmen oder verwerfen."), true);
         } else if (calib_ != nullptr && calib_->phase() == Calibration::Phase::Measuring) {
@@ -1611,26 +1795,25 @@ void MainComponent::updateCoach() {
         }
         return;
     }
+    // Outside of measuring, the bar only appears when something needs attention.
+    reverbPanel_.setCoach({}, {}, {});
     switch (step_) {
     case StepSpeakers:
-        if (!layoutOk) stage_.setCoach("1", tr("Vorlage wählen"), tr("Rechts eine Vorlage wählen oder Lautsprecher hinzufügen."));
-        else if (selSpeaker_ < 0) stage_.setCoach("1", tr("Lautsprecher anpassen"), tr("Ziehen verschiebt sie, mit ⇧ rastet die Position ein."));
-        else stage_.setCoach({}, tr("Lautsprecher stehen"), tr("Weiter mit 2 Quellen."), true);
+        if (!layoutOk) stage_.setCoach("!", tr("Noch kein Layout"), tr("Rechts eine Vorlage wählen oder links Lautsprecher hinzufügen."));
+        else stage_.setCoach({}, {}, {});
         break;
     case StepSources:
-        if (scene_.sources.empty()) stage_.setCoach("2", tr("Quelle hinzufügen"), tr("Links unten auf „+ Quelle hinzufügen“ klicken."));
-        else stage_.setCoach("2", tr("Quellen im Raum platzieren"), tr("Ziehen verschiebt sie, mit ⇧ rastet die Position ein. Mausrad zoomt."));
+        stage_.setCoach({}, {}, {}); // the inspector already explains an empty source list
         break;
     case StepRoom:
         stage_.setCoach({}, {}, {});
-        reverbPanel_.setCoach("3", tr("Raum einstellen"), tr("Raumtyp wählen, dann die Punkte im Bild ziehen."));
         break;
     default:
-        if (outs == 0) stage_.setCoach("4", tr("Audiogerät wählen"), tr("Rechts das Audio-Interface auswählen."));
+        if (outs == 0) stage_.setCoach("!", tr("Kein Audiogerät"), tr("Rechts das Audio-Interface auswählen."));
         else if (!scene_.headphones && outs < nSpk)
             stage_.setCoach("!", tr("Zu wenige Ausgänge"), juce::String(outs) + " " + tr("von") + " " + juce::String(nSpk) + ". " + tr("Anderes Gerät wählen oder unter Ausgabe auf Kopfhörer umschalten."));
-        else if (speakerTestRunning_) stage_.setCoach("4", tr("Hörst du den markierten Lautsprecher?"), tr("Sonst Kabel und Reihenfolge der Ausgänge prüfen."));
-        else stage_.setCoach({}, tr("Bereit"), tr("Mit „Lautsprecher einzeln anspielen“ die Verkabelung prüfen."), true);
+        else if (speakerTestRunning_) stage_.setCoach("!", tr("Hörst du den markierten Lautsprecher?"), tr("Sonst Kabel und Reihenfolge der Ausgänge prüfen."));
+        else stage_.setCoach({}, {}, {});
         break;
     }
 }

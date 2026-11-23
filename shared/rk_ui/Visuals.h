@@ -44,10 +44,11 @@ private:
     juce::Image glow_;
 };
 
-/// Sound particles ("fireflies") between a source and a speaker, like the energy display in
-/// Spat: many small glowing dots whose density shows how much of the source this speaker
-/// plays. They do not travel; they sit scattered along the path and twinkle softly.
-/// `energy` 0..1 (gain squared times level), `seed` keeps each path's pattern stable,
+/// Sound particles between a source and a speaker: many small glowing dots whose density
+/// shows how much of the source this speaker plays. Each dot lives for a fraction of a second,
+/// fades in and out and is born again somewhere else, so the cloud never forms a fixed
+/// pattern. How many are alive at once follows the level directly.
+/// `energy` 0..1 (gain squared times level), `seed` separates the paths,
 /// `widthPx` widens the cloud (source width). Returns the number of dots drawn.
 int drawSoundParticles(ParticleBatch& g, juce::Point<float> from, juce::Point<float> to, juce::Colour colour,
                        float energy, uint32_t seed, double timeSec, float widthPx = 0.0f, float sizeScale = 1.0f);

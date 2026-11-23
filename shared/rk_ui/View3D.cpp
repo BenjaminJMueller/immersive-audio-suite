@@ -9,6 +9,8 @@ namespace rkui {
 namespace {
 
 rk::Vec3 vsub(rk::Vec3 a, rk::Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+rk::Vec3 vadd(rk::Vec3 a, rk::Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+rk::Vec3 vscale(rk::Vec3 a, float k) { return {a.x * k, a.y * k, a.z * k}; }
 float vdot(rk::Vec3 a, rk::Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 rk::Vec3 vcross(rk::Vec3 a, rk::Vec3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
 rk::Vec3 vnorm(rk::Vec3 a) {
@@ -56,6 +58,11 @@ void View3D::resetView() {
     pitch_ = 0.62f;
     zoom_ = 1.0f;
     repaint();
+}
+
+rk::Vec3 View3D::cameraPosition() const {
+    const float dist = extent() * 2.6f / zoom_;
+    return {-std::sin(yaw_) * std::cos(pitch_) * dist, -std::cos(yaw_) * std::cos(pitch_) * dist, -0.4f + std::sin(pitch_) * dist};
 }
 
 View3D::Projected View3D::project(rk::Vec3 w) const {
@@ -113,24 +120,78 @@ void View3D::paint(juce::Graphics& g) {
         const auto foot = project({spk.position.x, spk.position.y, -kStand});
         const float lvl = m < (int)speakerLevels_.size() ? speakerLevels_[(size_t)m] : 0.0f;
         const juce::Colour col = spk.enabled ? itemColour(spk.group + 3) : p.text3;
-        items.push_back({top.depth, [&g, &p, top, foot, lvl, col, m, sizeAt] {
+        // The speaker as a small cabinet turned the way it points: front face in its colour,
+        // a short line showing where it radiates.
+        const rk::Vec3 F = spk.aimDirection();
+        rk::Vec3 R = vcross(F, {0.0f, 0.0f, 1.0f});
+        if (vdot(R, R) < 1.0e-6f) R = {1.0f, 0.0f, 0.0f}; // pointing straight up or down
+        R = vnorm(R);
+        const rk::Vec3 U = vnorm(vcross(R, F));
+        const float k = std::max(0.16f, extent() * 0.055f); // cabinet size in metres, grows with the layout
+        const float hw = 0.42f * k, hh = 0.6f * k, hd = 0.4f * k;
+        auto corner = [&](float sx, float sy, float sz) {
+            return vadd(spk.position, vadd(vscale(R, sx * hw), vadd(vscale(U, sy * hh), vscale(F, sz * hd))));
+        };
+        struct Face { std::array<juce::Point<float>, 4> pts; float shade; bool front; };
+        std::vector<Face> faces;
+        const rk::Vec3 cam = cameraPosition();
+        const struct { rk::Vec3 n; float half; float c[4][3]; float shade; bool front; } defs[] = {
+            {F, hd, {{-1, -1, 1}, {1, -1, 1}, {1, 1, 1}, {-1, 1, 1}}, 1.0f, true},
+            {vscale(F, -1.0f), hd, {{-1, -1, -1}, {-1, 1, -1}, {1, 1, -1}, {1, -1, -1}}, 0.35f, false},
+            {R, hw, {{1, -1, -1}, {1, 1, -1}, {1, 1, 1}, {1, -1, 1}}, 0.55f, false},
+            {vscale(R, -1.0f), hw, {{-1, -1, -1}, {-1, -1, 1}, {-1, 1, 1}, {-1, 1, -1}}, 0.55f, false},
+            {U, hh, {{-1, 1, -1}, {-1, 1, 1}, {1, 1, 1}, {1, 1, -1}}, 0.75f, false},
+            {vscale(U, -1.0f), hh, {{-1, -1, -1}, {1, -1, -1}, {1, -1, 1}, {-1, -1, 1}}, 0.3f, false},
+        };
+        for (const auto& d : defs) {
+            const rk::Vec3 centre = vadd(spk.position, vscale(d.n, d.half));
+            if (vdot(d.n, vsub(cam, centre)) <= 0.0f) continue; // facing away from the camera
+            Face f{{}, d.shade, d.front};
+            for (int i = 0; i < 4; ++i) f.pts[(size_t)i] = project(corner(d.c[i][0], d.c[i][1], d.c[i][2])).p;
+            faces.push_back(f);
+        }
+        const auto beamEnd = project(vadd(spk.position, vscale(F, hd + 2.2f * k))).p;
+        const auto frontCentre = project(vadd(spk.position, vscale(F, hd))).p;
+        const bool frontVisible = vdot(F, vsub(cam, spk.position)) > 0.0f;
+        items.push_back({top.depth, [&g, &p, top, foot, lvl, col, m, sizeAt, faces, beamEnd, frontCentre, frontVisible] {
                              const float s = sizeAt(18.0f, top.depth);
                              g.setColour(p.text3.withAlpha(0.5f));
                              g.drawLine(juce::Line<float>(foot.p, top.p), 1.0f);
                              g.setColour(juce::Colours::white.withAlpha(0.06f));
                              g.fillEllipse(foot.p.x - s * 0.45f, foot.p.y - s * 0.14f, s * 0.9f, s * 0.28f);
-                             const auto box = juce::Rectangle<float>(s, s * 0.8f).withCentre(top.p);
-                             g.setColour(col.withAlpha(0.30f));
-                             g.fillRoundedRectangle(box, s * 0.2f);
-                             if (lvl > 0.01f) {
-                                 g.setColour(lvl > 0.97f ? p.bad : col);
-                                 g.fillRoundedRectangle(box.withTrimmedTop(box.getHeight() * (1.0f - juce::jlimit(0.0f, 1.0f, lvl))), s * 0.2f);
+                             // Radiation direction behind the cabinet when it points away, in front otherwise.
+                             // A soft widening cone: where the speaker radiates.
+                             auto beam = [&] {
+                                 const auto d = beamEnd - frontCentre;
+                                 const float len = d.getDistanceFromOrigin();
+                                 if (len < 2.0f) return;
+                                 const juce::Point<float> n{-d.y / len, d.x / len};
+                                 juce::Path cone;
+                                 cone.startNewSubPath(frontCentre + n * (s * 0.18f));
+                                 cone.lineTo(beamEnd + n * (s * 0.55f));
+                                 cone.lineTo(beamEnd - n * (s * 0.55f));
+                                 cone.lineTo(frontCentre - n * (s * 0.18f));
+                                 cone.closeSubPath();
+                                 g.setGradientFill(juce::ColourGradient(col.withAlpha(0.45f), frontCentre, col.withAlpha(0.0f), beamEnd, false));
+                                 g.fillPath(cone);
+                             };
+                             if (!frontVisible) beam();
+                             for (const auto& f : faces) {
+                                 juce::Path path;
+                                 path.startNewSubPath(f.pts[0]);
+                                 for (size_t i = 1; i < 4; ++i) path.lineTo(f.pts[i]);
+                                 path.closeSubPath();
+                                 const juce::Colour body = p.stage.interpolatedWith(col, 0.18f + 0.22f * f.shade);
+                                 // The front glows with the speaker's level.
+                                 g.setColour(f.front ? p.stage.interpolatedWith(col, 0.4f + 0.5f * juce::jlimit(0.0f, 1.0f, lvl)) : body);
+                                 g.fillPath(path);
+                                 g.setColour(col.withAlpha(f.front ? 1.0f : 0.55f));
+                                 g.strokePath(path, juce::PathStrokeType(f.front ? 1.2f : 0.8f, juce::PathStrokeType::curved));
                              }
-                             g.setColour(col);
-                             g.drawRoundedRectangle(box, s * 0.2f, 1.2f);
+                             if (frontVisible) beam();
                              g.setColour(juce::Colours::white);
                              g.setFont(uiFont(juce::jlimit(8.0f, 12.0f, s * 0.55f), true));
-                             g.drawText(juce::String(m + 1), box, juce::Justification::centred);
+                             g.drawText(juce::String(m + 1), juce::Rectangle<float>(s, s).withCentre(frontVisible ? frontCentre : top.p), juce::Justification::centred);
                          }});
     }
 
@@ -159,13 +220,13 @@ void View3D::paint(juce::Graphics& g) {
         const float lvl = s < (int)sourceLevels_.size() ? sourceLevels_[(size_t)s] : 0.0f;
         struct Path3 { juce::Point<float> to; float energy; uint32_t seed; };
         std::vector<Path3> lines;
-        if (!dim && !src.mute && (s == sel_ || lvl > 0.02f)) {
+        if (!dim && !src.mute && lvl > 0.02f) {
             panner_.compute({src.position, src.spread}, gains.data());
             for (int m = 0; m < nSpk; ++m)
                 if (gains[(size_t)m] > 0.04f) {
                     const float gm = gains[(size_t)m];
                     lines.push_back({project(scene_.layout.speakers[(size_t)m].position).p,
-                                     std::max(gm * gm * std::sqrt(lvl), s == sel_ ? 0.10f * gm * gm : 0.0f), (uint32_t)(s * 131 + m + 1)});
+                                     gm * gm * std::sqrt(lvl), (uint32_t)(s * 131 + m + 1)});
                 }
         }
         const juce::String name = src.name;

@@ -15,6 +15,9 @@ Language language();
 juce::String tr(const char* germanUtf8);
 juce::String tr(const juce::String& german);
 
+/// True for names that hosts send when a track has no real name ("", "void", "null", ...).
+bool isPlaceholderTrackName(const juce::String& name);
+
 /// UTF-8 literal to juce::String (plain const char* is treated as ASCII by JUCE).
 inline juce::String u8(const char* utf8) { return juce::String::fromUTF8(utf8); }
 

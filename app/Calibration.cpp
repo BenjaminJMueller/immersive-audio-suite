@@ -47,7 +47,7 @@ Calibration::~Calibration() {
 }
 
 juce::String Calibration::problemBeforeStart() const {
-    if (host_.numDeviceOutputs() == 0) return tr("Kein Audiogerät. Unter 4 Ausgabe ein Gerät wählen.");
+    if (host_.numDeviceOutputs() == 0) return tr("Kein Audiogerät. Unter „Ausgabe“ ein Gerät wählen.");
     if (host_.numDeviceInputs() == 0) return tr("Kein Eingang. Ein Audiogerät mit Mikrofoneingang wählen.");
     if (settings_.micInput < 0 || settings_.micInput >= host_.numDeviceInputs()) return tr("Bitte den Mikrofoneingang wählen.");
     if (order_.empty()) return tr("Kein Lautsprecher hat einen Ausgang.");
