@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "PluginInstaller.h"
 #include "MicPermission.h"
 
 using rkui::tr;
@@ -13,7 +14,7 @@ enum : juce::CommandID {
     CmdStep1, CmdStep2, CmdStep3, CmdStep4,
     CmdViewTop, CmdViewFront, CmdViewSplit, CmdView3D,
     CmdDark, CmdLight, CmdGerman, CmdEnglish,
-    CmdIntro, CmdWebsite, CmdCheckUpdates
+    CmdIntro, CmdWebsite, CmdCheckUpdates, CmdInstallPlugins
 };
 bool german() { return rkui::language() == rkui::Language::German; }
 } // namespace
@@ -428,6 +429,8 @@ MainComponent::MainComponent()
     juce::Timer::callAfterDelay(1200, [sp = juce::Component::SafePointer<MainComponent>(this)] {
         if (sp != nullptr) sp->updater_.showResultOfLastUpdate(sp);
     });
+    // New version (or first start): put the plugins that ship inside the app in place.
+    if (rkapp::pluginInstallDue(*settings_, rkapp::Updater::currentBuild())) installPlugins(false);
 
     setWantsKeyboardFocus(true);
     setSize(1320, 820);
@@ -1619,6 +1622,38 @@ void MainComponent::applyTheme() {
     refreshAll();
 }
 
+void MainComponent::installPlugins(bool manual) {
+    if (installingPlugins_) return;
+    installingPlugins_ = true;
+    juce::Thread::launch([sp = juce::Component::SafePointer<MainComponent>(this), manual] {
+        const auto r = rkapp::installBundledPlugins();
+        juce::MessageManager::callAsync([sp, manual, r] {
+            if (sp == nullptr) return;
+            sp->installingPlugins_ = false;
+            if (!r.attempted) return;
+            if (r.ok) {
+                rkapp::markPluginsInstalled(*sp->settings_, rkapp::Updater::currentBuild());
+                sp->settings_->saveIfNeeded();
+            }
+            juce::String text;
+            if (r.ok)
+                text = tr("Die Plugins „Raumklang Quelle“ und „Raumklang Return“ sind als AU und VST3 in ~/Library/Audio/Plug-Ins installiert.") +
+                       "\n\n" + tr("Eine DAW, die gerade läuft, sieht die neue Version erst nach einem Neustart.");
+            else
+                text = tr("Die Plugins konnten nicht installiert werden.") + "\n\n" + r.error;
+            if (!manual && r.ok && sp->settings_->getIntValue("pluginsInstalledOnce", 0) == 1) return; // after an update: silently
+            sp->settings_->setValue("pluginsInstalledOnce", 1);
+            sp->pluginBox_ = juce::NativeMessageBox::showScopedAsync(
+                juce::MessageBoxOptions{}
+                    .withIconType(r.ok ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon)
+                    .withTitle(r.ok ? tr("Plugins installiert") : tr("Plugins nicht installiert"))
+                    .withMessage(text)
+                    .withButton("OK", 1),
+                nullptr);
+        });
+    });
+}
+
 void MainComponent::showHelpMenu() {
     const bool de = rkui::language() == rkui::Language::German;
     juce::PopupMenu m;
@@ -1626,6 +1661,7 @@ void MainComponent::showHelpMenu() {
     m.addItem(5, de ? u8("Einf\xc3\xbchrung zeigen") : "Show introduction");
     m.addItem(6, de ? "Projektseite auf GitHub" : "Project page on GitHub");
     m.addItem(7, tr("Nach Updates suchen …"));
+    if (rkapp::hasBundledPlugins()) m.addItem(8, tr("Plugins installieren"));
     m.addSeparator();
     juce::PopupMenu look;
     look.addItem(3, de ? "Dunkel" : "Dark", true, rkui::isDark());
@@ -1644,6 +1680,8 @@ void MainComponent::showHelpMenu() {
             showIntro(true);
         } else if (r == 7) {
             updater_.check(this, true);
+        } else if (r == 8) {
+            installPlugins(true);
         } else if (r == 6) {
             juce::URL("https://github.com/BenjaminJMueller/immersive-audio-suite").launchInDefaultBrowser();
         }
@@ -1726,6 +1764,7 @@ juce::PopupMenu MainComponent::getMenuForIndex(int index, const juce::String&) {
     case 3:
         m.addCommandItem(c, CmdIntro);
         m.addCommandItem(c, CmdWebsite);
+        if (rkapp::hasBundledPlugins()) m.addCommandItem(c, CmdInstallPlugins);
        #if !JUCE_MAC
         m.addCommandItem(c, CmdCheckUpdates);
        #endif
@@ -1738,7 +1777,7 @@ juce::PopupMenu MainComponent::getMenuForIndex(int index, const juce::String&) {
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
     ids.addArray({CmdNew, CmdDemo, CmdOpen, CmdSaveAs, CmdLoadSurvey, CmdUndo, CmdRedo, CmdStep1, CmdStep2, CmdStep3,
                   CmdStep4, CmdViewTop, CmdViewFront, CmdViewSplit, CmdView3D, CmdDark, CmdLight, CmdGerman, CmdEnglish,
-                  CmdIntro, CmdWebsite, CmdCheckUpdates});
+                  CmdIntro, CmdWebsite, CmdCheckUpdates, CmdInstallPlugins});
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info) {
@@ -1778,6 +1817,7 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case CmdIntro: info.setInfo(de ? u8("Einführung zeigen") : "Show introduction", {}, "Help", 0); break;
     case CmdWebsite: info.setInfo(de ? "Projektseite auf GitHub" : "Project page on GitHub", {}, "Help", 0); break;
     case CmdCheckUpdates: info.setInfo(tr("Nach Updates suchen …"), {}, "Help", 0); break;
+    case CmdInstallPlugins: info.setInfo(tr("Plugins installieren"), {}, "Help", 0); info.setActive(rkapp::hasBundledPlugins()); break;
     default: break;
     }
 }
@@ -1801,6 +1841,7 @@ bool MainComponent::perform(const InvocationInfo& info) {
     case CmdIntro: showIntro(true); return true;
     case CmdWebsite: juce::URL("https://github.com/BenjaminJMueller/immersive-audio-suite").launchInDefaultBrowser(); return true;
     case CmdCheckUpdates: updater_.check(this, true); return true;
+    case CmdInstallPlugins: installPlugins(true); return true;
     default: return false;
     }
 }

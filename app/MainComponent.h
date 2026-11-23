@@ -115,6 +115,10 @@ private:
     void buildPhonePage();
     /// "Mit dem iPhone einmessen": explains the measurement before a file is loaded.
     void startPhoneIntro();
+    /// macOS: installs the plugins that ship inside the app (see PluginInstaller.h).
+    void installPlugins(bool manual);
+    bool installingPlugins_ = false;
+    juce::ScopedMessageBox pluginBox_;
     /// A wrapped paragraph in the inspector, always visible.
     void addNote(const juce::String& text);
     /// Numbered steps ("1. …" per line), always visible.

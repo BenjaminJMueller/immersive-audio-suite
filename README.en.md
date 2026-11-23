@@ -8,7 +8,7 @@ Raumklang is a free tool for spatial audio on macOS and Windows. It places sound
 
 > **Early version (0.1).** Raumklang is new. The audio processing is extensively tested automatically, but hardly on real speaker setups yet. Bugs and gaps are likely, see [Features and limits](#features-and-limits). Raumklang was [developed with AI](#developed-with-ai). If it still helps someone with their own project, I'm glad.
 
-**Download:** [macOS (.dmg)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-mac.dmg), [Windows (.zip)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest/download/Raumklang-Windows.zip), [Installation notes](#installation)
+**Download:** [latest version for macOS (.dmg) and Windows (.zip)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest), [Installation notes](#installation)
 
 ## Background
 
@@ -113,8 +113,8 @@ Known limits:
 
 ## Installation
 
-- **macOS (11 or later, Apple silicon and Intel):** open `Raumklang-mac.dmg`, drag *Raumklang.app* to *Applications* and double-click *Plugins installieren.command*. It copies the plugins (AU for Logic and GarageBand, VST3) into your user folder. The app is not notarised yet: on first launch use *System Settings → Privacy & Security → Open Anyway* (up to macOS 14: right-click → Open).
-- **Windows (10 or later):** unzip `Raumklang-Windows.zip`, start *Raumklang.exe* and double-click *Plugins installieren.bat* (asks for administrator rights; the VST3 plugins go to `C:\Program Files\Common Files\VST3`). If SmartScreen says "Windows protected your PC": *More info → Run anyway*.
+- **macOS (11 or later, Apple silicon and Intel):** open `Raumklang-<version>-mac.dmg` and drag *Raumklang.app* to *Applications*. On first launch the app installs the plugins itself (AU for Logic and GarageBand, VST3, into your user folder); to reinstall use *Help → Install plugins*. The app is not notarised yet: on first launch use *System Settings → Privacy & Security → Open Anyway* (up to macOS 14: right-click → Open).
+- **Windows (10 or later):** unzip `Raumklang-<version>-Windows.zip`, start *Raumklang.exe* and double-click *Plugins installieren.bat* (asks for administrator rights; the VST3 plugins go to `C:\Program Files\Common Files\VST3`). If SmartScreen says "Windows protected your PC": *More info → Run anyway*.
 
 The DAW and the app must run at the same sample rate. Every change on `main` replaces the download with the newest version. The app checks for a new version once a day and, after asking, updates itself and the plugins (*Help → Check for updates*). Download and updates only work while the repository is public.
 

@@ -524,7 +524,7 @@ void Updater::download() {
                 juce::String text = tr("Raumklang darf sich an diesem Ort nicht selbst ersetzen") + " (" + app.getParentDirectory().getFullPathName() + ").";
                 if (copied)
                     text << "\n\n" << tr("Die neue Version liegt jetzt im Ordner „Downloads/Raumklang-Update“. Raumklang beenden, "
-                                         "Raumklang.app von dort in den Programme-Ordner ziehen und ersetzen, dann „Plugins installieren.command“ öffnen.");
+                                         "Raumklang.app von dort in den Programme-Ordner ziehen und ersetzen. Die Plugins installiert Raumklang beim nächsten Start selbst.");
                 sheet_->set(UpdateSheet::Kind::Error, tr("Update nicht installiert"), text);
                 sheet_->setButtons(copied ? tr("Im Finder zeigen") : tr("Download-Seite öffnen"),
                                    [this, copied, copy] {
