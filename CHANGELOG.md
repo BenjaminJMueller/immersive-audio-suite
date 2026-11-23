@@ -3,7 +3,7 @@
 ## Unveröffentlicht
 
 - **Neue Oberfläche**: eine gemeinsame Raumansicht in App und Plugins, wahlweise von oben, von vorne, beides nebeneinander oder in 3D. Weniger Text, Hinweise nur noch, wenn etwas nicht stimmt.
-- **Raum (Schritt 3)**: Nachhallzeit über die Frequenz als Kurve mit ziehbaren Punkten für Tiefen, Mitten und Höhen, darunter der Zeitverlauf mit Direktschall, frühen Reflexionen, Cluster und Nachhall. Raumtypen Studio, Kammer, Saal, Kirche und Platte. Der Hall hat dafür eine eigene Nachhallzeit für die Tiefen und getrennt regelbare frühe Reflexionen, Cluster und Nachhall bekommen.
+- **Raum**: Nachhallzeit über die Frequenz als Kurve mit ziehbaren Punkten für Tiefen, Mitten und Höhen, darunter der Zeitverlauf mit Direktschall, frühen Reflexionen, Cluster und Nachhall. Raumtypen Studio, Kammer, Saal, Kirche und Platte. Der Hall hat dafür eine eigene Nachhallzeit für die Tiefen und getrennt regelbare frühe Reflexionen, Cluster und Nachhall bekommen.
 - **Raumklang Quelle**: Raumansicht mit den anderen DAW-Spuren, Name und Farbe der DAW-Spur, „Hall-Send“ statt Hall-Send, selten gebrauchte Einstellungen unter *Erweitert*. Spielt das Plugin ohne App, rechnet es Laufzeit und Pegel der Lautsprecher selbst ein.
 - **Raumklang Return**: Raumansicht mit allen Spuren und Pegel je Lautsprecher.
 - **Raumklang Raum entfällt**: Den Raum gibt es nur noch einmal, in der App und im Hall-Send jeder Quelle.
@@ -17,6 +17,16 @@
 - **Einmessen mit Mikrofon**: Gleitton über jeden Lautsprecher, Laufzeit und Pegel angleichen, mit 4 bis 12 Messpunkten auch die Positionen (Multilateration, Verzögerung des Interfaces wird herausgerechnet). Hinweis auf vertauschte Kabel, Vorschau mit gestrichelter alter Position, Rückgängig.
 - **iPhone-App „Raumklang Messen“**: Lautsprecher mit LiDAR antippen, Position und Ausrichtung als Datei an Raumklang. Laden oder auf das Fenster ziehen.
 - **Testraum**: `RAUMKLANG_TESTRAUM=1` startet die App mit einem simulierten Raum und Mikrofon, zum Ausprobieren ohne Aufbau.
+- **Schallteilchen überarbeitet**: Sie erscheinen nur, solange eine Quelle Signal hat, folgen dem Pegel, sind weicher und ohne festes Muster. In der Legende heißt der Eintrag jetzt *Schallenergie*.
+- **Schärfere Schrift**: Die Oberfläche nutzt jetzt die eingebettete Schrift Inter statt der Standardschrift von JUCE (auf dem Mac Lucida Grande), ohne die Stammverstärkung der macOS-Textglättung. Text wirkt dadurch auf Retina-Displays dünner und klarer. Leere Hinweiskarten passen ihre Höhe dem Text an, „vorne“ verschwindet in der geteilten Ansicht nicht mehr hinter der Legende.
+- **3D-Ansicht**: Lautsprecher erscheinen als Boxen mit Abstrahlkegel, die Ausrichtung ist auf einen Blick zu sehen.
+- **Lautsprecher in der Seitenleiste**: über ⋯ oder Rechtsklick umbenennen, duplizieren, als Subwoofer markieren, abschalten, entfernen; *+ Lautsprecher hinzufügen* darunter.
+- **Einmessen**: eine ruhige Liste mit drei Wegen (Mikrofon, iPhone-Messung, Laufzeit und Pegel ausgleichen) statt vieler Knöpfe.
+- **Raumtyp** lässt sich auch rechts auswählen, die Pegelbalken in der Raumliste entfallen.
+- **Hören über**: drei erklärte Optionen *Lautsprecher*, *Kopfhörer, Anlage* und *Kopfhörer, frei*.
+- **Info-Knöpfe**: Jede Überschrift mit (i) öffnet beim Klick eine Erklärung, *Details und Hilfen* entfällt.
+- **Einführung**: fünf Seiten beim ersten Start statt Schrittnummern und Hinweisen unter der Ansicht, über *Hilfe* (?) wieder aufrufbar, ohne das Projekt zu verlieren.
+- **Neue Quellen** heißen „DAW-Spur 1, 2, …“, wenn die DAW keinen Spurnamen liefert, statt „void“.
 - **Logic Pro**: Die AU-Plugins werden in der CI mit `auval` geprüft.
 
 ## 0.1.0 – 2026-11-18

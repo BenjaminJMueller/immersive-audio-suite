@@ -15,6 +15,13 @@ target_sources(rk_shared INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Pages.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/rk_ui/Survey.cpp)
 target_include_directories(rk_shared INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Interface font (Inter, SIL OFL 1.1), embedded so text looks the same and crisp on every platform.
+juce_add_binary_data(rk_fonts NAMESPACE RkFonts HEADER_NAME RkFonts.h SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/fonts/Inter-Regular.ttf
+    ${CMAKE_CURRENT_SOURCE_DIR}/fonts/Inter-SemiBold.ttf)
+set_target_properties(rk_fonts PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(rk_shared INTERFACE rk_fonts)
 target_link_libraries(rk_shared INTERFACE rk::core)
 
 # Common JUCE settings for every Raumklang target.
@@ -25,7 +32,9 @@ target_compile_definitions(rk_juce_defaults INTERFACE
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_REPORT_APP_USAGE=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
-    JUCE_MODAL_LOOPS_PERMITTED=0)
+    JUCE_MODAL_LOOPS_PERMITTED=0
+    # Without the stem darkening of "font smoothing" text on Retina screens stays thin and sharp.
+    JUCE_DISABLE_COREGRAPHICS_FONT_SMOOTHING=1)
 
 # Headless tests for the scene file format (fuzzed JSON, round trips).
 if(RK_BUILD_TESTS)

@@ -83,7 +83,7 @@ private:
     void applyTheme();
     void updateCoach();
     void updateTooltips();
-    void showIntro();
+    void showIntro(bool keepProject = false);
     rkui::PageContext pageContext();
 
     // Speaker calibration (microphone) and phone measurements.

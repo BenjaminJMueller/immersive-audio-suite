@@ -295,7 +295,7 @@ void StageView::paintGrid(juce::Graphics& g, float step) {
         g.drawLine(0, centre_.y, (float)getWidth(), centre_.y, 1.0f);
         g.drawLine(centre_.x, 0, centre_.x, (float)getHeight(), 1.0f);
         g.setColour(p.text3);
-        g.drawText(tr("vorne"), juce::Rectangle<float>(centre_.x - 40, 8, 80, 16), juce::Justification::centred);
+        g.drawText(tr("vorne"), juce::Rectangle<float>(centre_.x - 40, showLegend_ && !legendBottom_ ? 44.0f : 8.0f, 80, 16), juce::Justification::centred);
         g.drawText(num(step, 0) + " m", juce::Rectangle<float>(centre_.x + step * scale_ + 4, centre_.y + 2, 60, 14), juce::Justification::left);
         return;
     }

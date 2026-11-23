@@ -34,10 +34,10 @@ Daraus ergaben sich die Anforderungen an dieses Werkzeug:
 
 ## Arbeitsablauf
 
-1. **Lautsprecher.** Vorlage wählen (Stereo, Quadrofonie, 5.1, 7.1.4, Ring, Kuppel, Würfel, Donut) oder Lautsprecher frei setzen und ziehen. Raumklang prüft das Layout und sagt in Klartext, ob es passt und welches Verfahren es nimmt. *Laufzeit und Pegel ausgleichen* gleicht Laufzeit und Pegel an, wenn Lautsprecher unterschiedlich weit weg stehen.
+1. **Lautsprecher.** Vorlage wählen (Stereo, Quadrofonie, 5.1, 7.1.4, Ring, Kuppel, Würfel, Donut) oder Lautsprecher frei setzen und ziehen. In der Seitenleiste lässt sich jeder Lautsprecher über ⋯ oder Rechtsklick umbenennen, duplizieren, als Subwoofer markieren, abschalten oder entfernen, *+ Lautsprecher hinzufügen* setzt einen weiteren auf den Kreis. Die 3D-Ansicht zeigt jeden Lautsprecher als Box, die in ihre Abstrahlrichtung zeigt. Raumklang prüft das Layout und sagt in Klartext, ob es passt und welches Verfahren es nimmt. *Laufzeit und Pegel ausgleichen* gleicht Laufzeit und Pegel an, wenn Lautsprecher unterschiedlich weit weg stehen.
 2. **Quellen.** Jede Quelle ist ein Eingang des Audio-Interfaces oder ein eingebautes Testsignal (rosa Rauschen, Sinuston, Klicks). Quellen werden in der Draufsicht gezogen oder über Azimut, Elevation und Abstand gesetzt, dazu Pegel, Breite, Hall-Send und Distanzeffekt. *Kreisbahn* bewegt eine Quelle von selbst um den Hörplatz.
-3. **Raum.** Hall mit Raumtypen (Studio, Chamber, Saal, Kirche, Plate). Die Nachhallzeit lässt sich getrennt für Tiefen, Mitten und Höhen direkt in der Kurve ziehen, dazu Raumgröße, Pre-Delay und die Anteile von frühen Reflexionen, Cluster und Nachhall. Der Zeitverlauf darunter zeigt, wie der Hall nach dem Direktschall aufgebaut ist.
-4. **Ausgabe.** Audiogerät, Abtastrate und Puffer wählen. Master-Pegel, Limiter und *Lautsprecher einzeln anspielen* zum Prüfen der Verkabelung. Unter *Hören über* gibt es neben den Lautsprechern zwei Kopfhörer-Arten: *Kopfhörer* spielt die eigene Lautsprecher-Anlage im Kopfhörer, *Binaural* stellt die Quellen frei um den Kopf, unabhängig von den Lautsprechern.
+3. **Raum.** Hall mit Raumtypen (Studio, Chamber, Saal, Kirche, Plate), wählbar links in der Liste oder rechts unter *Raumtyp*. Die Nachhallzeit lässt sich getrennt für Tiefen, Mitten und Höhen direkt in der Kurve ziehen, dazu Raumgröße, Pre-Delay und die Anteile von frühen Reflexionen, Cluster und Nachhall. Der Zeitverlauf darunter zeigt, wie der Hall nach dem Direktschall aufgebaut ist.
+4. **Ausgabe.** Audiogerät, Abtastrate und Puffer wählen. Master-Pegel, Limiter und *Lautsprecher einzeln anspielen* zum Prüfen der Verkabelung. Unter *Hören über* stehen drei Wege: *Lautsprecher* gibt jedem Lautsprecher seinen Ausgang am Audio-Interface. *Kopfhörer, Anlage* rechnet die eingerichteten Lautsprecher binaural in den Kopfhörer, jeden aus seiner Richtung, etwa um einen Mix für die Anlage ohne Lautsprecher vorzubereiten. *Kopfhörer, frei* rechnet die Quellen direkt binaural um den Kopf, unabhängig vom Layout.
 
 Unter der Raumansicht liegt die Leiste *Szenen*: Sie speichert den ganzen Mix und ruft ihn mit Überblendzeit wieder ab, mit Pfeilen für die vorherige und nächste Szene. Jede Quelle hat in der Seitenleiste M (stumm) und S (solo), unten steht fest der Master mit Master-Pegel und Pegelanzeige.
 
@@ -46,13 +46,13 @@ Unter der Raumansicht liegt die Leiste *Szenen*: Sie speichert den ganzen Mix un
   <img src="docs/screenshots/03-raum.png" width="49%" alt="Raum">
 </p>
 
-Projekte werden automatisch gesichert, alle Schritte lassen sich rückgängig machen (⌘Z / Strg+Z). Beim ersten Start bietet eine Einführung an, mit einer Demo zu beginnen. Hat das Audiogerät weniger Ausgänge als das Layout Lautsprecher, schaltet die Demo von selbst die Kopfhörer-Wiedergabe ein. Die Oberfläche ist auf Deutsch, Englisch lässt sich unter *Hilfe* (?) umstellen.
+Projekte werden automatisch gesichert, alle Schritte lassen sich rückgängig machen (⌘Z / Strg+Z). Beim ersten Start erklärt eine kurze Einführung die vier Bereiche und bietet an, mit einer Demo oder dem eigenen Aufbau zu beginnen; unter *Hilfe* (?) lässt sie sich wieder aufrufen. Jede Überschrift mit (i) öffnet beim Klick eine Erklärung. Hat das Audiogerät weniger Ausgänge als das Layout Lautsprecher, schaltet die Demo von selbst die Kopfhörer-Wiedergabe ein. Die Oberfläche ist auf Deutsch, Englisch lässt sich unter *Hilfe* (?) umstellen.
 
 ## Lautsprecher einmessen
 
 Wo die Lautsprecher wirklich hängen, lässt sich auf zwei Wegen messen. Beide enden in einer Vorschau: gestrichelt die bisherige Position, ausgefüllt die gemessene. *Übernehmen* schreibt sie ins Layout, und *Rückgängig* nimmt das wieder zurück.
 
-**Mit Mikrofon** (Schritt *Lautsprecher → Mit Mikrofon einmessen*). Ein Messmikrofon steht auf Ohrhöhe. Jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. Aus der Laufzeit folgt der Abstand, aus dem Pegel die Lautstärke.
+**Mit Mikrofon** (*Lautsprecher*, rechts unter *Einmessen*: *Mit Mikrofon einmessen*). Ein Messmikrofon steht auf Ohrhöhe. Jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. Aus der Laufzeit folgt der Abstand, aus dem Pegel die Lautstärke.
 
 - *Schnell*: ein Messpunkt. Laufzeit und Pegel werden dort angeglichen.
 - *Mit Positionen*: 4 bis 12 Messpunkte (Standard 8), abwechselnd auf Ohrhöhe und 50 cm höher. Raumklang berechnet daraus die Position jedes Lautsprechers (Multilateration) und rechnet die Verzögerung des Audio-Interfaces von selbst heraus. Beim Donut sieht nicht jeder Punkt jeden Lautsprecher, deshalb beginnt die Messung dort mit 8 Punkten.
@@ -91,7 +91,7 @@ Das Lautsprecher-Setup teilen sich App und Plugins über eine Datei im Benutzero
 
 **Hall.** Frühe Reflexionen (8 Abgriffe) und ein dichter Reflexions-Cluster (16 Abgriffe), danach ein Feedback Delay Network mit 16 Leitungen, Hadamard-Rückkopplung, Eingangsdiffusion und frequenzabhängiger Dämpfung (getrennte Nachhallzeit unterhalb von 250 Hz). Jeder Lautsprecher bekommt eine eigene, dekorrelierte Mischung.
 
-**Kopfhörer.** Strukturmodell nach Brown und Duda: interauraler Laufzeitunterschied, Kopfschatten und Ohrmuschel-Echos, die von Richtung und Höhe abhängen, dazu eine sanfte Höhenabsenkung von hinten. Ohne gemessene HRTF-Daten. Im Modus *Binaural* laufen die Quellen über 19 virtuelle Richtungen um den Kopf.
+**Kopfhörer.** Strukturmodell nach Brown und Duda: interauraler Laufzeitunterschied, Kopfschatten und Ohrmuschel-Echos, die von Richtung und Höhe abhängen, dazu eine sanfte Höhenabsenkung von hinten. Ohne gemessene HRTF-Daten. Im Modus *Kopfhörer, frei* laufen die Quellen über 19 virtuelle Richtungen um den Kopf.
 
 **Abstrahlverhalten.** Jede Quelle hat eine Richtwirkung und eine Ausrichtung. Zeigt sie vom Hörplatz weg, wird der Direktschall leiser (bis 12 dB) und dumpfer, der Hall-Send bleibt gleich.
 

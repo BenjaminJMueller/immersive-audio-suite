@@ -34,10 +34,10 @@ This led to the requirements for this tool:
 
 ## Workflow
 
-1. **Speakers.** Pick a preset (stereo, quad, 5.1, 7.1.4, ring, dome, cube, donut) or place and drag speakers freely. Raumklang checks the layout and says in plain words whether it works and which method it uses. *Align delay and level* compensates delay and level when speakers stand at different distances.
+1. **Speakers.** Pick a preset (stereo, quad, 5.1, 7.1.4, ring, dome, cube, donut) or place and drag speakers freely. In the sidebar, ⋯ or a right-click renames, duplicates, marks as subwoofer, disables or removes a speaker, and *+ Add speaker* puts another one on the circle. The 3D view shows every speaker as a box pointing in its radiation direction. Raumklang checks the layout and says in plain words whether it works and which method it uses. *Align delay and level* compensates delay and level when speakers stand at different distances.
 2. **Sources.** Each source is an input of the audio interface or a built-in test signal (pink noise, sine, clicks). Sources are dragged in the top view or set with azimuth, elevation and distance, plus level, width, reverb send and distance effect. *Orbit* moves a source around the listening spot by itself.
-3. **Room.** Reverb with room types (studio, chamber, hall, church, plate). The decay time can be dragged directly in the curve, separately for lows, mids and highs, plus room size, pre-delay and the levels of early reflections, cluster and tail. The time view below shows how the reverb builds up after the direct sound.
-4. **Output.** Audio device, sample rate and buffer. Master level, limiter and *Test speakers one by one* to check the wiring. Under *Listen on*, besides the speakers there are two headphone modes: *Headphones* plays your own speaker system in the headphones, *Binaural* places the sources freely around your head, independent of the speakers.
+3. **Room.** Reverb with room types (studio, chamber, hall, church, plate), chosen in the list on the left or under *Room type* on the right. The decay time can be dragged directly in the curve, separately for lows, mids and highs, plus room size, pre-delay and the levels of early reflections, cluster and tail. The time view below shows how the reverb builds up after the direct sound.
+4. **Output.** Audio device, sample rate and buffer. Master level, limiter and *Test speakers one by one* to check the wiring. *Listen on* offers three ways: *Speakers* gives every speaker its own output on the audio interface. *Headphones, system* renders the configured speakers binaurally into the headphones, each from its direction, for example to prepare a mix for the system without speakers. *Headphones, free* renders the sources binaurally around the head, independent of the layout.
 
 Below the room view sits the *Scenes* bar: it stores the whole mix and recalls it with a fade time, with arrows for the previous and next scene. Every source has M (mute) and S (solo) in the sidebar, and the master with master level and meter is pinned at the bottom.
 
@@ -46,7 +46,7 @@ Below the room view sits the *Scenes* bar: it stores the whole mix and recalls i
   <img src="docs/screenshots/03-raum.png" width="49%" alt="Room">
 </p>
 
-Projects are saved automatically, every step can be undone (⌘Z / Ctrl+Z). On first start an introduction offers to begin with a demo. If the audio device has fewer outputs than the layout has speakers, the demo switches on headphone playback by itself. The interface is in German, English can be selected under *Help* (?).
+Projects are saved automatically, every step can be undone (⌘Z / Ctrl+Z). On first start a short introduction explains the four areas and offers to begin with a demo or your own setup; it can be shown again under *Help* (?). Every heading with (i) opens an explanation when clicked. If the audio device has fewer outputs than the layout has speakers, the demo switches on headphone playback by itself. The interface is in German, English can be selected under *Help* (?).
 
 ## In the DAW
 
@@ -67,7 +67,7 @@ App and plugins share the speaker setup through a file in the user folder (`Raum
 
 **Reverb.** Early reflections (8 taps) and a dense reflection cluster (16 taps), followed by a feedback delay network with 16 lines, Hadamard feedback, input diffusion and frequency-dependent damping (separate decay time below 250 Hz). Each speaker gets its own decorrelated mix.
 
-**Headphones.** Structural model after Brown and Duda: interaural time difference, head shadow and pinna echoes that depend on direction and elevation, plus a gentle high-frequency cut from behind. No measured HRTF data. In *Binaural* mode the sources run through 19 virtual directions around the head.
+**Headphones.** Structural model after Brown and Duda: interaural time difference, head shadow and pinna echoes that depend on direction and elevation, plus a gentle high-frequency cut from behind. No measured HRTF data. In *Headphones, free* mode the sources run through 19 virtual directions around the head.
 
 **Directivity.** Every source has a directivity and an orientation. When it points away from the listening spot, the direct sound gets quieter (up to 12 dB) and duller, the reverb send stays the same.
 

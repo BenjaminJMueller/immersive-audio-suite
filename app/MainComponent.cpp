@@ -13,6 +13,7 @@ namespace rkapp {
 class IntroOverlay : public juce::Component {
 public:
     std::function<void()> onDemo, onEmpty;
+    std::function<void()> onSkip; // set when opened from the help menu: skipping keeps the project
 
     IntroOverlay() {
         skip_ = rkui::makeButton(tr("Überspringen"), false, true);
@@ -22,7 +23,7 @@ public:
         empty_ = rkui::makeButton({}, false, true);
         demo_->addMouseListener(this, false);
         empty_->addMouseListener(this, false);
-        skip_->onClick = [this] { if (onEmpty) onEmpty(); };
+        skip_->onClick = [this] { skip(); };
         next_->onClick = [this] { setPage(page_ + 1); };
         back_->onClick = [this] { setPage(page_ - 1); };
         demo_->onClick = [this] { if (onDemo) onDemo(); };
@@ -97,8 +98,13 @@ public:
             return true;
         }
         if (k == juce::KeyPress::leftKey) { setPage(page_ - 1); return true; }
-        if (k == juce::KeyPress::escapeKey) { if (onEmpty) onEmpty(); return true; }
+        if (k == juce::KeyPress::escapeKey) { skip(); return true; }
         return true;
+    }
+
+    void skip() {
+        if (onSkip) onSkip();
+        else if (onEmpty) onEmpty();
     }
 
     void mouseDown(const juce::MouseEvent&) override {} // block clicks to the UI below
@@ -136,7 +142,7 @@ private:
         g.drawText(title, r.removeFromTop(34.0f), juce::Justification::centred);
         g.setColour(p.text2);
         g.setFont(rkui::uiFont(14.0f));
-        g.drawFittedText(sub, r.removeFromTop(44.0f).toNearestInt(), juce::Justification::centred, 2);
+        g.drawFittedText(sub, r.removeFromTop(44.0f).toNearestInt(), juce::Justification::centred, 2, 1.0f);
     }
 
     void paintWelcome(juce::Graphics& g, juce::Rectangle<float> r) const {
@@ -150,7 +156,7 @@ private:
         g.setFont(rkui::uiFont(13.5f));
         g.drawFittedText(tr("Oben wechselst du zwischen vier Bereichen: Lautsprecher, Quellen, Raum und Ausgabe. "
                             "Die nächsten Seiten zeigen kurz, wofür sie da sind. Hinter jedem (i) steht eine Erklärung."),
-                         r.removeFromTop(64.0f).toNearestInt(), juce::Justification::centred, 3);
+                         r.removeFromTop(64.0f).toNearestInt(), juce::Justification::centred, 3, 1.0f);
         r.removeFromTop(18.0f);
         const rkui::Icon icons[] = {rkui::Icon::Speaker, rkui::Icon::Source, rkui::Icon::Room, rkui::Icon::Output};
         const char* names[] = {"Lautsprecher", "Quellen", "Raum", "Ausgabe"};
@@ -185,7 +191,7 @@ private:
             g.fillEllipse(dot.getX() + 6.0f, row.getY() + 7.0f, 7.0f, 7.0f);
             g.setColour(p.text);
             g.setFont(rkui::uiFont(14.0f));
-            g.drawFittedText(tr(pt), row.toNearestInt(), juce::Justification::topLeft, 3);
+            g.drawFittedText(tr(pt), row.toNearestInt(), juce::Justification::topLeft, 3, 1.0f);
         }
     }
 
@@ -216,7 +222,7 @@ private:
             g.drawText(tr(t.title), in.removeFromTop(22.0f), juce::Justification::centredLeft);
             g.setColour(p.text2);
             g.setFont(rkui::uiFont(13.0f));
-            g.drawFittedText(tr(t.text), in.removeFromTop(54.0f).toNearestInt(), juce::Justification::topLeft, 3);
+            g.drawFittedText(tr(t.text), in.removeFromTop(54.0f).toNearestInt(), juce::Justification::topLeft, 3, 1.0f);
         }
     }
 
@@ -992,8 +998,10 @@ void MainComponent::buildSourcesPage() {
     auto ctx = pageContext();
     if (selSource_ < 0 || selSource_ >= (int)scene_.sources.size()) {
         auto card = std::make_unique<rkui::StatusCard>();
-        card->set(rkui::StatusCard::Kind::Info, tr("Noch keine Quelle"), tr("Ein Eingang des Interfaces oder ein Testklang."));
-        inspector_.add(std::move(card), 64);
+        card->set(rkui::StatusCard::Kind::Info, tr("Noch keine Quelle"),
+                  tr("Eine Quelle ist ein Eingang des Audio-Interfaces oder ein Testklang. Spuren aus der DAW kommen über das Plugin „Raumklang Quelle“."));
+        const int cardH = card->idealHeight(juce::jmax(200, inspector_.getWidth() - 24));
+        inspector_.add(std::move(card), cardH);
         auto* add = inspector_.add(rkui::makeButton("+ " + tr("Quelle hinzufügen"), true), 32);
         add->onClick = [this] { addSource(); };
         return;
@@ -1518,7 +1526,7 @@ void MainComponent::showHelpMenu() {
             settings_->saveIfNeeded();
             applyTheme();
         } else if (r == 5) {
-            showIntro();
+            showIntro(true);
         } else if (r == 7) {
             updater_.check(this, true);
         } else if (r == 6) {
@@ -1744,13 +1752,22 @@ void MainComponent::updateTooltips() {
     helpBtn_.setTooltip(tr("Hilfe"));
 }
 
-void MainComponent::showIntro() {
+void MainComponent::showIntro(bool keepProject) {
     intro_ = std::make_unique<IntroOverlay>();
     intro_->onDemo = [this] { startDemo(); };
     intro_->onEmpty = [this] { startEmpty(); };
+    if (keepProject)
+        intro_->onSkip = [this] {
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] {
+                if (sp != nullptr) sp->intro_.reset();
+            });
+        };
     addAndMakeVisible(*intro_);
     resized();
-    intro_->grabKeyboardFocus();
+    // At first start the window is not on screen yet, so take the focus once it is.
+    juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] {
+        if (sp != nullptr && sp->intro_ != nullptr) sp->intro_->grabKeyboardFocus();
+    });
 }
 
 void MainComponent::updateCoach() {
@@ -1786,8 +1803,7 @@ void MainComponent::updateCoach() {
         else stage_.setCoach({}, {}, {});
         break;
     case StepSources:
-        if (scene_.sources.empty() && dawTracks_.empty()) stage_.setCoach("!", tr("Noch keine Quelle"), tr("Links „+ Quelle hinzufügen“ oder in der DAW das Plugin „Raumklang Quelle“ auf eine Spur legen."));
-        else stage_.setCoach({}, {}, {});
+        stage_.setCoach({}, {}, {}); // the inspector already explains an empty source list
         break;
     case StepRoom:
         stage_.setCoach({}, {}, {});

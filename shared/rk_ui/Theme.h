@@ -29,6 +29,7 @@ void setDarkMode(bool dark);
 /// Colour of numbered item circles (sources, speaker groups), cycling through 8 hues.
 juce::Colour itemColour(int index);
 
+juce::Typeface::Ptr uiTypeface(bool bold = false);
 juce::Font uiFont(float height, bool bold = false);
 
 /// Line icons for the toolbar and tool buttons (drawn as paths, no image files).
@@ -57,6 +58,8 @@ public:
     juce::Font getComboBoxFont(juce::ComboBox&) override;
     juce::Font getLabelFont(juce::Label&) override;
     juce::Font getPopupMenuFont() override;
+    /// Every default-font text (text editors, alerts, tooltips) uses the embedded interface font.
+    juce::Typeface::Ptr getTypefaceForFont(const juce::Font&) override;
     void drawPopupMenuBackground(juce::Graphics&, int width, int height) override;
     void drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics&, const juce::Path&, juce::Image&) override;
     int getCallOutBoxBorderSize(const juce::CallOutBox&) override { return 16; }
