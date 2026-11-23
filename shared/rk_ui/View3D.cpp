@@ -172,7 +172,12 @@ void View3D::paint(juce::Graphics& g) {
         const bool names = names_;
         animating_ = animating_ || !lines.empty();
         const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-        items.push_back({c.depth, [&g, &p, c, base, dim, col, lines, name, names, sizeAt, lvl, now] {
+        for (const auto& l : lines) {
+            drawSoundParticles(particles_, c.p, l.to, col, l.energy, l.seed, now);
+            drawSoundCloud(particles_, l.to, col, l.energy, 9.0f, 12.0f, l.seed + 5000u, now);
+        }
+        if (!dim && !src.mute && lvl > 0.02f) drawSoundCloud(particles_, c.p, col, std::sqrt(lvl), 12.0f, 20.0f, (uint32_t)(s * 977 + 7), now);
+        items.push_back({c.depth, [&g, &p, c, base, dim, col, name, names, sizeAt, lvl] {
                              const float r = dim ? sizeAt(6.0f, c.depth) : sizeAt(10.0f, c.depth);
                              const float a = dim ? 0.45f : 1.0f;
                              // Drop line and shadow on the floor: where the source sits and how high.
@@ -185,11 +190,6 @@ void View3D::paint(juce::Graphics& g) {
                              g.fillPath(dashed);
                              g.setColour(col.withAlpha(0.22f * a));
                              g.fillEllipse(base.p.x - r, base.p.y - r * 0.32f, 2 * r, r * 0.64f);
-                             for (const auto& l : lines) {
-                                 drawSoundParticles(g, c.p, l.to, col, l.energy, l.seed, now);
-                                 drawSoundCloud(g, l.to, col, l.energy, 9.0f, 12.0f, l.seed + 5000u, now);
-                             }
-                             if (!dim && lvl > 0.02f) drawSoundCloud(g, c.p, col, std::sqrt(lvl), 12.0f, 20.0f, (uint32_t)name.hashCode(), now);
                              if (!dim && lvl > 0.01f) {
                                  const float rr = r + 6.0f;
                                  const float a0 = juce::MathConstants<float>::pi * 1.25f, sweep = juce::MathConstants<float>::pi * 1.5f;
@@ -213,6 +213,7 @@ void View3D::paint(juce::Graphics& g) {
     }
 
     std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.depth > b.depth; });
+    particles_.draw(g, getLocalBounds()); // under speakers and sources
     for (auto& it : items) it.draw();
     if (animating_ != isTimerRunning()) {
         if (animating_) startTimerHz(30);

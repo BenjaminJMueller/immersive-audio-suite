@@ -368,17 +368,18 @@ void StageView::paint(juce::Graphics& g) {
         const juce::Colour col = sourceColour(s);
         const float width = src.spread * 18.0f;
         const float srcEnergy = std::max(std::sqrt(lvl), sel ? 0.10f : 0.0f);
-        particles += drawSoundCloud(g, a, col, srcEnergy, 13.0f, 30.0f + src.spread * 40.0f, (uint32_t)(s * 977 + 7), now);
+        particles += drawSoundCloud(particles_, a, col, srcEnergy, 13.0f, 30.0f + src.spread * 40.0f, (uint32_t)(s * 977 + 7), now);
         for (int m = 0; m < nSpk; ++m) {
             const float gm = gains[(size_t)m];
             if (gm < 0.04f) continue;
             const auto b = toScreen(scene_.layout.speakers[(size_t)m].position);
             const float energy = std::max(gm * gm * std::sqrt(lvl), sel ? 0.10f * gm * gm : 0.0f);
-            particles += drawSoundParticles(g, a, b, col, energy, (uint32_t)(s * 131 + m + 1), now, width);
+            particles += drawSoundParticles(particles_, a, b, col, energy, (uint32_t)(s * 131 + m + 1), now, width);
             // Where the energy lands: a small cloud around the speaker.
-            particles += drawSoundCloud(g, b, col, energy, 12.0f, 18.0f, (uint32_t)(s * 131 + m + 5000), now);
+            particles += drawSoundCloud(particles_, b, col, energy, 12.0f, 18.0f, (uint32_t)(s * 131 + m + 5000), now);
         }
     }
+    particles_.draw(g, getLocalBounds());
     animating_ = particles > 0;
     if (animating_ != isTimerRunning()) {
         if (animating_) startTimerHz(30);

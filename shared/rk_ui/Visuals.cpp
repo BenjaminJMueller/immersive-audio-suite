@@ -1,4 +1,5 @@
 #include "Visuals.h"
+#include <array>
 
 #include "Strings.h"
 
@@ -67,14 +68,14 @@ void SpectrumAnalyzer::process(const float* samples, double sampleRate) {
     }
 }
 
-int drawSoundParticles(juce::Graphics& g, juce::Point<float> from, juce::Point<float> to, juce::Colour colour,
+int drawSoundParticles(ParticleBatch& g, juce::Point<float> from, juce::Point<float> to, juce::Colour colour,
                        float energy, uint32_t seed, double timeSec, float widthPx, float sizeScale) {
     energy = juce::jlimit(0.0f, 1.0f, energy);
     const auto d = to - from;
     const float len = d.getDistanceFromOrigin();
     if (energy < 0.004f || len < 4.0f) return 0;
     // Density per 100 px of path, so long and short paths look alike.
-    const int count = juce::jlimit(0, 160, juce::roundToInt(std::sqrt(energy) * 110.0f * std::max(0.7f, len / 100.0f)));
+    const int count = juce::jlimit(0, 360, juce::roundToInt(std::sqrt(energy) * 240.0f * std::max(0.7f, len / 100.0f)));
     const juce::Point<float> dir = d / len, nrm{-dir.y, dir.x};
     uint32_t r = seed * 2654435761u + 0x9e3779b9u;
     auto rnd = [&r] {
@@ -95,23 +96,17 @@ int drawSoundParticles(juce::Graphics& g, juce::Point<float> from, juce::Point<f
         const float tw = 0.55f + 0.45f * (float)std::sin(timeSec * (1.3 + 2.2 * v) + ph * 3.0f);
         const float alpha = juce::jlimit(0.0f, 1.0f, (0.45f + 0.55f * std::sqrt(energy)) * tw * (1.0f - 0.3f * t));
         const float size = sizeScale * (1.1f + 1.6f * w * w);
-        if (w > 0.82f) { // a few bigger ones with a halo
-            g.setColour(colour.withAlpha(alpha * 0.12f));
-            g.fillEllipse(pt.x - size * 1.6f, pt.y - size * 1.6f, size * 3.2f, size * 3.2f);
-        }
-        g.setColour((w > 0.6f ? core : colour).withAlpha(alpha));
-        // Tiny dots as rectangles: they look the same and cost a fraction of an ellipse.
-        if (size < 1.9f) g.fillRect(pt.x - size * 0.5f, pt.y - size * 0.5f, size, size);
-        else g.fillEllipse(pt.x - size * 0.5f, pt.y - size * 0.5f, size, size);
+        // Every particle glows; the bigger ones carry a wider halo.
+        g.add(pt, size, size * (3.0f + 4.0f * w * w), (w > 0.6f ? core : colour), colour, alpha);
     }
     return count;
 }
 
-int drawSoundCloud(juce::Graphics& g, juce::Point<float> centre, juce::Colour colour, float energy, float innerPx,
+int drawSoundCloud(ParticleBatch& g, juce::Point<float> centre, juce::Colour colour, float energy, float innerPx,
                    float radiusPx, uint32_t seed, double timeSec, float sizeScale) {
     energy = juce::jlimit(0.0f, 1.0f, energy);
     if (energy < 0.004f) return 0;
-    const int count = juce::jlimit(0, 180, juce::roundToInt(std::sqrt(energy) * radiusPx * 4.0f));
+    const int count = juce::jlimit(0, 360, juce::roundToInt(std::sqrt(energy) * radiusPx * 8.0f));
     uint32_t r = seed * 2246822519u + 0x85ebca6bu;
     auto rnd = [&r] {
         r ^= r << 13; r ^= r >> 17; r ^= r << 5;
@@ -125,16 +120,103 @@ int drawSoundCloud(juce::Graphics& g, juce::Point<float> centre, juce::Colour co
         const float tw = 0.55f + 0.45f * (float)std::sin(timeSec * (1.1 + 2.0 * v) + ph * 3.0f);
         const float alpha = juce::jlimit(0.0f, 1.0f, (0.45f + 0.55f * std::sqrt(energy)) * tw * (1.0f - 0.55f * u));
         const float size = sizeScale * (1.1f + 1.5f * v * v);
-        if (v > 0.85f) {
-            g.setColour(colour.withAlpha(alpha * 0.12f));
-            g.fillEllipse(pt.x - size * 1.6f, pt.y - size * 1.6f, size * 3.2f, size * 3.2f);
-        }
-        g.setColour((v > 0.6f ? core : colour).withAlpha(alpha));
-        // Tiny dots as rectangles: they look the same and cost a fraction of an ellipse.
-        if (size < 1.9f) g.fillRect(pt.x - size * 0.5f, pt.y - size * 0.5f, size, size);
-        else g.fillEllipse(pt.x - size * 0.5f, pt.y - size * 0.5f, size, size);
+        // Every particle glows; the bigger ones carry a wider halo.
+        g.add(pt, size, size * (3.0f + 4.0f * v * v), (v > 0.6f ? core : colour), colour, alpha);
     }
     return count;
+}
+
+void ParticleBatch::add(juce::Point<float> pt, float size, float glowRadius, juce::Colour core, juce::Colour glow, float alpha) {
+    if (alpha <= 0.003f) return;
+    items_.push_back({pt, size, glowRadius, core, glow, alpha});
+}
+
+void ParticleBatch::draw(juce::Graphics& g, juce::Rectangle<int> area, float glowAmount) {
+    if (items_.empty()) return;
+    // Glow: every particle as a soft blob on a layer at a third of the resolution, then
+    // stretched over the view. The bilinear scaling turns the blobs into a smooth glow,
+    // and overlapping particles add up to a brighter haze where the energy is dense.
+    constexpr float kDown = 3.0f;
+    const int w = juce::jmax(1, (int)std::ceil(area.getWidth() / kDown)), h = juce::jmax(1, (int)std::ceil(area.getHeight() / kDown));
+    if (glow_.getWidth() != w || glow_.getHeight() != h) glow_ = juce::Image(juce::Image::ARGB, w, h, true);
+    accum_.assign((size_t)w * (size_t)h * 3, 0.0f);
+    // Gaussian falloff from a table: d2 * inv stays below 1 / 0.35 because of the d2 < r*r test.
+    static constexpr int kLut = 256;
+    static constexpr float kLutScale = (float)(kLut - 1) * 0.35f;
+    static const auto kGauss = [] {
+        std::array<float, kLut> t {};
+        for (int i = 0; i < kLut; ++i) t[(size_t)i] = std::exp(-(float)i / kLutScale);
+        return t;
+    }();
+    // Additive splats: overlapping particles really add up to a brighter glow.
+    int bx0 = w, by0 = h, bx1 = -1, by1 = -1; // touched rows, the others are simply cleared
+    // Touched tiles, so only those get scaled up (the expensive part of the glow).
+    constexpr int kTile = 12;
+    const int tw = (w + kTile - 1) / kTile, th = (h + kTile - 1) / kTile;
+    std::vector<char> tiles((size_t)tw * (size_t)th, 0);
+    for (const auto& p : items_) {
+        const float x = (p.pt.x - (float)area.getX()) / kDown, y = (p.pt.y - (float)area.getY()) / kDown;
+        const float r = juce::jlimit(0.8f, 8.0f, p.glowRadius / kDown);
+        const float inv = 1.0f / (r * r * 0.35f);
+        const float a = p.alpha * 0.7f * glowAmount;
+        const float cr = p.glow.getFloatRed() * a, cg = p.glow.getFloatGreen() * a, cb = p.glow.getFloatBlue() * a;
+        const int x0 = juce::jmax(0, (int)(x - r)), x1 = juce::jmin(w - 1, (int)(x + r) + 1);
+        const int y0 = juce::jmax(0, (int)(y - r)), y1 = juce::jmin(h - 1, (int)(y + r) + 1);
+        if (x0 > x1 || y0 > y1) continue;
+        bx0 = juce::jmin(bx0, x0); by0 = juce::jmin(by0, y0); bx1 = juce::jmax(bx1, x1); by1 = juce::jmax(by1, y1);
+        for (int ty = y0 / kTile; ty <= y1 / kTile; ++ty)
+            for (int tx = x0 / kTile; tx <= x1 / kTile; ++tx) tiles[(size_t)(ty * tw + tx)] = 1;
+        for (int yy = y0; yy <= y1; ++yy) {
+            const float dy = (float)yy + 0.5f - y;
+            float* row = &accum_[((size_t)yy * (size_t)w + (size_t)x0) * 3];
+            for (int xx = x0; xx <= x1; ++xx, row += 3) {
+                const float dx = (float)xx + 0.5f - x;
+                const float d2 = dx * dx + dy * dy;
+                if (d2 >= r * r) continue;
+                const float k = kGauss[(int)(d2 * inv * kLutScale)];
+                row[0] += cr * k;
+                row[1] += cg * k;
+                row[2] += cb * k;
+            }
+        }
+    }
+    {
+        juce::Image::BitmapData bd(glow_, juce::Image::BitmapData::writeOnly);
+        for (int yy = 0; yy < h; ++yy) {
+            const float* row = &accum_[(size_t)yy * (size_t)w * 3];
+            if (yy < by0 || yy > by1) { // untouched rows stay transparent
+                for (int xx = 0; xx < w; ++xx) ((juce::PixelARGB*)bd.getPixelPointer(xx, yy))->setARGB(0, 0, 0, 0);
+                continue;
+            }
+            for (int xx = 0; xx < w; ++xx, row += 3) {
+                // Soft knee so dense spots bloom instead of clipping hard.
+                const float r = row[0] / (1.0f + row[0]), gg = row[1] / (1.0f + row[1]), b = row[2] / (1.0f + row[2]);
+                const float al = std::max(r, std::max(gg, b));
+                auto* px = (juce::PixelARGB*)bd.getPixelPointer(xx, yy);
+                px->setARGB((juce::uint8)(al * 255.0f), (juce::uint8)(r * 255.0f), (juce::uint8)(gg * 255.0f), (juce::uint8)(b * 255.0f));
+            }
+        }
+    }
+    {
+        juce::Graphics::ScopedSaveState st(g);
+        g.setImageResamplingQuality(juce::Graphics::mediumResamplingQuality);
+        g.setOpacity(1.0f);
+        juce::RectangleList<int> clip;
+        const int ts = (int)((float)kTile * kDown);
+        for (int ty = 0; ty < th; ++ty)
+            for (int tx = 0; tx < tw; ++tx)
+                if (tiles[(size_t)(ty * tw + tx)]) clip.addWithoutMerging({ area.getX() + tx * ts, area.getY() + ty * ts, ts, ts });
+        clip.consolidate();
+        if (!clip.isEmpty() && g.reduceClipRegion(clip))
+            g.drawImage(glow_, area.toFloat(), juce::RectanglePlacement::stretchToFit);
+    }
+    // Crisp cores on top. Tiny dots as rectangles: they look the same and cost far less.
+    for (const auto& p : items_) {
+        g.setColour(p.core.withAlpha(p.alpha));
+        if (p.size < 2.4f) g.fillRect(p.pt.x - p.size * 0.5f, p.pt.y - p.size * 0.5f, p.size, p.size);
+        else g.fillEllipse(p.pt.x - p.size * 0.5f, p.pt.y - p.size * 0.5f, p.size, p.size);
+    }
+    items_.clear();
 }
 
 } // namespace rkui

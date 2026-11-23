@@ -4,6 +4,7 @@
 
 #include "Scene.h"
 #include "Theme.h"
+#include "Visuals.h"
 #include "Widgets.h"
 
 #include <array>
@@ -104,6 +105,7 @@ private:
     int selSource_ = -1, selSpeaker_ = -1;
     int dragSource_ = -1, dragSpeaker_ = -1;
     bool dragging_ = false;
+    ParticleBatch particles_;
     bool animating_ = false; // sound particles are visible: keep them twinkling
     void timerCallback() override {
         if (animating_ && isShowing()) repaint();

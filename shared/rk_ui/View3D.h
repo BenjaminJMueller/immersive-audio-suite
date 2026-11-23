@@ -4,6 +4,7 @@
 #pragma once
 
 #include "Scene.h"
+#include "Visuals.h"
 #include "Theme.h"
 
 #include <functional>
@@ -48,6 +49,7 @@ private:
     Scene scene_;
     rk::Panner panner_;
     bool panningBuilt_ = false;
+    ParticleBatch particles_;
     bool animating_ = false; // sound particles are visible: keep them twinkling
     void timerCallback() override {
         if (animating_ && isShowing()) repaint();
