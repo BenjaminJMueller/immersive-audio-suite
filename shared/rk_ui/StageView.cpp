@@ -1,4 +1,5 @@
 #include "StageView.h"
+#include <tuple>
 #include "Visuals.h"
 
 #include "Strings.h"
@@ -179,8 +180,8 @@ void StageView::paintLegend(juce::Graphics& g) {
         g.drawText(b, juce::Rectangle<float>(x, r.getY(), tw(b) + 2, r.getHeight()), juce::Justification::centredLeft);
         return;
     }
-    // What the markers mean: speakers, the source(s), other tracks, the lines.
-    struct Item { int kind; juce::Colour c; juce::String t; }; // 0 box, 1 dot, 2 line
+    // What the markers mean: speakers, the source(s), other tracks, the sound particles.
+    struct Item { int kind; juce::Colour c; juce::String t; }; // 0 box, 1 dot, 2 particles
     std::vector<Item> items;
     items.push_back({0, itemColour(3), tr("Lautsprecher")});
     const bool named = sourceNames_ && !scene_.sources.empty();
@@ -188,7 +189,7 @@ void StageView::paintLegend(juce::Graphics& g) {
         const bool tracks = named && dimFrom_ >= (int)scene_.sources.size() && scene_.sources.size() > 1;
         items.push_back({1, sourceColour(0), tracks ? tr("Spuren") : (named ? scene_.sources[0].name : tr("Quelle"))});
         if (named && (int)scene_.sources.size() > dimFrom_) items.push_back({1, p.text3, tr("andere Spuren")});
-        items.push_back({2, sourceColour(0), named ? tr("spielt auf") : tr("Anteil")});
+        items.push_back({2, sourceColour(0), tr("Schallenergie")});
     }
     const juce::Font f = uiFont(11.5f);
     auto tw = [&f](const juce::String& t) { return juce::GlyphArrangement::getStringWidth(f, t); };
@@ -206,7 +207,13 @@ void StageView::paintLegend(juce::Graphics& g) {
         g.setColour(it.c);
         if (it.kind == 0) g.fillRoundedRectangle(x, cy - 5.0f, 14.0f, 10.0f, 3.0f);
         else if (it.kind == 1) g.fillEllipse(x + 1.0f, cy - 6.0f, 12.0f, 12.0f);
-        else g.drawLine(x, cy, x + 16.0f, cy, 1.4f);
+        else
+            for (const auto [dx, dy, d] : {std::tuple{2.0f, 1.5f, 3.2f}, {7.5f, -2.5f, 2.4f}, {12.5f, 1.0f, 2.8f}}) {
+                g.setColour(it.c.withAlpha(0.25f));
+                g.fillEllipse(x + dx - d, cy + dy - d, 2.0f * d, 2.0f * d);
+                g.setColour(it.c.interpolatedWith(juce::Colours::white, 0.3f).withAlpha(0.8f));
+                g.fillEllipse(x + dx - d * 0.4f, cy + dy - d * 0.4f, d * 0.8f, d * 0.8f);
+            }
         x += it.kind == 2 ? 22.0f : 20.0f;
         g.setColour(p.text2);
         g.drawText(it.t, juce::Rectangle<float>(x, r.getY(), tw(it.t) + 2, r.getHeight()), juce::Justification::centredLeft);

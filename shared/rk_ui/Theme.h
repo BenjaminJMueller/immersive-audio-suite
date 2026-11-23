@@ -58,6 +58,8 @@ public:
     juce::Font getLabelFont(juce::Label&) override;
     juce::Font getPopupMenuFont() override;
     void drawPopupMenuBackground(juce::Graphics&, int width, int height) override;
+    void drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics&, const juce::Path&, juce::Image&) override;
+    int getCallOutBoxBorderSize(const juce::CallOutBox&) override { return 16; }
     void drawLinearSlider(juce::Graphics&, int x, int y, int w, int h, float pos, float minPos, float maxPos,
                           juce::Slider::SliderStyle, juce::Slider&) override;
     int getSliderThumbRadius(juce::Slider&) override { return 12; }

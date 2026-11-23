@@ -337,6 +337,16 @@ juce::Font LookAndFeel::getLabelFont(juce::Label& l) {
 }
 juce::Font LookAndFeel::getPopupMenuFont() { return uiFont(14.0f); }
 
+void LookAndFeel::drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics& g, const juce::Path& path, juce::Image&) {
+    const Palette& p = palette();
+    g.setColour(juce::Colours::black.withAlpha(0.35f));
+    g.fillPath(path, juce::AffineTransform::translation(0.0f, 2.0f));
+    g.setColour(p.bar);
+    g.fillPath(path);
+    g.setColour(p.line);
+    g.strokePath(path, juce::PathStrokeType(1.0f));
+}
+
 void LookAndFeel::drawPopupMenuBackground(juce::Graphics& g, int w, int h) {
     const Palette& p = palette();
     g.fillAll(p.bar);

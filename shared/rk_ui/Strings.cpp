@@ -82,7 +82,7 @@ const std::map<std::string, const char*>& english() {
         {"Die Kurve zeigt, wie lange der Raum je Tonhöhe nachklingt. Die Punkte für Tiefen, Mitten und Höhen lassen sich nach oben und unten ziehen.", "The curve shows how long the room rings at each pitch. Drag the points for lows, mids and highs up and down."},
         {"Wie lange der Raum nachklingt, bis er um 60 dB leiser ist: Tiefen bei 100 Hz, Mitten bei 1 kHz, Höhen bei 8 kHz. Die Höhen klingen höchstens so lange wie die Mitten. Die Punkte lassen sich auch in der Kurve ziehen.", "How long the room rings until it is 60 dB quieter: lows at 100 Hz, mids at 1 kHz, highs at 8 kHz. Highs ring at most as long as the mids. The points can also be dragged in the curve."},
         {"Gesamt regelt den ganzen Hall. Frühe Reflexionen sind die ersten Echos von Wänden und Decke, der Cluster die dichten Reflexionen danach, der Nachhall das lange Ausklingen.", "Overall sets the whole reverb. Early reflections are the first echoes from walls and ceiling, the cluster the dense reflections after them, the tail the long fade."},
-        {"Links einen Raumtyp wählen und danach anpassen. Jede Änderung macht daraus einen eigenen Raum.\n\nRaumgröße: Abstand der Wände. Größere Räume haben spätere und weiter auseinanderliegende Reflexionen.\n\nPre-Delay: Zeit zwischen dem direkten Klang und den ersten Reflexionen. Größere Werte lassen den Raum größer wirken und halten Sprache verständlich.", "Pick a room type on the left, then adjust it. Any change makes it a custom room.\n\nRoom size: distance of the walls. Larger rooms have later, more widely spaced reflections.\n\nPre-delay: time between the direct sound and the first reflections. Larger values make the room feel bigger and keep speech clear."},
+        {"Raumtyp oben oder links in der Liste wählen und danach anpassen. Jede Änderung macht daraus einen eigenen Raum.\n\nRaumgröße: Abstand der Wände. Größere Räume haben spätere und weiter auseinanderliegende Reflexionen.\n\nPre-Delay: Zeit zwischen dem direkten Klang und den ersten Reflexionen. Größere Werte lassen den Raum größer wirken und halten Sprache verständlich.", "Pick a room type above or in the list on the left, then adjust it. Any change makes it a custom room.\n\nRoom size: distance of the walls. Larger rooms have later, more widely spaced reflections.\n\nPre-delay: time between the direct sound and the first reflections. Larger values make the room feel bigger and keep speech clear."},
         {"Höhendämpfung", "High damping"},
         {"Pre-Delay", "Pre-delay"},
         {"Hallpegel", "Reverb level"},
@@ -122,6 +122,15 @@ const std::map<std::string, const char*>& english() {
         {"Willkommen bei Raumklang", "Welcome to Raumklang"},
         {"Laufzeit und Pegel gemessen", "Delay and level measured"},
         {"%1 messen", "Measure %1"},
+        {"DAW-Spur", "DAW track"},
+        {"Kopfhörer, Anlage", "Headphones, system"},
+        {"Kopfhörer, frei", "Headphones, free"},
+        {"Ein Ausgang pro Lautsprecher", "One output per speaker"},
+        {"Die Lautsprecher im Kopfhörer nachgebildet", "Your speakers recreated in headphones"},
+        {"Quellen frei um den Kopf, ohne Layout", "Sources freely around the head, no layout"},
+        {"Lautsprecher: Jeder Lautsprecher bekommt seinen eigenen Ausgang am Audio-Interface.\n\nKopfhörer, Anlage: Die eingerichteten Lautsprecher werden binaural in den Kopfhörer gerechnet, jeder aus seiner Richtung. So lässt sich ein Mix für die Anlage ohne Lautsprecher vorbereiten.\n\nKopfhörer, frei: Die Quellen werden direkt binaural um den Kopf gerechnet, unabhängig vom Lautsprecher-Layout. Für Mischungen, die über Kopfhörer gehört werden sollen.",
+         "Speakers: every speaker gets its own output on the audio interface.\n\nHeadphones, system: the speakers you set up are rendered binaurally into the headphones, each from its direction. Use it to prepare a mix for the system without speakers.\n\nHeadphones, free: the sources are rendered binaurally around the head, independent of the speaker layout. For mixes meant for headphones."},
+        {"Schallenergie", "Sound energy"},
         {"Mit einem Lautsprecher lässt sich keine Richtung darstellen.", "A single speaker cannot convey direction."},
         {"Verhindert, dass eine Quelle genau an einem Lautsprecher nur aus diesem kommt. Größere Werte verteilen sie weicher auf die Nachbarn.", "Keeps a source right at a speaker from coming out of that speaker alone. Larger values spread it more softly to the neighbours."},
         {"Kleinere Puffer verringern die Latenz, größere schützen vor Aussetzern.", "Smaller buffers reduce latency, larger ones protect against dropouts."},
@@ -170,7 +179,6 @@ const std::map<std::string, const char*>& english() {
         {"Jeder Lautsprecher bekommt seinen eigenen Ausgang am Audio-Interface.", "Each speaker gets its own output on the audio interface."},
         {"Die Quellen erklingen frei um den Kopf, unabhängig von den Lautsprechern. Zum Mischen für Kopfhörer.", "Sources sound freely around your head, independent of the speakers. For mixing for headphones."},
         {"Die Lautsprecher-Anlage im Kopfhörer: jeder Lautsprecher klingt aus seiner Richtung. Zum Vorbereiten ohne Lautsprecher.", "The speaker system in your headphones: each speaker sounds from its direction. For preparing without speakers."},
-        {"Anteil", "Share"},
         {"Audiogerät wählen", "Choose audio device"},
         {"Aufbau", "Setup"},
         {"Ausgängen", "outputs"},
@@ -216,7 +224,6 @@ const std::map<std::string, const char*>& english() {
         {"Geteilt", "Split"},
         {"andere Spuren", "other tracks"},
         {"Spuren", "Tracks"},
-        {"spielt auf", "plays on"},
         {"Ansicht: von oben, von vorne, beides nebeneinander oder räumlich", "View: from above, from the front, both side by side or in 3D"},
         {"vorne", "front"},
         {"hinten", "back"},
@@ -308,7 +315,6 @@ const std::map<std::string, const char*>& english() {
         {"Der Lautsprechertest spielt rosa Rauschen nacheinander auf jedem Lautsprecher, 1,5 Sekunden lang. Der gerade spielende ist links und in der Ansicht markiert.\n\nUnter Windows stehen WASAPI und, wenn mit dem ASIO-SDK gebaut, ASIO zur Wahl. Raumklang öffnet das Gerät selbst, ASIO4ALL oder JACK sind nicht nötig.", "The speaker test plays pink noise on each speaker in turn, 1.5 seconds each. The one playing is highlighted on the left and in the view.\n\nOn Windows, WASAPI and, when built with the ASIO SDK, ASIO are available. Raumklang opens the device itself, ASIO4ALL or JACK are not needed."},
         {"Die Nummer eines Lautsprechers ist sein Ausgang am Audio-Interface. Lautsprecher 1 spielt auf Ausgang 1 und so weiter.\n\nAbstand und Azimut zählen vom Hörplatz aus, 0° ist vorne, positive Winkel liegen links.\n\nBeim Donut zeigt der Innenring nach außen und der Außenring nach innen. Die Ausrichtung jedes Lautsprechers lässt sich einzeln ändern.", "A speaker's number is its output on the audio interface. Speaker 1 plays on output 1 and so on.\n\nDistance and azimuth count from the listening spot, 0° is front, positive angles are to the left.\n\nIn the donut, the inner ring points outwards and the outer ring inwards. Each speaker's orientation can be changed individually."},
         {"Nachhallzeit: wie lange der Hall braucht, um um 60 dB abzuklingen.\n\nHöhendämpfung: oberhalb dieser Frequenz klingt der Hall schneller ab, wie in einem Raum mit Vorhängen und Publikum.\n\nPre-Delay: Zeit zwischen dem direkten Klang und dem Einsetzen des Halls. Größere Werte lassen den Raum größer wirken.", "Decay time: how long the reverb takes to fall by 60 dB.\n\nHigh damping: above this frequency the reverb decays faster, as in a room with curtains and audience.\n\nPre-delay: time between the direct sound and the onset of the reverb. Larger values make the room seem bigger."},
-        {"Details und Hilfen", "Details and help"},
         {"Lautsprecher umschließen den Hörplatz. VBAP passt am besten.", "The speakers surround the listening area. VBAP fits best."},
         {"Donut erkannt: Lautsprecher stehen sich gegenüber. DBAP wird verwendet.", "Donut detected: speakers face each other. DBAP is used."},
         {"Der Hörplatz ist nicht umschlossen. DBAP verteilt den Klang nach Abstand.", "The listening area is not enclosed. DBAP distributes sound by distance."},
@@ -346,6 +352,13 @@ juce::String tr(const juce::String& german) {
 juce::String num(double value, int decimals) {
     juce::String s = decimals <= 0 ? juce::String(juce::roundToInt(value)) : juce::String(value, decimals);
     return g_lang == Language::German ? s.replaceCharacter('.', ',') : s;
+}
+
+bool isPlaceholderTrackName(const juce::String& name) {
+    const juce::String n = name.trim();
+    for (const char* p : {"void", "null", "(null)", "nil", "undefined", "none", "untitled", "Raumklang Quelle"})
+        if (n.equalsIgnoreCase(p)) return true;
+    return n.isEmpty();
 }
 
 } // namespace rkui

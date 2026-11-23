@@ -312,6 +312,24 @@ void buildRoomPage(FormPage& page, PageContext ctx) {
     };
 
     page.add(std::make_unique<SectionHeader>(tr("Raum"), tr("Der Hall kommt aus allen Lautsprechern, auf jedem dekorreliert, damit er diffus klingt. Wie viel jede Quelle davon abgibt, regelt ihr Hall-Send, in der App unter Quellen oder im Plugin.")), 26);
+    // Room type: the same choice as the list on the left. Changing any value below turns it into "Eigener".
+    {
+        juce::StringArray names;
+        for (const auto& rp : roomPresets()) names.add(tr(rp.name));
+        const int match = matchRoomPreset(s.reverb, s.reverbWetDb);
+        if (match < 0) names.add(tr("Eigener"));
+        auto* type = page.add(std::make_unique<ChoiceRow>(tr("Raumtyp"), names), 36);
+        type->box().setSelectedItemIndex(match >= 0 ? match : names.size() - 1, juce::dontSendNotification);
+        type->onChange = [ctx](int i) {
+            const auto& presets = roomPresets();
+            if (i < 0 || i >= (int)presets.size()) return;
+            ctx.scene->reverb = presets[(size_t)i].params;
+            ctx.scene->reverbWetDb = presets[(size_t)i].wetDb;
+            ctx.changed(false);
+            ctx.commit();
+            ctx.rebuild();
+        };
+    }
     auto* size = page.add(std::make_unique<ParamSlider>(tr("Raumgröße"), 0.3, 2.0, 0.01, juce::String(), 0, 0.3), 32);
     size->formatter = [](double v) { return juce::String(juce::roundToInt(roomVolume((float)v) / 10.0f) * 10) + juce::String::fromUTF8(" m\xc2\xb3"); };
     size->setValue(s.reverb.size);
@@ -346,7 +364,7 @@ void buildRoomPage(FormPage& page, PageContext ctx) {
     addDb(tr("Cluster"), s.reverb.clusterDb, [](Scene& sc, float v) { sc.reverb.clusterDb = v; });
     addDb(tr("Nachhall"), s.reverb.tailDb, [](Scene& sc, float v) { sc.reverb.tailDb = v; });
 
-    page.addDetails(tr("Links einen Raumtyp wählen und danach anpassen. Jede Änderung macht daraus einen eigenen Raum.\n\n"
+    page.addDetails(tr("Raumtyp oben oder links in der Liste wählen und danach anpassen. Jede Änderung macht daraus einen eigenen Raum.\n\n"
                        "Raumgröße: Abstand der Wände. Größere Räume haben spätere und weiter auseinanderliegende Reflexionen.\n\n"
                        "Pre-Delay: Zeit zwischen dem direkten Klang und den ersten Reflexionen. Größere Werte lassen den Raum größer wirken und halten Sprache verständlich."));
 }

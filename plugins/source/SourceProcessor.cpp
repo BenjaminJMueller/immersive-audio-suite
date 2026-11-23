@@ -55,7 +55,8 @@ SourceProcessor::~SourceProcessor() {
 
 void SourceProcessor::updateTrackProperties(const TrackProperties& properties) {
     const juce::ScopedLock sl(nameLock_);
-    trackName_ = properties.name.value_or(juce::String());
+    trackName_ = properties.name.value_or(juce::String()).trim();
+    if (rkui::isPlaceholderTrackName(trackName_)) trackName_.clear(); // e.g. "void" from some hosts
     trackColour_ = properties.colourARGB.has_value() ? juce::Colour((juce::uint32)*properties.colourARGB) : juce::Colours::transparentBlack;
 }
 

@@ -535,6 +535,12 @@ int MainComponent::dawTrackLevelIndex(int track) const {
 
 void MainComponent::scanDaw() {
     auto tracks = host_.scanBridge();
+    // Some hosts send no track name or a placeholder like "void". Such tracks get a
+    // numbered name instead, so they stay distinguishable until they are renamed.
+    for (auto& t : tracks) {
+        const juce::String n = juce::String::fromUTF8(t.name.c_str()).trim();
+        if (rkui::isPlaceholderTrackName(n)) t.name = (tr("DAW-Spur") + " " + juce::String(t.slot + 1)).toStdString();
+    }
     juce::String key;
     for (const auto& t : tracks)
         key << t.slot << ':' << juce::String::fromUTF8(t.name.c_str()) << ':' << t.channels << ':' << (int)t.sending << ':'
@@ -1182,8 +1188,15 @@ void MainComponent::buildOutputPage() {
     master->setValue(scene_.masterGainDb);
     master->onChange = [this](double v) { scene_.masterGainDb = (float)v; applyScene(false); };
     master->onCommit = [this] { commit(); };
-    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Hören über")), 26);
-    auto* hp = inspector_.add(std::make_unique<rkui::Segmented>(juce::StringArray{tr("Lautsprecher"), tr("Kopfhörer"), tr("Binaural")}, false), 32);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Hören über"),
+                                                         tr("Lautsprecher: Jeder Lautsprecher bekommt seinen eigenen Ausgang am Audio-Interface.\n\n"
+                                                            "Kopfhörer, Anlage: Die eingerichteten Lautsprecher werden binaural in den Kopfhörer gerechnet, jeder aus seiner Richtung. So lässt sich ein Mix für die Anlage ohne Lautsprecher vorbereiten.\n\n"
+                                                            "Kopfhörer, frei: Die Quellen werden direkt binaural um den Kopf gerechnet, unabhängig vom Lautsprecher-Layout. Für Mischungen, die über Kopfhörer gehört werden sollen.")), 26);
+    auto* hp = inspector_.add(std::make_unique<rkui::OptionCards>(std::vector<rkui::OptionCards::Option>{
+                                  {tr("Lautsprecher"), tr("Ein Ausgang pro Lautsprecher")},
+                                  {tr("Kopfhörer, Anlage"), tr("Die Lautsprecher im Kopfhörer nachgebildet")},
+                                  {tr("Kopfhörer, frei"), tr("Quellen frei um den Kopf, ohne Layout")}}),
+                              3 * rkui::OptionCards::kRowHeight);
     hp->setSelected(!scene_.headphones ? 0 : (scene_.binaural ? 2 : 1));
     hp->onChange = [this](int m) {
         scene_.headphones = m > 0;
@@ -1192,10 +1205,6 @@ void MainComponent::buildOutputPage() {
         commit();
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshAll(); } });
     };
-    const juce::String hpNote = !scene_.headphones ? tr("Jeder Lautsprecher bekommt seinen eigenen Ausgang am Audio-Interface.")
-                              : scene_.binaural ? tr("Die Quellen erklingen frei um den Kopf, unabhängig von den Lautsprechern. Zum Mischen für Kopfhörer.")
-                                                : tr("Die Lautsprecher-Anlage im Kopfhörer: jeder Lautsprecher klingt aus seiner Richtung. Zum Vorbereiten ohne Lautsprecher.");
-    inspector_.add(std::make_unique<rkui::NoteRow>(hpNote), 52);
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Schutz"), tr("Der Limiter ist die letzte Stufe vor jedem Ausgang. Unterhalb des Thresholds verändert er das Signal nicht.")), 26);
     auto* lim = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Limiter")), 28);
     lim->setToggleState(scene_.limiter, juce::dontSendNotification);
@@ -1440,8 +1449,10 @@ void MainComponent::timerCallback() {
         outputStrip_.setLevel(outPeak);
         outputStrip_.setGainDb(scene_.masterGainDb);
     }
+    // Level bars only where the rows are speakers or sources; room types have no level.
     if (step_ == StepSpeakers || step_ == StepOutput) sidebar_.setLevels(spkView);
-    else sidebar_.setLevels(srcView);
+    else if (step_ == StepSources) sidebar_.setLevels(srcView);
+    else sidebar_.setLevels({});
 
     // Speaker test: 1.5 s per speaker, in order.
     if (speakerTestRunning_ && now >= speakerTestNext_) {
