@@ -2,6 +2,19 @@
 
 ## Unveröffentlicht
 
+- **Update repariert**: Der Update-Dialog zeigt jetzt die Änderungen als Liste, den Download mit Fortschritt und jeden Fehler. Darf Raumklang sich nicht selbst ersetzen (App-Verwaltung von macOS, Start aus dem Disk-Image), sagt es das vor dem Beenden und legt die neue Version in *Downloads/Raumklang-Update*. Das Installationsskript löscht die alte App nicht mehr, wenn das Verschieben scheitert, schreibt *Update.log* und meldet beim nächsten Start, ob es geklappt hat.
+- **Plugins ohne Terminal**: Auf dem Mac stecken die Plugins signiert in Raumklang.app. Die App installiert sie beim ersten Start jeder Version selbst (AU und VST3 in ~/Library/Audio/Plug-Ins), über *Hilfe → Plugins installieren* jederzeit neu. *Plugins installieren.command* entfällt.
+- **Dateinamen mit Version**: Raumklang-0.1.N-mac.dmg, Raumklang-0.1.N-mac.zip und Raumklang-0.1.N-Windows.zip. Die Release-Notizen und der Update-Dialog nehmen die Punkte aus dem Pull Request statt „Merge pull request …“.
+- **Systemschrift**: Auf macOS und Windows nutzt die Oberfläche die Systemschrift (San Francisco, Segoe UI), Inter nur noch unter Linux.
+- **Hilfemenü (?)**: Versionsnummer als Überschrift, Untermenüs für Darstellung und Sprache, Menüs im Stil der App.
+- **Legende**: *Signalverteilung* statt *Schallenergie*.
+- **Einmessen**: *Zurück* oben links statt *Beenden* unten. Der Ablauf steht als nummerierte Schritte direkt auf der Seite. *Mit dem iPhone einmessen* öffnet eine eigene Seite, die die Messung Schritt für Schritt erklärt.
+- **DAW-Spuren**: Pegel, Breite und Hall-Send lassen sich in der App einstellen. Das Plugin übernimmt die Werte, die DAW nimmt sie als Automation auf. Dafür gibt es einen zweiten kleinen Shared-Memory-Block, ältere Plugins laufen weiter.
+- **Pause in der DAW**: Hält die DAW an, blendet die App den Rest im Puffer aus statt ihn abzuschneiden. Das Plugin glättet den Sprung auf Stille beim Anhalten.
+- **Limiter**: Ceiling und Release einstellbar, Gain Reduction als Anzeige im Ausgabe-Schritt und im Master-Streifen.
+- **Szenen**: Beim Überblenden zwischen Räumen gleiten Größe und Pre-Delay des Halls, statt in der Verzögerungsleitung zu springen und zu knacken. Die Achsen der Raum-Diagramme gleiten mit. Ein (i) neben *Szenen* erklärt, was eine Szene speichert.
+- **Quellen in der Seitenleiste**: über ⋯ oder Rechtsklick umbenennen, duplizieren und entfernen, Entfernen auch mit der Entf-Taste.
+- **Hall in der Visualisierung**: Eine Wolke in der Farbe des Halls um jeden Lautsprecher, der Hall bekommt. Sie folgt dem Pegel, der in den Hall geht, und klingt mit der eingestellten Nachhallzeit aus.
 - **Neue Oberfläche**: eine gemeinsame Raumansicht in App und Plugins, wahlweise von oben, von vorne, beides nebeneinander oder in 3D. Weniger Text, Hinweise nur noch, wenn etwas nicht stimmt.
 - **Raum**: Nachhallzeit über die Frequenz als Kurve mit ziehbaren Punkten für Tiefen, Mitten und Höhen, darunter der Zeitverlauf mit Direktschall, frühen Reflexionen, Cluster und Nachhall. Raumtypen Studio, Kammer, Saal, Kirche und Platte. Der Hall hat dafür eine eigene Nachhallzeit für die Tiefen und getrennt regelbare frühe Reflexionen, Cluster und Nachhall bekommen.
 - **Raumklang Quelle**: Raumansicht mit den anderen DAW-Spuren, Name und Farbe der DAW-Spur, „Hall-Send“ statt Hall-Send, selten gebrauchte Einstellungen unter *Erweitert*. Spielt das Plugin ohne App, rechnet es Laufzeit und Pegel der Lautsprecher selbst ein.
