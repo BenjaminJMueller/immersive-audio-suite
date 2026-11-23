@@ -229,7 +229,8 @@ void LookAndFeel::refreshColours() {
     setColour(juce::ComboBox::textColourId, p.text);
     setColour(juce::ComboBox::arrowColourId, p.text2);
     setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
-    setColour(juce::PopupMenu::backgroundColourId, p.bar);
+    // Not quite opaque, so the menu window is transparent outside its rounded corners.
+    setColour(juce::PopupMenu::backgroundColourId, p.bar.withAlpha(0.995f));
     setColour(juce::PopupMenu::textColourId, p.text);
     setColour(juce::PopupMenu::highlightedBackgroundColourId, p.accent);
     setColour(juce::PopupMenu::highlightedTextColourId, p.onAccent);
@@ -392,9 +393,15 @@ void LookAndFeel::drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics& g,
 
 void LookAndFeel::drawPopupMenuBackground(juce::Graphics& g, int w, int h) {
     const Palette& p = palette();
-    g.fillAll(p.bar);
+    // Rounded like the cards and fields of the app. Without transparent windows (some Linux
+    // desktops) the corners are filled, so nothing undefined shows there.
+    if (!juce::Desktop::canUseSemiTransparentWindows()) g.fillAll(p.bar);
+    else g.fillAll(juce::Colours::transparentBlack);
+    const auto r = juce::Rectangle<float>(0.0f, 0.0f, (float)w, (float)h).reduced(0.5f);
+    g.setColour(p.bar);
+    g.fillRoundedRectangle(r, kPopupRadius);
     g.setColour(p.lineStrong);
-    g.drawRect(0, 0, w, h, 1);
+    g.drawRoundedRectangle(r, kPopupRadius, 1.0f);
 }
 
 void LookAndFeel::getIdealPopupMenuItemSize(const juce::String& text, bool isSeparator, int, int& w, int& h) {

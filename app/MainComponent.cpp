@@ -538,6 +538,17 @@ void MainComponent::applyScene(bool structural) {
     host_.engine.limiterEnabled = scene_.limiter;
     host_.engine.limiterCeilingDb = scene_.limiterCeilingDb;
     host_.engine.limiterReleaseMs = scene_.limiterReleaseMs;
+    host_.engine.compressorEnabled = scene_.compressor;
+    host_.engine.compressorThresholdDb = scene_.compThresholdDb;
+    host_.engine.compressorRatio = scene_.compRatio;
+    host_.engine.compressorAttackMs = scene_.compAttackMs;
+    host_.engine.compressorReleaseMs = scene_.compReleaseMs;
+    host_.engine.compressorKneeDb = scene_.compKneeDb;
+    host_.engine.compressorMakeupDb = scene_.compMakeupDb;
+    std::vector<int> routing;
+    if (!scene_.headphones)
+        for (size_t m = 0; m < scene_.layout.speakers.size(); ++m) routing.push_back(scene_.layout.speakers[m].outputFor((int)m));
+    host_.setRouting(routing);
     dirty_ = true;
     lastChange_ = juce::Time::getMillisecondCounterHiRes();
 }
@@ -761,12 +772,13 @@ void MainComponent::refreshSidebar() {
             const juce::String nm = juce::String::fromUTF8(sp.name.c_str());
             r.title = nm.isEmpty() || nm == juce::String(m + 1) ? tr("Lautsprecher") + " " + juce::String(m + 1) : nm;
             const rk::Polar p = rk::toPolar(sp.position);
-            r.subtitle = tr("Ausgang") + " " + juce::String(m + 1) + ", " + rkui::num(p.azimuthDeg, 0) + degree() + ", " + rkui::num(p.distance, 1) + " m";
+            const int o = sp.outputFor(m);
+            r.subtitle = tr("Ausgang") + " " + juce::String(o + 1) + ", " + rkui::num(p.azimuthDeg, 0) + degree() + ", " + rkui::num(p.distance, 1) + " m";
             r.trailing = sp.isSubwoofer ? "Sub" : (sp.gainDb != 0.0f ? rkui::num(sp.gainDb, 1) + " dB" : juce::String());
-            r.dim = !sp.enabled || (!scene_.headphones && m >= outs);
+            r.dim = !sp.enabled || (!scene_.headphones && (o < 0 || o >= outs));
             r.check = !r.dim && r.trailing.isEmpty();
             r.menu = !calibrating_;
-            if (!scene_.headphones && m >= outs) r.subtitle = tr("Kein Ausgang") + ", " + rkui::num(p.azimuthDeg, 0) + degree();
+            if (!scene_.headphones && (o < 0 || o >= outs)) r.subtitle = tr("Kein Ausgang") + ", " + rkui::num(p.azimuthDeg, 0) + degree();
             if (calibrating_) {
                 r.subtitle = calibrationSubtitle(m);
                 if (proposal_ && m < (int)proposal_->speakers.size()) {
@@ -1025,7 +1037,18 @@ void MainComponent::setStep(int step) {
 }
 
 void MainComponent::rebuildInspector() {
+    // The same page again (a toggle changed which rows it shows): keep the scroll position.
+    const juce::String key = juce::String(step_) + "/" + juce::String((int)calibrating_) + juce::String((int)phoneMode_) + "/" +
+                             juce::String(selSource_) + "/" + juce::String(selSpeaker_);
+    const int keepScroll = key == inspectorKey_ ? inspector_.scrollY() : 0;
+    inspectorKey_ = key;
+    struct Restore {
+        rkui::FormPage& page;
+        int y;
+        ~Restore() { page.setScrollY(y); }
+    } restore{inspector_, keepScroll};
     limiterMeter_ = nullptr;
+    compMeter_ = nullptr;
     posSliders_ = {};
     dawPageTrack_ = -1;
     dawSliders_.clear();
@@ -1301,13 +1324,20 @@ void MainComponent::addDeviceRows() {
     }
 }
 
+int MainComponent::outputsNeeded() const {
+    if (scene_.headphones) return 2;
+    int need = 0;
+    for (size_t m = 0; m < scene_.layout.speakers.size(); ++m) need = juce::jmax(need, scene_.layout.speakers[m].outputFor((int)m) + 1);
+    return need;
+}
+
 void MainComponent::buildOutputPage() {
     inspector_.clear();
-    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Audiogerät"), tr("Raumklang spielt direkt auf das Audio-Interface, ohne virtuelle Audiogeräte oder Routing-Programme. Ausgang 1 gehört zu Lautsprecher 1 und so weiter.")), 26);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Audiogerät"), tr("Raumklang spielt direkt auf das Audio-Interface, ohne virtuelle Audiogeräte oder Routing-Programme. Welcher Lautsprecher auf welchem Ausgang liegt, steht weiter unten unter Routing.")), 26);
     addDeviceRows();
 
     const int outs = host_.numDeviceOutputs();
-    const int need = scene_.headphones ? 2 : (int)scene_.layout.speakers.size();
+    const int need = outputsNeeded();
     const juce::String dot = ", ";
     auto card = std::make_unique<rkui::StatusCard>();
     bool problem = true;
@@ -1345,6 +1375,74 @@ void MainComponent::buildOutputPage() {
         commit();
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshAll(); } });
     };
+    if (!scene_.headphones && !scene_.layout.speakers.empty()) {
+        inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Routing"), tr("Welcher Lautsprecher auf welchem Ausgang des Audio-Interfaces spielt. Ohne Änderung liegt Lautsprecher 1 auf Ausgang 1 und so weiter.\n\n"
+                                                                              "Mehrere Lautsprecher auf einem Ausgang werden addiert. Kein Ausgang: Der Lautsprecher wird weiter berechnet und geht an das Return-Plugin, aber nicht an das Interface.")), 26);
+        const int numSpk = (int)scene_.layout.speakers.size();
+        const int choices = juce::jlimit(1, rk::kMaxSpeakers, juce::jmax(outs, numSpk));
+        juce::StringArray items;
+        for (int o = 0; o < choices; ++o) items.add(tr("Ausgang") + " " + juce::String(o + 1) + (o >= outs ? " (" + tr("fehlt") + ")" : juce::String()));
+        items.add(tr("Kein Ausgang"));
+        bool custom = false;
+        for (int m = 0; m < numSpk; ++m) {
+            const auto& sp = scene_.layout.speakers[(size_t)m];
+            custom = custom || sp.outputFor(m) != m;
+            const juce::String nm = juce::String::fromUTF8(sp.name.c_str());
+            const juce::String label = (nm.isEmpty() || nm == juce::String(m + 1) ? tr("Lautsprecher") + " " + juce::String(m + 1) : nm);
+            auto* row = inspector_.add(std::make_unique<rkui::ChoiceRow>(label, items), 26);
+            const int o = sp.outputFor(m);
+            row->box().setSelectedItemIndex(o < 0 ? choices : juce::jmin(o, choices - 1), juce::dontSendNotification);
+            row->onChange = [this, m, choices](int i) {
+                if (m >= (int)scene_.layout.speakers.size()) return;
+                auto& spk = scene_.layout.speakers[(size_t)m];
+                spk.output = i >= choices ? rk::Speaker::kOutputNone : (i == m ? rk::Speaker::kOutputAuto : i);
+                applyScene(false);
+                commit();
+                refreshSidebar();
+                juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->rebuildInspector(); });
+            };
+        }
+        if (custom) {
+            auto* reset = inspector_.add(rkui::makeButton(tr("Routing zurücksetzen (1:1)"), false), 30);
+            reset->onClick = [this] {
+                for (auto& sp : scene_.layout.speakers) sp.output = rk::Speaker::kOutputAuto;
+                applyScene(false);
+                commit();
+                refreshSidebar();
+                juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->rebuildInspector(); });
+            };
+        }
+    }
+
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Kompressor"), tr("Ein Kompressor für alle Lautsprecher gemeinsam. Er misst den lautesten Pegel über alle Ausgänge und senkt alle um denselben Betrag ab. So bleiben die Quellen an ihrem Platz, die räumliche Abbildung verschiebt sich nicht.\n\n"
+                                                                             "Threshold: ab diesem Pegel regelt er. Ratio: wie stark. Attack und Release: wie schnell er zupackt und wieder loslässt. Knee macht den Einsatz weicher, Make-up hebt den Pegel danach wieder an. Der Limiter folgt danach.")), 26);
+    auto* comp = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Kompressor")), 28);
+    comp->setToggleState(scene_.compressor, juce::dontSendNotification);
+    comp->onClick = [this, comp] {
+        scene_.compressor = comp->getToggleState();
+        applyScene(false);
+        commit();
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->rebuildInspector(); });
+    };
+    if (scene_.compressor) {
+        auto addParam = [this](const juce::String& name, double lo, double hi, double step, const juce::String& unit, int decimals,
+                               double def, float* value, double centre, const juce::String& tip) {
+            auto* sl = inspector_.add(std::make_unique<rkui::ParamSlider>(name, lo, hi, step, unit, decimals, def), 32);
+            if (centre > 0.0) sl->setSkewForCentre(centre);
+            sl->setValue(*value);
+            sl->setTooltip(tip);
+            sl->onChange = [this, value](double v) { *value = (float)v; applyScene(false); };
+            sl->onCommit = [this] { commit(); };
+        };
+        addParam(tr("Threshold"), -60, 0, 0.1, "dBFS", 1, -18, &scene_.compThresholdDb, 0.0, tr("Ab diesem Pegel am lautesten Ausgang beginnt die Regelung."));
+        addParam(tr("Ratio"), 1, 20, 0.1, ":1", 1, 3, &scene_.compRatio, 4.0, tr("4:1 heißt: 4 dB mehr am Eingang ergeben oberhalb des Threshold 1 dB mehr am Ausgang."));
+        addParam(tr("Attack"), 0.1, 200, 0.1, "ms", 1, 10, &scene_.compAttackMs, 15.0, tr("Wie schnell er nach einem Anstieg absenkt."));
+        addParam(tr("Release"), 5, 2000, 1, "ms", 0, 150, &scene_.compReleaseMs, 200.0, tr("Wie schnell er danach wieder freigibt."));
+        addParam(tr("Knee"), 0, 24, 0.1, "dB", 1, 6, &scene_.compKneeDb, 0.0, tr("Übergangsbereich um den Threshold, in dem die Regelung weich einsetzt."));
+        addParam(tr("Make-up"), 0, 24, 0.1, "dB", 1, 0, &scene_.compMakeupDb, 0.0, tr("Hebt den Pegel nach der Kompression wieder an."));
+        compMeter_ = inspector_.add(std::make_unique<rkui::ReductionMeter>(tr("Gain Reduction")), 32);
+    }
+
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Limiter"), tr("Der Limiter ist die letzte Stufe vor jedem Ausgang. Kein Sample überschreitet das Ceiling. Unterhalb davon verändert er das Signal nicht.\n\n"
                                                                             "Release bestimmt, wie schnell die Verstärkung nach einer Spitze zurückkehrt. Kurz klingt lauter, kann aber verzerren oder pumpen. Lang arbeitet unauffälliger, nach lauten Spitzen bleibt der Pegel aber länger abgesenkt.")), 26);
     auto* lim = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Limiter")), 28);
@@ -1936,8 +2034,11 @@ void MainComponent::timerCallback() {
         // Limiter gain reduction: the largest over all outputs.
         float gr = 0.0f;
         for (int c = 0; c < juce::jmin(scene_.headphones ? 2 : nOut, rk::kMaxSpeakers); ++c) gr = std::max(gr, host_.engine.takeLimiterReduction(c));
-        outputStrip_.setReductionDb(scene_.limiter ? gr : 0.0f);
+        const float cgr = host_.engine.takeCompressorReduction();
+        // The strip shows the whole gain reduction at the output: compressor plus limiter.
+        outputStrip_.setReductionDb((scene_.limiter ? gr : 0.0f) + (scene_.compressor ? cgr : 0.0f));
         if (limiterMeter_ != nullptr) limiterMeter_->setReductionDb(gr);
+        if (compMeter_ != nullptr) compMeter_->setReductionDb(cgr);
     }
     // Level bars only where the rows are speakers or sources; room types have no level.
     if (step_ == StepSpeakers || step_ == StepOutput) sidebar_.setLevels(spkView);
@@ -2099,7 +2200,6 @@ void MainComponent::showIntro(bool keepProject) {
 void MainComponent::updateCoach() {
     // One short instruction for what to do next, like Projection Studio's coach bar.
     const int outs = host_.numDeviceOutputs();
-    const int nSpk = (int)scene_.layout.speakers.size();
     const rk::LayoutInfo info = rk::analyze(scene_.layout);
     const bool layoutOk = info.numActive > 0 && std::find(info.hints.begin(), info.hints.end(), "single_speaker") == info.hints.end();
     if (calibrating_) {
@@ -2138,8 +2238,8 @@ void MainComponent::updateCoach() {
         break;
     default:
         if (outs == 0) stage_.setCoach("!", tr("Kein Audiogerät"), tr("Rechts das Audio-Interface auswählen."));
-        else if (!scene_.headphones && outs < nSpk)
-            stage_.setCoach("!", tr("Zu wenige Ausgänge"), juce::String(outs) + " " + tr("von") + " " + juce::String(nSpk) + ". " + tr("Anderes Gerät wählen oder unter Ausgabe auf Kopfhörer umschalten."));
+        else if (!scene_.headphones && outs < outputsNeeded())
+            stage_.setCoach("!", tr("Zu wenige Ausgänge"), juce::String(outs) + " " + tr("von") + " " + juce::String(outputsNeeded()) + ". " + tr("Anderes Gerät wählen oder unter Ausgabe auf Kopfhörer umschalten."));
         else if (speakerTestRunning_) stage_.setCoach("!", tr("Hörst du den markierten Lautsprecher?"), tr("Sonst Kabel und Reihenfolge der Ausgänge prüfen."));
         else stage_.setCoach({}, {}, {});
         break;
@@ -2259,7 +2359,9 @@ juce::String MainComponent::calibrationSubtitle(int m) const {
         if (q.measured && q.hasGain) t << dot << rkui::num(q.gainDb, 1) << " dB";
         return t;
     }
-    if (calib_ == nullptr) return tr("Ausgang") + " " + juce::String(m + 1);
+    const int routed = m < (int)scene_.layout.speakers.size() ? scene_.layout.speakers[(size_t)m].outputFor(m) : m;
+    const juce::String outName = routed < 0 ? tr("Kein Ausgang") : tr("Ausgang") + " " + juce::String(routed + 1);
+    if (calib_ == nullptr) return outName;
     if (calib_->playingSpeaker() == m) return tr("Misst") + u8("\xe2\x80\xa6");
     int heard = 0, tried = 0;
     for (int j = 0; j < (int)calib_->points().size(); ++j) {
@@ -2268,7 +2370,7 @@ juce::String MainComponent::calibrationSubtitle(int m) const {
         ++tried;
         if (c.m.arrival.valid && !c.m.clipped) ++heard;
     }
-    if (tried == 0) return tr("Ausgang") + " " + juce::String(m + 1);
+    if (tried == 0) return outName;
     return tr("Erkannt an") + " " + juce::String(heard) + " " + tr("von") + " " + juce::String(tried) + " " + tr("Messpunkten");
 }
 

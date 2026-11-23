@@ -86,6 +86,14 @@ public:
     std::atomic<bool> limiterEnabled{true};
     std::atomic<float> limiterCeilingDb{-0.1f};  // dBFS
     std::atomic<float> limiterReleaseMs{80.0f};
+    // Compressor over all outputs together (before the limiter), see LinkedCompressor.
+    std::atomic<bool> compressorEnabled{false};
+    std::atomic<float> compressorThresholdDb{-18.0f};
+    std::atomic<float> compressorRatio{3.0f};
+    std::atomic<float> compressorAttackMs{10.0f};
+    std::atomic<float> compressorReleaseMs{150.0f};
+    std::atomic<float> compressorKneeDb{6.0f};
+    std::atomic<float> compressorMakeupDb{0.0f};
     std::atomic<float> subLevelDb{-6.0f};
     /// Plays pink noise on one speaker (index into the layout) for setup checks. -1 = off.
     std::atomic<int> speakerTest{-1};
@@ -101,6 +109,8 @@ public:
     float takeReverbInput() noexcept { return reverbIn_.exchange(0.0f, std::memory_order_relaxed); }
     /// Largest limiter gain reduction on output `channel` since the last call, in dB (>= 0).
     float takeLimiterReduction(int channel) noexcept;
+    /// Largest compressor gain reduction since the last call, in dB (>= 0).
+    float takeCompressorReduction() noexcept { return compressorGr_.exchange(0.0f, std::memory_order_relaxed); }
     float takeSourcePeak(int source) noexcept;
     /// Number of times the protective limiter had to act since the last call.
     uint32_t takeLimiterEvents() noexcept { return limiterEvents_.exchange(0); }
@@ -180,6 +190,7 @@ private:
 
     // Output stage state.
     std::array<PeakLimiter, kMaxSpeakers> limiter_{};
+    LinkedCompressor compressor_;
     PinkNoise testNoise_;
     float masterCur_ = 1.0f;
     float wetCur_ = 0.0f;
@@ -192,6 +203,7 @@ private:
     std::atomic<float> reverbIn_{0.0f};
     std::array<std::atomic<float>, kMaxSources> srcPeak_;
     std::atomic<uint32_t> limiterEvents_{0};
+    std::atomic<float> compressorGr_{0.0f};
     std::atomic<uint32_t> invalidInputs_{0};
 };
 

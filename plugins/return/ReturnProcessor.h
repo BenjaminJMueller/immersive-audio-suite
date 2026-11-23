@@ -47,6 +47,7 @@ public:
         bool rateMismatch = false;
         bool receiving = false;     // audio arrived in the last second
         bool offline = false;       // the host rendered offline recently
+        bool processing = false;    // the host called the plugin in the last half second
         double sampleRate = 0.0, appSampleRate = 0.0;
         int appChannels = 0;        // speakers the app renders
         int trackChannels = 0;      // channels of this track
@@ -65,7 +66,7 @@ private:
     std::atomic<float>* first_ = nullptr;
     std::atomic<double> sampleRate_{0.0};
     std::atomic<int> channels_{2};
-    std::atomic<int64_t> lastAudioMs_{0}, lastOfflineMs_{0};
+    std::atomic<int64_t> lastAudioMs_{0}, lastOfflineMs_{0}, lastProcessMs_{0};
     std::atomic<uint32_t> dropouts_{0};
     std::array<std::atomic<float>, rk::bridge::kReturnChannels> peaks_{};
 

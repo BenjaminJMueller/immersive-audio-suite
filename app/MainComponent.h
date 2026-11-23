@@ -65,8 +65,11 @@ private:
     void refreshAll();
     void refreshSidebar();
     void rebuildInspector();
+    juce::String inspectorKey_; // which page the inspector shows, to keep its scroll position
     void buildSourcesPage();
     void buildOutputPage();
+    /// Highest device output the routing uses (or 2 for headphones).
+    int outputsNeeded() const;
     void addDeviceRows();
     void buildDawTrackPage(int track);
     void refreshDawValues();
@@ -159,6 +162,7 @@ private:
     float reverbEnv_ = 0.0f;       // reverb level for the views, rings out with RT60
     double reverbEnvTime_ = 0.0;
     rkui::ReductionMeter* limiterMeter_ = nullptr; // on the output page while it is shown
+    rkui::ReductionMeter* compMeter_ = nullptr;
     rkui::OutputStrip outputStrip_;  // pinned at the bottom of the sidebar
 
     // Snapshots: storing, recalling with a fade, and the menu of one snapshot.

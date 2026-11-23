@@ -294,6 +294,9 @@ public:
     void setRowHeight(juce::Component* c, int height);
     void relayout();
     void resized() override;
+    /// Scroll position, kept when the same page is built again (e.g. after a toggle).
+    int scrollY() const { return viewport_.getViewPositionY(); }
+    void setScrollY(int y) { viewport_.setViewPosition(0, y); }
 
 private:
     void addRow(std::unique_ptr<juce::Component> c, int height);

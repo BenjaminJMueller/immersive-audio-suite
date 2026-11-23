@@ -23,6 +23,13 @@ struct Speaker {
     int group = 0;         // free grouping, e.g. 0 = inner ring, 1 = outer ring
     bool isSubwoofer = false;
     bool enabled = true;
+    /// Device output (0-based) the speaker plays on. kOutputAuto = same as its number,
+    /// kOutputNone = rendered (also for the DAW) but not sent to the audio interface.
+    int output = -1;
+    static constexpr int kOutputAuto = -1;
+    static constexpr int kOutputNone = -2;
+    /// The output for speaker number `index` (0-based), -1 for none.
+    int outputFor(int index) const noexcept { return output == kOutputNone ? -1 : output >= 0 ? output : index; }
 
     /// The effective aim direction (unit vector).
     Vec3 aimDirection() const;

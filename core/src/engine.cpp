@@ -120,6 +120,7 @@ void Engine::prepare(double sampleRate, int maxBlockSize) {
     reverb_.setParams(reverb());
     reverbSeen_ = reverbVersion_.load();
     for (auto& l : limiter_) l.prepare(sampleRate_);
+    compressor_.prepare(sampleRate_);
     std::memset(subLp_, 0, sizeof(subLp_));
     masterCur_ = dbToGain(masterGainDb.load());
     wetCur_ = 0.0f;
@@ -219,6 +220,7 @@ void Engine::resetSourceState() noexcept {
     }
     dopplerUsed_.fill(false);
     for (auto& l : limiter_) l.reset();
+    compressor_.reset();
 }
 
 namespace {
@@ -604,13 +606,28 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
         numFinal = numSpk;
     }
 
+    for (int c = 0; c < numFinal; ++c) {
+        float* buf = finalPtr[c];
+        for (int i = 0; i < n; ++i) buf[i] *= curve[i];
+    }
+    {
+        LinkedCompressor::Params cp;
+        cp.enabled = compressorEnabled.load(std::memory_order_relaxed);
+        cp.thresholdDb = compressorThresholdDb.load(std::memory_order_relaxed);
+        cp.ratio = compressorRatio.load(std::memory_order_relaxed);
+        cp.attackMs = compressorAttackMs.load(std::memory_order_relaxed);
+        cp.releaseMs = compressorReleaseMs.load(std::memory_order_relaxed);
+        cp.kneeDb = compressorKneeDb.load(std::memory_order_relaxed);
+        cp.makeupDb = compressorMakeupDb.load(std::memory_order_relaxed);
+        storeMax(compressorGr_, compressor_.process(finalPtr, numFinal, n, cp));
+    }
+
     const bool limit = limiterEnabled.load(std::memory_order_relaxed);
     const float ceilingDb = limiterCeilingDb.load(std::memory_order_relaxed);
     const float releaseMs = limiterReleaseMs.load(std::memory_order_relaxed);
     bool limited = false;
     for (int c = 0; c < numFinal; ++c) {
         float* buf = finalPtr[c];
-        for (int i = 0; i < n; ++i) buf[i] *= curve[i];
         float peak = 0.0f;
         auto& lim = limiter_[static_cast<size_t>(c)];
         lim.setCeilingDb(ceilingDb);

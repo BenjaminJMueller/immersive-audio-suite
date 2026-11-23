@@ -81,6 +81,9 @@ public:
     void startSimulation(const rk::SpeakerLayout& realRoom);
     bool simulating() const noexcept { return simThread_.joinable(); }
     void moveSimulatedMicrophone(rk::Vec3 p) noexcept { room_.setMicrophone(p); }
+    /// Routing: device output (0-based) for each speaker, -1 = none. Empty or 1:1 means
+    /// speaker 1 on output 1 and so on. Message thread; the audio thread picks it up at once.
+    void setRouting(const std::vector<int>& speakerOutputs) noexcept;
     /// Return path (app -> DAW): true while a "Raumklang Rückweg" plugin is listening.
     bool returnListening() const noexcept { return returnSender_.listening(); }
 
@@ -99,7 +102,9 @@ private:
     std::vector<float> bridgeBuffers_; // kSlots x 2 x kGenBlock
     rk::bridge::Receiver receiver_;
     rk::bridge::ReturnSender returnSender_;
-    std::vector<float> returnBuffers_; // kMaxSpeakers x kGenBlock, used while a return plugin listens
+    std::vector<float> returnBuffers_; // kMaxSpeakers x kGenBlock: speakers before routing, and for the return plugin
+    std::array<std::atomic<int>, rk::kMaxSpeakers> route_{};
+    std::atomic<bool> routeIdentity_{true};
     struct BridgeParamsAtomic {
         std::atomic<float> az{0.0f}, el{0.0f}, dist{2.0f}, spread{0.0f}, gain{0.0f}, send{-12.0f}, width{60.0f}, amount{1.0f};
     };

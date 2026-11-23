@@ -62,6 +62,90 @@ private:
 
 /// Peak limiter: instant attack, smooth release, hard ceiling.
 /// It guarantees |output| <= ceiling and turns NaN/Inf into silence.
+/// Compressor for all outputs together ("3D compressor"): one detector over every channel
+/// (the loudest sample of all channels), one gain for all. The spatial image stays where it
+/// is because every speaker is turned down by the same amount. Feed-forward, peak detection
+/// in the log domain with soft knee, separate attack and release.
+class LinkedCompressor {
+public:
+    struct Params {
+        bool enabled = false;
+        float thresholdDb = -18.0f; // -60..0 dBFS
+        float ratio = 3.0f;         // 1..20
+        float attackMs = 10.0f;     // 0.1..200
+        float releaseMs = 150.0f;   // 5..2000
+        float kneeDb = 6.0f;        // 0..24
+        float makeupDb = 0.0f;      // 0..24
+    };
+
+    void prepare(double sampleRate) noexcept {
+        sampleRate_ = sampleRate > 0.0 ? sampleRate : 48000.0;
+        grDb_ = 0.0f;
+        makeup_ = 1.0f;
+        attackMs_ = releaseMs_ = -1.0f;
+    }
+    void reset() noexcept { grDb_ = 0.0f; }
+
+    /// Gain reduction computed by the static curve for an input level in dB (>= 0).
+    static float curveReductionDb(float levelDb, float thresholdDb, float ratio, float kneeDb) noexcept {
+        const float over = levelDb - thresholdDb;
+        const float slope = 1.0f - 1.0f / std::max(1.0f, ratio);
+        if (kneeDb > 0.0f && 2.0f * std::fabs(over) <= kneeDb) {
+            const float x = over + 0.5f * kneeDb;
+            return slope * x * x / (2.0f * kneeDb);
+        }
+        return over > 0.0f ? slope * over : 0.0f;
+    }
+
+    /// Processes `numCh` channels in place with one common gain. Returns the largest gain
+    /// reduction of the block in dB (>= 0). Disabling releases smoothly instead of jumping.
+    float process(float* const* ch, int numCh, int n, const Params& p) noexcept {
+        if (numCh <= 0 || n <= 0) return 0.0f;
+        const float thr = std::clamp(std::isfinite(p.thresholdDb) ? p.thresholdDb : -18.0f, -60.0f, 0.0f);
+        const float ratio = std::clamp(std::isfinite(p.ratio) ? p.ratio : 3.0f, 1.0f, 20.0f);
+        const float knee = std::clamp(std::isfinite(p.kneeDb) ? p.kneeDb : 6.0f, 0.0f, 24.0f);
+        setTimes(p.attackMs, p.releaseMs);
+        const float makeupTarget =
+            p.enabled ? std::pow(10.0f, std::clamp(std::isfinite(p.makeupDb) ? p.makeupDb : 0.0f, 0.0f, 24.0f) / 20.0f) : 1.0f;
+        if (!p.enabled && grDb_ < 1.0e-4f && std::fabs(makeup_ - 1.0f) < 1.0e-6f) return 0.0f;
+        const float mStep = (makeupTarget - makeup_) / static_cast<float>(n);
+        float most = 0.0f;
+        for (int i = 0; i < n; ++i) {
+            float peak = 0.0f;
+            for (int c = 0; c < numCh; ++c)
+                if (ch[c] != nullptr) peak = std::max(peak, std::fabs(ch[c][i]));
+            float target = 0.0f;
+            if (p.enabled && peak > 1.0e-6f) target = curveReductionDb(20.0f * std::log10(peak), thr, ratio, knee);
+            grDb_ += (target - grDb_) * (target > grDb_ ? attack_ : release_);
+            if (!std::isfinite(grDb_)) grDb_ = 0.0f;
+            most = std::max(most, grDb_);
+            makeup_ += mStep;
+            const float g = makeup_ * std::pow(10.0f, -grDb_ / 20.0f);
+            for (int c = 0; c < numCh; ++c)
+                if (ch[c] != nullptr) ch[c][i] *= g;
+        }
+        makeup_ = makeupTarget;
+        return most;
+    }
+
+private:
+    void setTimes(float attackMs, float releaseMs) noexcept {
+        attackMs = std::clamp(std::isfinite(attackMs) ? attackMs : 10.0f, 0.1f, 200.0f);
+        releaseMs = std::clamp(std::isfinite(releaseMs) ? releaseMs : 150.0f, 5.0f, 2000.0f);
+        if (std::fabs(attackMs - attackMs_) > 1.0e-6f) {
+            attackMs_ = attackMs;
+            attack_ = 1.0f - std::exp(-1.0f / static_cast<float>(0.001 * attackMs * sampleRate_));
+        }
+        if (std::fabs(releaseMs - releaseMs_) > 1.0e-6f) {
+            releaseMs_ = releaseMs;
+            release_ = 1.0f - std::exp(-1.0f / static_cast<float>(0.001 * releaseMs * sampleRate_));
+        }
+    }
+    double sampleRate_ = 48000.0;
+    float grDb_ = 0.0f, makeup_ = 1.0f;
+    float attack_ = 0.01f, release_ = 0.001f, attackMs_ = -1.0f, releaseMs_ = -1.0f;
+};
+
 class PeakLimiter {
 public:
     static constexpr float kCeiling = 0.989f; // -0.1 dBFS, the default

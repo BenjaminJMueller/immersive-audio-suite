@@ -69,7 +69,8 @@ public:
     void drawPopupMenuSectionHeader(juce::Graphics&, const juce::Rectangle<int>& area, const juce::String& sectionName) override;
     void getIdealPopupMenuItemSize(const juce::String& text, bool isSeparator, int standardMenuItemHeight, int& idealWidth,
                                    int& idealHeight) override;
-    int getPopupMenuBorderSize() override { return 5; }
+    int getPopupMenuBorderSize() override { return 6; }
+    static constexpr float kPopupRadius = 9.0f;
     void drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics&, const juce::Path&, juce::Image&) override;
     int getCallOutBoxBorderSize(const juce::CallOutBox&) override { return 16; }
     void drawLinearSlider(juce::Graphics&, int x, int y, int w, int h, float pos, float minPos, float maxPos,

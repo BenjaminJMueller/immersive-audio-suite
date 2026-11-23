@@ -46,6 +46,7 @@ void ReturnProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     juce::ScopedNoDenormals noDenormals;
     const int numCh = std::min(buffer.getNumChannels(), rk::bridge::kReturnChannels);
     const int n = buffer.getNumSamples();
+    lastProcessMs_.store(nowMs(), std::memory_order_relaxed);
     if (isNonRealtime()) lastOfflineMs_.store(nowMs(), std::memory_order_relaxed);
     const int first = juce::jlimit(0, rk::bridge::kReturnChannels - 1, juce::roundToInt(first_->load()) - 1);
     const int got = receiver_.read(first, buffer.getArrayOfWritePointers(), numCh, n, getSampleRate());
@@ -76,6 +77,7 @@ ReturnProcessor::Status ReturnProcessor::status() {
     s.firstChannel = juce::roundToInt(first_->load());
     const int64_t now = nowMs();
     s.receiving = now - lastAudioMs_.load() < 1000;
+    s.processing = now - lastProcessMs_.load() < 600;
     s.offline = now - lastOfflineMs_.load() < 5000 && lastOfflineMs_.load() != 0;
     s.dropouts = dropouts_.exchange(0);
     return s;
