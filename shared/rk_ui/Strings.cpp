@@ -157,7 +157,7 @@ const std::map<std::string, const char*>& english() {
         {"Quellen frei um den Kopf, ohne Layout", "Sources freely around the head, no layout"},
         {"Lautsprecher: Jeder Lautsprecher bekommt seinen eigenen Ausgang am Audio-Interface.\n\nKopfhörer, Anlage: Die eingerichteten Lautsprecher werden binaural in den Kopfhörer gerechnet, jeder aus seiner Richtung. So lässt sich ein Mix für die Anlage ohne Lautsprecher vorbereiten.\n\nKopfhörer, frei: Die Quellen werden direkt binaural um den Kopf gerechnet, unabhängig vom Lautsprecher-Layout. Für Mischungen, die über Kopfhörer gehört werden sollen.",
          "Speakers: every speaker gets its own output on the audio interface.\n\nHeadphones, system: the speakers you set up are rendered binaurally into the headphones, each from its direction. Use it to prepare a mix for the system without speakers.\n\nHeadphones, free: the sources are rendered binaurally around the head, independent of the speaker layout. For mixes meant for headphones."},
-        {"Schallenergie", "Sound energy"},
+        {"Signalverteilung", "Signal distribution"},
         {"Mit einem Lautsprecher lässt sich keine Richtung darstellen.", "A single speaker cannot convey direction."},
         {"Verhindert, dass eine Quelle genau an einem Lautsprecher nur aus diesem kommt. Größere Werte verteilen sie weicher auf die Nachbarn.", "Keeps a source right at a speaker from coming out of that speaker alone. Larger values spread it more softly to the neighbours."},
         {"Kleinere Puffer verringern die Latenz, größere schützen vor Aussetzern.", "Smaller buffers reduce latency, larger ones protect against dropouts."},

@@ -424,6 +424,9 @@ MainComponent::MainComponent()
     }
 
     updater_.checkInBackgroundIfDue(this, *settings_);
+    juce::Timer::callAfterDelay(1200, [sp = juce::Component::SafePointer<MainComponent>(this)] {
+        if (sp != nullptr) sp->updater_.showResultOfLastUpdate(sp);
+    });
 
     setWantsKeyboardFocus(true);
     setSize(1320, 820);
@@ -1527,25 +1530,22 @@ void MainComponent::applyTheme() {
 }
 
 void MainComponent::showHelpMenu() {
+    const bool de = rkui::language() == rkui::Language::German;
     juce::PopupMenu m;
     m.addSectionHeader("Raumklang " + juce::String(JUCE_APPLICATION_VERSION_STRING));
-    m.addItem(1, tr("Sprache: Deutsch"), true, rkui::language() == rkui::Language::German);
-    m.addItem(2, tr("Sprache: Englisch"), true, rkui::language() == rkui::Language::English);
-    m.addSeparator();
-    m.addItem(3, rkui::language() == rkui::Language::German ? "Dunkel" : "Dark", true, rkui::isDark());
-    m.addItem(4, rkui::language() == rkui::Language::German ? "Hell" : "Light", true, !rkui::isDark());
-    m.addSeparator();
-    m.addItem(5, rkui::language() == rkui::Language::German ? u8("Einf\xc3\xbchrung zeigen") : "Show introduction");
-    m.addSeparator();
-    m.addSectionHeader(tr("Tastenkürzel"));
-    const juce::String cmd = (juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? u8("\xe2\x8c\x98") : "Strg+";
-    m.addItem(10, cmd + "1 … " + cmd + "4   " + tr("Bereich wechseln"), false);
-    m.addItem(11, cmd + "Z / " + cmd + u8("\xe2\x87\xa7Z   ") + tr("Rückgängig / Wiederholen"), false);
-    m.addItem(12, cmd + "O / " + cmd + "S   " + tr("Öffnen / Sichern unter"), false);
-    m.addItem(13, u8("\xe2\x87\xa7 ") + tr("beim Ziehen   Position rastet ein"), false);
-    m.addItem(6, rkui::language() == rkui::Language::German ? "Projektseite auf GitHub" : "Project page on GitHub");
+    m.addItem(5, de ? u8("Einf\xc3\xbchrung zeigen") : "Show introduction");
+    m.addItem(6, de ? "Projektseite auf GitHub" : "Project page on GitHub");
     m.addItem(7, tr("Nach Updates suchen …"));
-    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&helpBtn_), [this](int r) {
+    m.addSeparator();
+    juce::PopupMenu look;
+    look.addItem(3, de ? "Dunkel" : "Dark", true, rkui::isDark());
+    look.addItem(4, de ? "Hell" : "Light", true, !rkui::isDark());
+    m.addSubMenu(de ? "Darstellung" : "Appearance", look);
+    juce::PopupMenu lang;
+    lang.addItem(1, "Deutsch", true, de);
+    lang.addItem(2, "English", true, !de);
+    m.addSubMenu(de ? "Sprache" : "Language", lang);
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&helpBtn_).withMinimumWidth(240), [this](int r) {
         if (r == 1 || r == 2) {
             setUiLanguage(r == 1);
         } else if (r == 3 || r == 4) {
@@ -2120,6 +2120,10 @@ void MainComponent::buildCalibrationPage() {
     inspector_.clear();
     if (calib_ == nullptr) return;
     const juce::String dot = ", ";
+    auto* back = inspector_.add(std::make_unique<rkui::BackButton>(tr("Lautsprecher")), 30);
+    back->onClick = [this] {
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
+    };
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Einmessen mit Mikrofon"),
         tr("Ein Messmikrofon (oder ein gutes Kugelmikrofon) nach oben zeigend auf ein Stativ, auf Ohrhöhe. Jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. "
            "Aus der Laufzeit folgt der Abstand, aus mehreren Messpunkten die genaue Position. Laufzeit und Pegel werden am Messpunkt 1 ausgeglichen.")), 26);
@@ -2235,10 +2239,6 @@ void MainComponent::buildCalibrationPage() {
             if (calib_->measuredPoints() < needed) eval->setTooltip(tr("Für Positionen mindestens 4 Messpunkte. Mit weniger nur Laufzeit und Pegel."));
             eval->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->evaluateCalibration(); }); };
         }
-        auto* leave = inspector_.add(rkui::makeButton(tr("Beenden"), false, true), 32);
-        leave->onClick = [this] {
-            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
-        };
     }
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Genauer"), tr("Mit einem gemessenen Abstand (Zollstock oder Laser) von Messpunkt 1 zu Lautsprecher 1 wird die Messung auch mit wenigen Punkten genau. "
@@ -2264,6 +2264,10 @@ void MainComponent::buildCalibrationPage() {
 void MainComponent::buildPhonePage() {
     inspector_.clear();
     const juce::String dot = ", ";
+    auto* back = inspector_.add(std::make_unique<rkui::BackButton>(tr("Lautsprecher")), 30);
+    back->onClick = [this] {
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
+    };
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("iPhone-Messung"), tr("Positionen und Ausrichtung aus der App „Raumklang Messen“. Laufzeit und Pegel bleiben, wie sie sind. Danach lohnt sich „Mit Mikrofon einmessen“ im Modus „Schnell“.")), 26);
     auto card = std::make_unique<rkui::StatusCard>();
     const int nm = (int)survey_.speakers.size(), ns = (int)scene_.layout.speakers.size();

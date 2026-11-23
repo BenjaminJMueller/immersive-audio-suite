@@ -838,6 +838,27 @@ void FormPage::resized() {
     relayout();
 }
 
+void BackButton::paintButton(juce::Graphics& g, bool highlighted, bool down) {
+    const Palette& p = palette();
+    const auto f = uiFont(13.5f);
+    const float tw = juce::GlyphArrangement::getStringWidth(f, getButtonText());
+    auto r = getLocalBounds().toFloat().withWidth(juce::jmin((float)getWidth(), tw + 34.0f)).reduced(0.0f, 3.0f);
+    if (highlighted || down) {
+        g.setColour(down ? p.select : p.hover);
+        g.fillRoundedRectangle(r, 6.0f);
+    }
+    const juce::Colour c = p.accent.withMultipliedAlpha(down ? 0.8f : 1.0f);
+    juce::Path chevron;
+    const float cx = r.getX() + 12.0f, cy = r.getCentreY();
+    chevron.startNewSubPath(cx + 3.0f, cy - 6.0f);
+    chevron.lineTo(cx - 3.0f, cy);
+    chevron.lineTo(cx + 3.0f, cy + 6.0f);
+    g.setColour(c);
+    g.strokePath(chevron, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setFont(f);
+    g.drawText(getButtonText(), r.withTrimmedLeft(24.0f), juce::Justification::centredLeft, false);
+}
+
 std::unique_ptr<juce::TextButton> makeButton(const juce::String& text, bool primary, bool flat) {
     auto b = std::make_unique<juce::TextButton>(text);
     b->getProperties().set("primary", primary);

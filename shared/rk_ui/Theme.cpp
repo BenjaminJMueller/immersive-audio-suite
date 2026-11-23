@@ -79,14 +79,46 @@ juce::Colour itemColour(int index) {
     return juce::Colour(hues[((index % 8) + 8) % 8]);
 }
 
-juce::Typeface::Ptr uiTypeface(bool bold) {
-    static juce::Typeface::Ptr regular = juce::Typeface::createSystemTypefaceFor(RkFonts::InterRegular_ttf, (size_t)RkFonts::InterRegular_ttfSize);
-    static juce::Typeface::Ptr semi = juce::Typeface::createSystemTypefaceFor(RkFonts::InterSemiBold_ttf, (size_t)RkFonts::InterSemiBold_ttfSize);
-    return bold ? semi : regular;
+namespace {
+struct UiFonts {
+    juce::Typeface::Ptr regular, bold;
+    float heightScale = 1.0f; // keeps the em size of Inter, for which all sizes were chosen
+};
+
+const UiFonts& uiFonts() {
+    static const UiFonts fonts = [] {
+        UiFonts f;
+        const auto inter = juce::Typeface::createSystemTypefaceFor(RkFonts::InterRegular_ttf, (size_t)RkFonts::InterRegular_ttfSize);
+        const auto interBold = juce::Typeface::createSystemTypefaceFor(RkFonts::InterSemiBold_ttf, (size_t)RkFonts::InterSemiBold_ttfSize);
+       #if JUCE_MAC || JUCE_WINDOWS
+        // The system's own interface font (SF Pro on macOS, Segoe UI on Windows) looks native there.
+        if (auto sys = juce::Typeface::findSystemTypeface()) {
+            f.regular = sys;
+            const juce::FontVariableSetting semibold{"wght", 600.0f};
+            f.bold = sys->cloneWithVariableSettings(juce::Span<const juce::FontVariableSetting>(&semibold, 1));
+            if (f.bold == nullptr) // not a variable font: ask for the bold style of the same family
+                f.bold = juce::Font(juce::FontOptions(sys->getName(), "Semibold", 14.0f)).getTypefacePtr();
+            if (f.bold == nullptr || f.bold->getName() != sys->getName())
+                f.bold = juce::Font(juce::FontOptions(sys->getName(), "Bold", 14.0f)).getTypefacePtr();
+            if (f.bold == nullptr) f.bold = sys;
+            const float emInter = juce::Font(juce::FontOptions(inter).withHeight(100.0f)).getHeightInPoints();
+            const float emSys = juce::Font(juce::FontOptions(sys).withHeight(100.0f)).getHeightInPoints();
+            if (emInter > 0.0f && emSys > 0.0f) f.heightScale = juce::jlimit(0.8f, 1.25f, emInter / emSys);
+            return f;
+        }
+       #endif
+        f.regular = inter;
+        f.bold = interBold;
+        return f;
+    }();
+    return fonts;
 }
+} // namespace
+
+juce::Typeface::Ptr uiTypeface(bool bold) { return bold ? uiFonts().bold : uiFonts().regular; }
 
 juce::Font uiFont(float height, bool bold) {
-    return juce::Font(juce::FontOptions(uiTypeface(bold)).withHeight(height));
+    return juce::Font(juce::FontOptions(uiTypeface(bold)).withHeight(height * uiFonts().heightScale));
 }
 
 juce::Path iconPath(Icon icon, juce::Rectangle<float> r) {
@@ -363,6 +395,68 @@ void LookAndFeel::drawPopupMenuBackground(juce::Graphics& g, int w, int h) {
     g.fillAll(p.bar);
     g.setColour(p.lineStrong);
     g.drawRect(0, 0, w, h, 1);
+}
+
+void LookAndFeel::getIdealPopupMenuItemSize(const juce::String& text, bool isSeparator, int, int& w, int& h) {
+    if (isSeparator) {
+        w = 50;
+        h = 11;
+        return;
+    }
+    h = 28;
+    w = juce::roundToInt(juce::GlyphArrangement::getStringWidth(uiFont(13.5f), text)) + 30 + 34;
+}
+
+void LookAndFeel::drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area, bool isSeparator, bool isActive,
+                                    bool isHighlighted, bool isTicked, bool hasSubMenu, const juce::String& text,
+                                    const juce::String& shortcutKeyText, const juce::Drawable*, const juce::Colour* textColour) {
+    const Palette& p = palette();
+    auto r = area.toFloat().reduced(4.0f, 0.0f);
+    if (isSeparator) {
+        g.setColour(p.line);
+        g.fillRect(r.reduced(6.0f, 0.0f).withHeight(1.0f).withCentre({r.getCentreX(), r.getCentreY()}));
+        return;
+    }
+    const bool hot = isHighlighted && isActive;
+    if (hot) {
+        g.setColour(p.accent);
+        g.fillRoundedRectangle(r.reduced(0.0f, 1.0f), 5.0f);
+    }
+    const juce::Colour c = hot ? p.onAccent : !isActive ? p.text3 : textColour != nullptr ? *textColour : p.text;
+    auto tick = r.removeFromLeft(26.0f);
+    if (isTicked) {
+        juce::Path m;
+        const float cx = tick.getCentreX() + 1.0f, cy = tick.getCentreY();
+        m.startNewSubPath(cx - 4.5f, cy + 0.5f);
+        m.lineTo(cx - 1.5f, cy + 3.5f);
+        m.lineTo(cx + 4.5f, cy - 3.5f);
+        g.setColour(hot ? p.onAccent : p.accent);
+        g.strokePath(m, juce::PathStrokeType(1.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    if (hasSubMenu) {
+        auto a = r.removeFromRight(20.0f);
+        juce::Path chev;
+        chev.startNewSubPath(a.getCentreX() - 2.0f, a.getCentreY() - 4.5f);
+        chev.lineTo(a.getCentreX() + 2.5f, a.getCentreY());
+        chev.lineTo(a.getCentreX() - 2.0f, a.getCentreY() + 4.5f);
+        g.setColour(c.withMultipliedAlpha(0.8f));
+        g.strokePath(chev, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    g.setFont(uiFont(13.5f));
+    if (shortcutKeyText.isNotEmpty()) {
+        g.setColour(hot ? p.onAccent.withAlpha(0.8f) : p.text3);
+        g.drawText(shortcutKeyText, r.removeFromRight(juce::GlyphArrangement::getStringWidth(uiFont(13.5f), shortcutKeyText) + 12.0f),
+                   juce::Justification::centredRight, false);
+    }
+    g.setColour(c);
+    g.drawText(text, r, juce::Justification::centredLeft, true);
+}
+
+void LookAndFeel::drawPopupMenuSectionHeader(juce::Graphics& g, const juce::Rectangle<int>& area, const juce::String& name) {
+    const Palette& p = palette();
+    g.setColour(p.text3);
+    g.setFont(uiFont(12.0f, true));
+    g.drawText(name, area.toFloat().withTrimmedLeft(14.0f).withTrimmedTop(4.0f), juce::Justification::centredLeft, true);
 }
 
 void LookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int w, int h, float pos, float, float,

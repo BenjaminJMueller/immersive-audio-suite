@@ -306,6 +306,13 @@ private:
     juce::Viewport viewport_;
 };
 
+/// "‹ Lautsprecher": leaves a sub-page of the inspector (calibration, iPhone measurement), top left like macOS.
+class BackButton : public juce::Button {
+public:
+    explicit BackButton(const juce::String& label) : juce::Button(label) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
+    void paintButton(juce::Graphics& g, bool highlighted, bool down) override;
+};
+
 /// Small helper for buttons in the toolbar style.
 std::unique_ptr<juce::TextButton> makeButton(const juce::String& text, bool primary = false, bool flat = false);
 
