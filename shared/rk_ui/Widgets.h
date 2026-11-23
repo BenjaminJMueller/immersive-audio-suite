@@ -142,6 +142,23 @@ private:
     int selected_ = 0, hover_ = -1;
 };
 
+/// A few actions as rows with a title, a one-line explanation and a chevron.
+class ActionList : public juce::Component {
+public:
+    struct Action { juce::String title, text; std::function<void()> run; };
+    explicit ActionList(std::vector<Action> actions);
+    static constexpr int kRowHeight = 50;
+    int idealHeight() const { return (int)actions_.size() * kRowHeight; }
+    void paint(juce::Graphics& g) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+
+private:
+    std::vector<Action> actions_;
+    int hover_ = -1;
+};
+
 class Segmented : public juce::Component, public juce::SettableTooltipClient {
 public:
     Segmented(const juce::StringArray& items, bool numbered);
@@ -202,6 +219,7 @@ public:
         float level = 0.0f; // 0..1, drawn as a thin meter
         bool toggles = false; // show M (mute) and S (solo) buttons on the right
         bool mute = false, solo = false;
+        bool menu = false;    // "…" button on hover/selection and right-click open onMenu
     };
     void setRows(std::vector<Row> rows);
     void setSelected(int row);
@@ -210,6 +228,8 @@ public:
     std::function<void(int)> onSelect;
     /// A click on a row's M (which = 0) or S (which = 1) button.
     std::function<void(int row, int which)> onToggle;
+    /// The row's "…" button or a right-click: `area` is where to anchor the menu (screen).
+    std::function<void(int row, juce::Rectangle<int> area)> onMenu;
     int contentHeight() const;
     void paint(juce::Graphics& g) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -219,6 +239,7 @@ public:
 private:
     struct Item { int row; juce::Rectangle<int> bounds; };
     static juce::Rectangle<float> toggleRect(juce::Rectangle<float> row, int which);
+    static juce::Rectangle<float> menuRect(juce::Rectangle<float> row);
     int hover_ = -1;
     std::vector<Item> layoutItems() const;
     std::vector<Row> rows_;

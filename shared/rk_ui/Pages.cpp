@@ -104,18 +104,21 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         page.add(std::move(card), cardH);
     }
 
-    if (ctx.calibrate || ctx.importSurvey) {
-        page.add(std::make_unique<SectionHeader>(tr("Einmessen"), tr("Mit Mikrofon: Raumklang spielt über jeden Lautsprecher einen kurzen Messton und berechnet daraus Laufzeit, Pegel und, mit mehreren Messpunkten, die genaue Position.\n\nMit dem iPhone: In der App „Raumklang Messen“ jeden Lautsprecher antippen und die Messung hier laden oder auf das Fenster ziehen.")), 26);
-        if (ctx.calibrate) {
-            auto* mic = page.add(makeButton(tr("Mit Mikrofon einmessen"), true), 32);
-            mic->setTooltip(tr("Laufzeit, Pegel und Position jedes Lautsprechers automatisch messen."));
-            mic->onClick = ctx.calibrate;
-        }
-        if (ctx.importSurvey) {
-            auto* phone = page.add(makeButton(tr("iPhone-Messung laden")), 32);
-            phone->setTooltip(tr("Datei aus der App „Raumklang Messen“ laden. Sie lässt sich auch auf das Fenster ziehen."));
-            phone->onClick = ctx.importSurvey;
-        }
+    // Measuring and aligning: one list, the microphone first as the usual way.
+    {
+        std::vector<ActionList::Action> acts;
+        if (ctx.calibrate) acts.push_back({tr("Mit Mikrofon einmessen"), tr("Laufzeit, Pegel und Position messen"), ctx.calibrate});
+        if (ctx.importSurvey) acts.push_back({tr("iPhone-Messung laden"), tr("Position und Ausrichtung aus „Raumklang Messen“"), ctx.importSurvey});
+        acts.push_back({tr("Laufzeit und Pegel ausgleichen"), tr("Ohne Messung, aus den Abständen im Layout"), [ctx] {
+                            alignDistances(ctx.scene->layout);
+                            ctx.changed(true);
+                            ctx.commit();
+                            ctx.rebuild();
+                        }});
+        page.add(std::make_unique<SectionHeader>(tr("Einmessen"), tr("Mit Mikrofon: Raumklang spielt über jeden Lautsprecher einen kurzen Messton und berechnet daraus Laufzeit, Pegel und, mit mehreren Messpunkten, die genaue Position.\n\nMit dem iPhone: In der App „Raumklang Messen“ jeden Lautsprecher antippen und die Messung hier laden oder auf das Fenster ziehen.\n\nLaufzeit und Pegel ausgleichen: Gleicht Laufzeit und Pegel aus, als stünden alle Lautsprecher so weit weg wie der fernste. Das braucht keine Messung, setzt aber ein genaues Layout voraus.")), 26);
+        auto list = std::make_unique<ActionList>(std::move(acts));
+        const int h = list->idealHeight();
+        page.add(std::move(list), h);
     }
 
     // Selected speaker.
@@ -241,29 +244,6 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
         };
     }
 
-    auto* add = page.add(makeButton("+ " + tr("Lautsprecher")), 32);
-    add->setTooltip(tr("Lautsprecher hinzufügen"));
-    add->onClick = [ctx, selectSpeaker] {
-        auto& v = ctx.scene->layout.speakers;
-        if ((int)v.size() >= rk::kMaxSpeakers) return;
-        rk::Speaker sp;
-        sp.name = std::to_string(v.size() + 1);
-        sp.position = rk::toCartesian({0.0f, 0.0f, ctx.scene->radius});
-        v.push_back(sp);
-        ctx.scene->presetId = "custom";
-        ctx.changed(true);
-        ctx.commit();
-        selectSpeaker((int)v.size() - 1);
-    };
-    auto* align = page.add(makeButton(tr("Laufzeit und Pegel ausgleichen")), 32);
-    // Order matters: buttons fill a row from the right, so the main action ends up rightmost.
-    align->setTooltip(tr("Gleicht Laufzeit und Pegel aus, als stünden alle Lautsprecher so weit weg wie der fernste."));
-    align->onClick = [ctx] {
-        alignDistances(ctx.scene->layout);
-        ctx.changed(true);
-        ctx.commit();
-        ctx.rebuild();
-    };
     // Rarely needed: the panning method. "Automatisch" picks the right one for the layout.
     page.add(std::make_unique<ExpandRow>(tr("Erweitert"), layoutAdvancedOpen, [ctx] {
         layoutAdvancedOpen = !layoutAdvancedOpen;

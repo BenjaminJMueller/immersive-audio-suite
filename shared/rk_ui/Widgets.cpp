@@ -298,6 +298,61 @@ void OptionCards::mouseExit(const juce::MouseEvent&) {
     repaint();
 }
 
+ActionList::ActionList(std::vector<Action> actions) : actions_(std::move(actions)) {
+    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+}
+
+void ActionList::paint(juce::Graphics& g) {
+    const Palette& p = palette();
+    auto all = getLocalBounds().toFloat();
+    g.setColour(p.group);
+    g.fillRoundedRectangle(all, 10.0f);
+    g.setColour(p.line);
+    g.drawRoundedRectangle(all.reduced(0.25f), 10.0f, 0.75f);
+    for (int i = 0; i < (int)actions_.size(); ++i) {
+        auto r = juce::Rectangle<float>(0.0f, (float)(i * kRowHeight), (float)getWidth(), (float)kRowHeight);
+        if (i == hover_) {
+            g.setColour(p.hover);
+            g.fillRoundedRectangle(r.reduced(2.0f), 8.0f);
+        }
+        if (i > 0) {
+            g.setColour(p.line);
+            g.drawHorizontalLine((int)r.getY(), r.getX() + 12.0f, r.getRight() - 12.0f);
+        }
+        auto text = r.reduced(12.0f, 0.0f).withTrimmedRight(18.0f);
+        g.setColour(i == 0 ? p.accent : p.text);
+        g.setFont(uiFont(13.5f, true));
+        g.drawText(actions_[(size_t)i].title, text.removeFromTop(r.getHeight() * 0.5f).withTrimmedTop(3.0f), juce::Justification::bottomLeft, true);
+        g.setColour(p.text2);
+        g.setFont(uiFont(12.0f));
+        g.drawText(actions_[(size_t)i].text, text.withTrimmedBottom(3.0f), juce::Justification::topLeft, true);
+        // Chevron.
+        juce::Path c;
+        const float cx = r.getRight() - 18.0f, cy = r.getCentreY();
+        c.startNewSubPath(cx - 3.0f, cy - 5.0f);
+        c.lineTo(cx + 2.0f, cy);
+        c.lineTo(cx - 3.0f, cy + 5.0f);
+        g.setColour(p.text3);
+        g.strokePath(c, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+}
+
+void ActionList::mouseUp(const juce::MouseEvent& e) {
+    const int i = e.y / kRowHeight;
+    if (i >= 0 && i < (int)actions_.size() && getLocalBounds().contains(e.getPosition()) && actions_[(size_t)i].run)
+        actions_[(size_t)i].run();
+}
+
+void ActionList::mouseMove(const juce::MouseEvent& e) {
+    const int i = juce::jlimit(-1, (int)actions_.size() - 1, e.y / kRowHeight);
+    if (i != hover_) { hover_ = i; repaint(); }
+}
+
+void ActionList::mouseExit(const juce::MouseEvent&) {
+    hover_ = -1;
+    repaint();
+}
+
 void Segmented::paint(juce::Graphics& g) {
     const Palette& p = palette();
     g.setColour(p.field);
@@ -477,7 +532,7 @@ void SidebarList::paint(juce::Graphics& g) {
         }
         auto badge = juce::Rectangle<float>(r.getX() + 10, r.getCentreY() - 10, 20, 20);
         drawNumberBadge(g, badge, row.number, row.dim ? row.colour.withSaturation(0.0f).withAlpha(0.6f) : row.colour);
-        const float rightPad = row.toggles ? (row.trailing.isNotEmpty() ? 74.0f : 58.0f) : (row.trailing.isNotEmpty() || row.check ? 64.0f : 8.0f);
+        const float rightPad = row.toggles ? (row.trailing.isNotEmpty() ? 74.0f : 58.0f) : (row.trailing.isNotEmpty() || row.check || row.menu ? 64.0f : 8.0f);
         auto text = r.withTrimmedLeft(42).withTrimmedRight(rightPad);
         g.setColour(row.dim ? p.text3 : p.text);
         g.setFont(uiFont(13.5f));
@@ -509,6 +564,13 @@ void SidebarList::paint(juce::Graphics& g) {
             g.setColour(p.text2);
             g.setFont(uiFont(12.0f));
             g.drawText(row.trailing, r.withTrimmedRight(10).withLeft(r.getRight() - 70), juce::Justification::centredRight, true);
+        } else if (row.menu && (it.row == hover_ || it.row == selected_)) {
+            // "…": edit, duplicate, remove.
+            const auto m = menuRect(r);
+            g.setColour(p.field);
+            g.fillRoundedRectangle(m, 5.0f);
+            g.setColour(p.text2);
+            for (int k = -1; k <= 1; ++k) g.fillEllipse(m.getCentreX() + (float)k * 5.0f - 1.5f, m.getCentreY() - 1.5f, 3.0f, 3.0f);
         } else if (row.check) {
             auto c = juce::Rectangle<float>(r.getRight() - 28, r.getCentreY() - 8, 16, 16);
             g.setColour(p.ok);
@@ -527,6 +589,10 @@ void SidebarList::paint(juce::Graphics& g) {
     }
 }
 
+juce::Rectangle<float> SidebarList::menuRect(juce::Rectangle<float> row) {
+    return {row.getRight() - 34.0f, row.getCentreY() - 11.0f, 26.0f, 22.0f};
+}
+
 juce::Rectangle<float> SidebarList::toggleRect(juce::Rectangle<float> row, int which) {
     return {row.getRight() - 52.0f + (float)which * 24.0f, row.getCentreY() - 10.0f, 20.0f, 20.0f};
 }
@@ -535,6 +601,13 @@ void SidebarList::mouseUp(const juce::MouseEvent& e) {
     for (const auto& it : layoutItems())
         if (it.bounds.contains(e.getPosition())) {
             const Row& row = rows_[(size_t)it.row];
+            if (row.menu && onMenu && (e.mods.isPopupMenu() || menuRect(it.bounds.toFloat()).contains(e.position))) {
+                selected_ = it.row;
+                repaint();
+                if (onSelect) onSelect(it.row);
+                onMenu(it.row, localAreaToGlobal(menuRect(it.bounds.toFloat()).toNearestInt()));
+                return;
+            }
             if (row.toggles)
                 for (int w = 0; w < 2; ++w)
                     if (toggleRect(it.bounds.toFloat(), w).expanded(2.0f).contains(e.position)) {

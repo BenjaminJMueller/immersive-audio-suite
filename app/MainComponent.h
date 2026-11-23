@@ -73,6 +73,8 @@ private:
     std::array<DawMove, rk::bridge::kSlots> dawMoves_{}; // shown until the plugin has caught up
     void selectSpeaker(int i);
     void addSource();
+    void addSpeaker();
+    void speakerMenu(int i, juce::Rectangle<int> area);
     void startDemo();
     void startEmpty();
     void openProject();

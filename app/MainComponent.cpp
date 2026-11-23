@@ -282,7 +282,7 @@ MainComponent::MainComponent()
     openBtn_.onClick = [this] { openProject(); };
     saveBtn_.onClick = [this] { saveProjectAs(); };
     helpBtn_.onClick = [this] { showHelpMenu(); };
-    addBtn_->onClick = [this] { addSource(); };
+    addBtn_->onClick = [this] { if (step_ == StepSpeakers) addSpeaker(); else addSource(); };
     for (juce::Component* b : {(juce::Component*)&undoBtn_, (juce::Component*)&redoBtn_, (juce::Component*)&openBtn_,
                                (juce::Component*)&saveBtn_, (juce::Component*)&helpBtn_, (juce::Component*)addBtn_.get()})
         addAndMakeVisible(*b);
@@ -302,6 +302,9 @@ MainComponent::MainComponent()
         refreshSidebar();
         showStage();
         if (row == selSource_) rebuildInspector();
+    };
+    sidebar_.onMenu = [this](int row, juce::Rectangle<int> area) {
+        if (step_ == StepSpeakers && !calibrating_) speakerMenu(row, area);
     };
     addAndMakeVisible(outputStrip_);
     outputStrip_.setTooltip(tr("Master-Pegel aller Ausgänge. Doppelklick setzt auf 0 dB."));
@@ -548,7 +551,8 @@ void MainComponent::refreshAll() {
     updateCoach();
     undoBtn_.setEnabled(!undo_.empty());
     redoBtn_.setEnabled(!redo_.empty());
-    addBtn_->setVisible(step_ == StepSources);
+    addBtn_->setVisible((step_ == StepSources || step_ == StepSpeakers) && !calibrating_);
+    addBtn_->setButtonText("+ " + (step_ == StepSpeakers ? tr("Lautsprecher hinzufügen") : tr("Quelle hinzufügen")));
     stage_.setVisible(step_ != StepRoom || calibrating_);
     reverbPanel_.setVisible(step_ == StepRoom && !calibrating_);
     reverbPanel_.setParams(scene_.reverb, scene_.reverbWetDb);
@@ -710,6 +714,7 @@ void MainComponent::refreshSidebar() {
             r.trailing = sp.isSubwoofer ? "Sub" : (sp.gainDb != 0.0f ? rkui::num(sp.gainDb, 1) + " dB" : juce::String());
             r.dim = !sp.enabled || (!scene_.headphones && m >= outs);
             r.check = !r.dim && r.trailing.isEmpty();
+            r.menu = !calibrating_;
             if (!scene_.headphones && m >= outs) r.subtitle = tr("Kein Ausgang") + ", " + rkui::num(p.azimuthDeg, 0) + degree();
             if (calibrating_) {
                 r.subtitle = calibrationSubtitle(m);
@@ -1312,6 +1317,87 @@ void MainComponent::addSource() {
     refreshAll();
 }
 
+void MainComponent::addSpeaker() {
+    auto& v = scene_.layout.speakers;
+    if ((int)v.size() >= rk::kMaxSpeakers) return;
+    rk::Speaker sp;
+    sp.name = std::to_string(v.size() + 1);
+    // Next to the last one on the same ring, so it does not land on top of another.
+    const float r = v.empty() ? scene_.radius : rk::length(v.back().position);
+    const float az = v.empty() ? 0.0f : rk::toPolar(v.back().position).azimuthDeg - 30.0f;
+    sp.position = rk::toCartesian({std::fmod(az + 540.0f, 360.0f) - 180.0f, 0.0f, std::max(0.5f, r)});
+    if (!v.empty()) sp.group = v.back().group;
+    v.push_back(sp);
+    scene_.presetId = "custom";
+    applyScene(true);
+    commit();
+    selectSpeaker((int)v.size() - 1);
+}
+
+void MainComponent::speakerMenu(int i, juce::Rectangle<int> area) {
+    if (i < 0 || i >= (int)scene_.layout.speakers.size()) return;
+    const auto& sp = scene_.layout.speakers[(size_t)i];
+    juce::PopupMenu m;
+    m.addItem(1, tr("Umbenennen …"));
+    m.addItem(2, tr("Duplizieren"));
+    m.addItem(3, tr("Aktiv"), true, sp.enabled);
+    m.addItem(4, tr("Subwoofer"), true, sp.isSubwoofer);
+    m.addSeparator();
+    m.addItem(5, tr("Entfernen"));
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(area), [this, i](int r) {
+        auto& v = scene_.layout.speakers;
+        if (i >= (int)v.size() || r == 0) return;
+        if (r == 1) {
+            auto* w = new juce::AlertWindow(tr("Lautsprecher umbenennen"), {}, juce::MessageBoxIconType::NoIcon);
+            w->addTextEditor("name", juce::String::fromUTF8(v[(size_t)i].name.c_str()));
+            w->addButton(tr("Umbenennen"), 1, juce::KeyPress(juce::KeyPress::returnKey));
+            w->addButton(tr("Abbrechen"), 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            w->enterModalState(true, juce::ModalCallbackFunction::create([this, i, w](int ok) {
+                auto& vv = scene_.layout.speakers;
+                if (ok == 1 && i < (int)vv.size()) {
+                    const juce::String n = w->getTextEditorContents("name").trim().substring(0, 64);
+                    if (n.isNotEmpty()) {
+                        vv[(size_t)i].name = n.toStdString();
+                        commit();
+                        refreshSidebar();
+                        rebuildInspector();
+                    }
+                }
+            }), true);
+            return;
+        }
+        if (r == 2) {
+            if ((int)v.size() >= rk::kMaxSpeakers) return;
+            rk::Speaker copy = v[(size_t)i];
+            copy.name = std::to_string(v.size() + 1);
+            const rk::Polar p = rk::toPolar(copy.position);
+            copy.position = rk::toCartesian({std::fmod(p.azimuthDeg - 15.0f + 540.0f, 360.0f) - 180.0f, p.elevationDeg, p.distance});
+            copy.aim = {};
+            v.push_back(copy);
+            scene_.presetId = "custom";
+            applyScene(true);
+            commit();
+            selectSpeaker((int)v.size() - 1);
+            return;
+        }
+        if (r == 3) v[(size_t)i].enabled = !v[(size_t)i].enabled;
+        else if (r == 4) v[(size_t)i].isSubwoofer = !v[(size_t)i].isSubwoofer;
+        else if (r == 5) {
+            v.erase(v.begin() + i);
+            scene_.presetId = "custom";
+            applyScene(true);
+            commit();
+            selectSpeaker(juce::jmin(i, (int)v.size() - 1));
+            return;
+        }
+        if (r == 4) scene_.presetId = "custom"; // a subwoofer changes the layout, switching off does not
+        applyScene(true);
+        commit();
+        refreshSidebar();
+        rebuildInspector();
+    });
+}
+
 void MainComponent::startDemo() {
     rkui::Scene s;
     s.name = "Demo";
@@ -1425,7 +1511,6 @@ void MainComponent::showHelpMenu() {
             settings_->saveIfNeeded();
             steps_.setItems(juce::StringArray{tr("Lautsprecher"), tr("Quellen"), tr("Raum"), tr("Ausgabe")});
             updateTooltips();
-            addBtn_->setButtonText("+ " + tr("Quelle hinzufügen"));
             refreshAll();
         } else if (r == 3 || r == 4) {
             rkui::setDarkMode(r == 3);
