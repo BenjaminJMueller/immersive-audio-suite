@@ -532,6 +532,8 @@ void MainComponent::applyScene(bool structural) {
     host_.engine.reverbWetDb = scene_.reverbWetDb;
     host_.engine.masterGainDb = scene_.masterGainDb;
     host_.engine.limiterEnabled = scene_.limiter;
+    host_.engine.limiterCeilingDb = scene_.limiterCeilingDb;
+    host_.engine.limiterReleaseMs = scene_.limiterReleaseMs;
     dirty_ = true;
     lastChange_ = juce::Time::getMillisecondCounterHiRes();
 }
@@ -1018,6 +1020,7 @@ void MainComponent::setStep(int step) {
 }
 
 void MainComponent::rebuildInspector() {
+    limiterMeter_ = nullptr;
     posSliders_ = {};
     dawPageTrack_ = -1;
     dawSliders_.clear();
@@ -1344,12 +1347,30 @@ void MainComponent::buildOutputPage() {
         commit();
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshAll(); } });
     };
-    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Schutz"), tr("Der Limiter ist die letzte Stufe vor jedem Ausgang. Unterhalb des Thresholds verändert er das Signal nicht.")), 26);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Limiter"), tr("Der Limiter ist die letzte Stufe vor jedem Ausgang. Kein Sample überschreitet das Ceiling. Unterhalb davon verändert er das Signal nicht.\n\n"
+                                                                            "Release bestimmt, wie schnell die Verstärkung nach einer Spitze zurückkehrt. Kurz klingt lauter, kann aber verzerren oder pumpen. Lang arbeitet unauffälliger, nach lauten Spitzen bleibt der Pegel aber länger abgesenkt.")), 26);
     auto* lim = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Limiter")), 28);
     lim->setToggleState(scene_.limiter, juce::dontSendNotification);
     lim->setTooltip(tr("Nur für Messungen ausschalten."));
-    lim->onClick = [this, lim] { scene_.limiter = lim->getToggleState(); applyScene(false); commit(); };
-    inspector_.add(std::make_unique<rkui::NoteRow>(tr("Begrenzt jeden Lautsprecher auf einen Höchstpegel. So kann ein falsch eingestellter Regler oder ein Fehler in der DAW keinen Lautsprecher beschädigen.")), 52);
+    lim->onClick = [this, lim] {
+        scene_.limiter = lim->getToggleState();
+        applyScene(false);
+        commit();
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->rebuildInspector(); });
+    };
+    if (scene_.limiter) {
+        auto* ceil = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Ceiling"), -20, 0, 0.1, "dBFS", 1, -0.1), 32);
+        ceil->setValue(scene_.limiterCeilingDb);
+        ceil->setTooltip(tr("Höchster Pegel an jedem Ausgang."));
+        ceil->onChange = [this](double v) { scene_.limiterCeilingDb = (float)v; applyScene(false); };
+        ceil->onCommit = [this] { commit(); };
+        auto* rel = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Release"), 1, 2000, 1, "ms", 0, 80), 32);
+        rel->setSkewForCentre(100.0);
+        rel->setValue(scene_.limiterReleaseMs);
+        rel->onChange = [this](double v) { scene_.limiterReleaseMs = (float)v; applyScene(false); };
+        rel->onCommit = [this] { commit(); };
+        limiterMeter_ = inspector_.add(std::make_unique<rkui::ReductionMeter>(tr("Gain Reduction")), 32);
+    }
     auto* test = inspector_.add(rkui::makeButton(speakerTestRunning_ ? tr("Test beenden") : tr("Lautsprecher einzeln anspielen"), speakerTestRunning_), 32);
     test->onClick = [this] {
         speakerTestRunning_ = !speakerTestRunning_;
@@ -1811,6 +1832,11 @@ void MainComponent::timerCallback() {
         for (int c = 0; c < juce::jmin(nOut, rk::kMaxSpeakers); ++c) outPeak = std::max(outPeak, spk[(size_t)c]);
         outputStrip_.setLevel(outPeak);
         outputStrip_.setGainDb(scene_.masterGainDb);
+        // Limiter gain reduction: the largest over all outputs.
+        float gr = 0.0f;
+        for (int c = 0; c < juce::jmin(scene_.headphones ? 2 : nOut, rk::kMaxSpeakers); ++c) gr = std::max(gr, host_.engine.takeLimiterReduction(c));
+        outputStrip_.setReductionDb(scene_.limiter ? gr : 0.0f);
+        if (limiterMeter_ != nullptr) limiterMeter_->setReductionDb(gr);
     }
     // Level bars only where the rows are speakers or sources; room types have no level.
     if (step_ == StepSpeakers || step_ == StepOutput) sidebar_.setLevels(spkView);

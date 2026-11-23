@@ -158,6 +158,45 @@ void ParamSlider::paint(juce::Graphics& g) {
 }
 
 // ---------------------------------------------------------------------------
+void ReductionMeter::setReductionDb(float db) {
+    db = std::isfinite(db) ? juce::jlimit(0.0f, 60.0f, db) : 0.0f;
+    const float before = shown_, holdBefore = hold_;
+    shown_ = db > shown_ ? db : shown_ + (db - shown_) * 0.25f; // instant up, smooth down
+    if (shown_ < 0.01f) shown_ = 0.0f;
+    if (db >= hold_) { hold_ = db; holdTicks_ = 45; }
+    else if (--holdTicks_ < 0) hold_ = juce::jmax(shown_, hold_ - 0.3f);
+    if (std::abs(before - shown_) > 0.005f || std::abs(holdBefore - hold_) > 0.005f) repaint();
+}
+
+void ReductionMeter::paint(juce::Graphics& g) {
+    const Palette& p = palette();
+    const int lw = sliderLabelWidth(label_, getWidth());
+    g.setColour(p.text);
+    g.setFont(uiFont(13.5f));
+    g.drawText(label_, getLocalBounds().withWidth(lw), juce::Justification::centredLeft, true);
+    auto r = getLocalBounds().withTrimmedLeft(lw);
+    const auto valueArea = r.removeFromRight(60);
+    const auto bar = r.toFloat().reduced(6.0f, 0.0f).withSizeKeepingCentre(r.getWidth() - 12.0f, 6.0f);
+    g.setColour(p.track);
+    g.fillRoundedRectangle(bar, 3.0f);
+    auto unit = [](float db) { return juce::jlimit(0.0f, 1.0f, db / kRangeDb); };
+    if (shown_ > 0.0f) {
+        const float w = bar.getWidth() * unit(shown_);
+        g.setColour(p.warn);
+        g.fillRoundedRectangle(bar.withLeft(bar.getRight() - juce::jmax(3.0f, w)), 3.0f);
+    }
+    if (hold_ > 0.05f) {
+        const float x = bar.getRight() - bar.getWidth() * unit(hold_);
+        g.setColour(p.warn.withAlpha(0.8f));
+        g.fillRect(x - 1.0f, bar.getY() - 2.0f, 2.0f, bar.getHeight() + 4.0f);
+    }
+    g.setColour(shown_ > 0.05f ? p.text : p.text3);
+    g.setFont(uiFont(12.5f));
+    g.drawText(shown_ > 0.05f ? juce::String::fromUTF8("\xe2\x88\x92") + num(hold_, 1) + " dB" : juce::String("0 dB"), valueArea,
+               juce::Justification::centredRight, false);
+}
+
+// ---------------------------------------------------------------------------
 ChoiceRow::ChoiceRow(juce::String label, const juce::StringArray& items) : label_(std::move(label)) {
     box_.addItemList(items, 1);
     box_.onChange = [this] {
@@ -648,6 +687,15 @@ void OutputStrip::setLevel(float unit) {
     repaint();
 }
 
+void OutputStrip::setReductionDb(float db) {
+    db = std::isfinite(db) ? juce::jlimit(0.0f, 60.0f, db) : 0.0f;
+    const float before = reduction_;
+    if (db >= reduction_) { reduction_ = db; reductionHold_ = 30; } // hold about a second
+    else if (--reductionHold_ < 0) reduction_ = db < 0.05f ? juce::jmax(0.0f, reduction_ - 0.5f) : db;
+    if (reduction_ < 0.05f) reduction_ = 0.0f;
+    if (std::abs(before - reduction_) > 0.01f) repaint();
+}
+
 juce::Rectangle<float> OutputStrip::track() const {
     return getLocalBounds().toFloat().reduced(16.0f, 0.0f).withTop(30.0f).withHeight(16.0f);
 }
@@ -667,6 +715,13 @@ void OutputStrip::paint(juce::Graphics& g) {
     g.setColour(p.text);
     g.setFont(uiFont(13.0f, true));
     g.drawText(tr("Master"), 16, 8, getWidth() / 2, 18, juce::Justification::centredLeft, false);
+    if (reduction_ > 0.0f) { // the limiter works right now
+        const int mw = juce::roundToInt(juce::GlyphArrangement::getStringWidth(uiFont(13.0f, true), tr("Master")));
+        g.setColour(p.warn);
+        g.setFont(uiFont(11.5f, true));
+        g.drawText(tr("Limiter") + " " + juce::String::fromUTF8("\xe2\x88\x92") + num(reduction_, 1) + " dB", 16 + mw + 8, 8, getWidth() / 2, 18,
+                   juce::Justification::centredLeft, false);
+    }
     g.setColour(p.text2);
     g.setFont(uiFont(12.0f));
     const juce::String v = gainDb_ <= kMinDb + 0.01f ? juce::String::fromUTF8("\xe2\x88\x92\xe2\x88\x9e") : num(gainDb_, 1) + " dB";
@@ -767,7 +822,8 @@ void FormPage::setRowHeight(juce::Component* c, int height) {
 namespace {
 bool isSettingRow(juce::Component* c) {
     return dynamic_cast<ParamSlider*>(c) != nullptr || dynamic_cast<ChoiceRow*>(c) != nullptr ||
-           dynamic_cast<TextRow*>(c) != nullptr || dynamic_cast<juce::ToggleButton*>(c) != nullptr;
+           dynamic_cast<TextRow*>(c) != nullptr || dynamic_cast<juce::ToggleButton*>(c) != nullptr ||
+           dynamic_cast<ReductionMeter*>(c) != nullptr;
 }
 } // namespace
 

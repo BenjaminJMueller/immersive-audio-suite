@@ -277,6 +277,8 @@ juce::var sceneToVar(const Scene& s) {
     o->setProperty("reverb", reverbToVar(s.reverb, s.reverbWetDb));
     o->setProperty("masterGainDb", s.masterGainDb);
     o->setProperty("limiter", s.limiter);
+    o->setProperty("limiterCeilingDb", s.limiterCeilingDb);
+    o->setProperty("limiterReleaseMs", s.limiterReleaseMs);
     o->setProperty("headphones", s.headphones);
     o->setProperty("binaural", s.binaural);
     juce::Array<juce::var> src;
@@ -312,6 +314,8 @@ Scene sceneFromVar(const juce::var& v) {
     reverbFromVar(v.getProperty("reverb", juce::var()), s.reverb, s.reverbWetDb);
     s.masterGainDb = getF(v, "masterGainDb", 0.0f, -80.0f, 12.0f);
     s.limiter = getB(v, "limiter", true);
+    s.limiterCeilingDb = getF(v, "limiterCeilingDb", -0.1f, -20.0f, 0.0f);
+    s.limiterReleaseMs = getF(v, "limiterReleaseMs", 80.0f, 1.0f, 2000.0f);
     s.headphones = getB(v, "headphones", false);
     s.binaural = getB(v, "binaural", false);
     if (const auto* a = v.getProperty("sources", juce::var()).getArray()) {

@@ -144,6 +144,7 @@ private:
     rkui::RoomView stage_;
     rkui::ReverbPanel reverbPanel_; // replaces the room view in step 3
     rkui::SnapshotBar snapBar_;      // under the room view
+    rkui::ReductionMeter* limiterMeter_ = nullptr; // on the output page while it is shown
     rkui::OutputStrip outputStrip_;  // pinned at the bottom of the sidebar
 
     // Snapshots: storing, recalling with a fade, and the menu of one snapshot.

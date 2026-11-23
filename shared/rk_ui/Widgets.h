@@ -253,6 +253,8 @@ public:
     OutputStrip();
     void setGainDb(float db);
     void setLevel(float unit); // 0..1
+    /// Limiter gain reduction in dB (>= 0): shown next to "Master" while the limiter works.
+    void setReductionDb(float db);
     std::function<void(float)> onChange;
     std::function<void()> onCommit;
     static constexpr float kMinDb = -60.0f, kMaxDb = 12.0f;
@@ -267,7 +269,8 @@ private:
     juce::Rectangle<float> track() const;
     float unitForDb(float db) const;
     float dbForX(float x) const;
-    float gainDb_ = 0.0f, level_ = 0.0f;
+    float gainDb_ = 0.0f, level_ = 0.0f, reduction_ = 0.0f;
+    int reductionHold_ = 0;
     bool dragging_ = false;
 };
 
@@ -304,6 +307,22 @@ private:
     Content content_;
     int buttonRowY_ = -1, buttonRowRight_ = 0;
     juce::Viewport viewport_;
+};
+
+/// Label | gain reduction bar | value, for a limiter or compressor. The bar grows from the
+/// right, like on a mixing console; it holds peaks briefly and falls back slowly.
+class ReductionMeter : public juce::Component, public juce::SettableTooltipClient {
+public:
+    explicit ReductionMeter(juce::String label) : label_(std::move(label)) {}
+    /// Gain reduction in dB (>= 0), about 30 times a second.
+    void setReductionDb(float db);
+    void paint(juce::Graphics& g) override;
+    static constexpr float kRangeDb = 12.0f;
+
+private:
+    juce::String label_;
+    float shown_ = 0.0f, hold_ = 0.0f;
+    int holdTicks_ = 0;
 };
 
 /// "‹ Lautsprecher": leaves a sub-page of the inspector (calibration, iPhone measurement), top left like macOS.
