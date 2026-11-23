@@ -208,6 +208,25 @@ TEST_CASE("engine: headphone preview renders two channels") {
     CHECK(r.rms(0, 4096) > 2.0 * r.rms(1, 4096));
 }
 
+TEST_CASE("engine: binaural layout places sources all around the head") {
+    for (Polar where : {Polar{90, 0, 2}, Polar{-120, 30, 2}, Polar{60, -30, 2}, Polar{10, 80, 2}}) {
+        Rig r(1, 2);
+        r.noReverb();
+        r.setLayout(binauralVirtualLayout(), PannerKind::VBAP, OutputMode::Headphones);
+        auto& s = r.engine.source(0);
+        s.active = true;
+        s.setPosition(toCartesian(where));
+        long long ph = 0;
+        for (int i = 0; i < 20; ++i) { fillSine(r.in[0], 3000, 0.3f, 48000, ph); r.run(512); r.engine.collectGarbage(); }
+        fillSine(r.in[0], 3000, 0.3f, 48000, ph);
+        r.run(4096);
+        const double l = r.rms(0, 4096), rr = r.rms(1, 4096);
+        CHECK(l + rr > 0.02);
+        if (where.azimuthDeg > 30.0f && std::fabs(where.elevationDeg) < 45.0f) CHECK(l > 1.5 * rr);
+        if (where.azimuthDeg < -30.0f && std::fabs(where.elevationDeg) < 45.0f) CHECK(rr > 1.5 * l);
+    }
+}
+
 TEST_CASE("engine: more speakers than outputs and vice versa") {
     Rig few(1, 2);
     few.setLayout(presets::ring(16, 3.0f), PannerKind::VBAP);
@@ -299,4 +318,100 @@ TEST_CASE("engine: inputs and sources beyond 128 work (app: device, test signals
     CHECK(r.rms(0, 512) > 0.05);
     CHECK(r.rms(1, 512) > 0.05);
     CHECK(r.engine.takeSourcePeak(200) > 0.1f);
+}
+
+namespace {
+// Plays a sine through one source in front (stereo pair) and returns the output level.
+double directLevel(float yawDeg, float directivity, float freq) {
+    Rig r(1, 2);
+    r.noReverb();
+    r.setLayout(presets::stereo(2.0f), PannerKind::VBAP);
+    auto& s = r.engine.source(0);
+    s.active = true;
+    s.yawDeg = yawDeg;
+    s.directivity = directivity;
+    s.setPosition(toCartesian({0, 0, 2}));
+    long long ph = 0;
+    for (int i = 0; i < 20; ++i) { fillSine(r.in[0], freq, 0.3f, 48000, ph); r.run(512); r.engine.collectGarbage(); }
+    fillSine(r.in[0], freq, 0.3f, 48000, ph);
+    r.run(4096);
+    return r.rms(0, 4096) + r.rms(1, 4096);
+}
+} // namespace
+
+TEST_CASE("engine: a directed source turned away is quieter and darker") {
+    // Omni: the direction does not matter.
+    CHECK(directLevel(180, 0, 500) == doctest::Approx(directLevel(0, 0, 500)).epsilon(1e-3));
+    // Facing the listener: unchanged by directivity.
+    CHECK(directLevel(0, 1, 8000) == doctest::Approx(directLevel(0, 0, 8000)).epsilon(1e-3));
+    // Turned away: about 12 dB down in the bass, much more in the treble.
+    const double lowRatio = directLevel(180, 1, 200) / directLevel(0, 1, 200);
+    const double highRatio = directLevel(180, 1, 8000) / directLevel(0, 1, 8000);
+    CHECK(lowRatio == doctest::Approx(0.25).epsilon(0.05));
+    CHECK(highRatio < lowRatio * 0.5);
+    // Halfway lies between.
+    const double side = directLevel(90, 1, 200) / directLevel(0, 1, 200);
+    CHECK(side < 0.9);
+    CHECK(side > lowRatio);
+}
+
+TEST_CASE("engine: Doppler delays by distance and shifts the pitch while moving") {
+    Rig r(1, 2);
+    r.noReverb();
+    r.setLayout(presets::stereo(2.0f), PannerKind::VBAP);
+    auto& s = r.engine.source(0);
+    s.active = true;
+    s.doppler = true;
+    s.distanceAmount = 0.0f;
+    s.setPosition(toCartesian({0, 0, 34.3f})); // 100 ms away
+    std::fill(r.in[0].begin(), r.in[0].end(), 0.0f);
+    r.settle();
+    // An impulse arrives 100 ms (4800 samples) later.
+    r.resize(8192);
+    r.in[0][0] = 1.0f;
+    r.run(8192);
+    int first = -1;
+    for (int i = 0; i < 8192 && first < 0; ++i)
+        if (std::fabs(r.out[0][static_cast<size_t>(i)]) + std::fabs(r.out[1][static_cast<size_t>(i)]) > 0.05f) first = i;
+    CHECK(first >= 4795);
+    CHECK(first <= 4805);
+
+    // Approaching at 34.3 m/s (a tenth of the speed of sound) raises the pitch by ~10 %.
+    const int block = 480; // 10 ms
+    r.resize(block);
+    long long ph = 0;
+    float dist = 34.3f;
+    int crossings = 0;
+    float prev = 0.0f;
+    for (int b = 0; b < 60; ++b) {
+        dist -= 0.343f;
+        s.setPosition(toCartesian({0, 0, dist}));
+        fillSine(r.in[0], 1000, 0.3f, 48000, ph);
+        r.run(block);
+        if (b >= 20) // after the first 200 ms the moving sound has arrived
+            for (int i = 0; i < block; ++i) {
+                const float v = r.out[0][static_cast<size_t>(i)] + r.out[1][static_cast<size_t>(i)];
+                if (prev < 0.0f && v >= 0.0f) ++crossings;
+                prev = v;
+            }
+    }
+    const double hz = crossings / 0.4;
+    CHECK(hz > 1060.0);
+    CHECK(hz < 1160.0);
+}
+
+TEST_CASE("engine: more Doppler sources than delay lines stay safe") {
+    Rig r(40, 8);
+    r.setLayout(presets::ring(8, 3.0f), PannerKind::VBAP);
+    for (int i = 0; i < 40; ++i) {
+        auto& s = r.engine.source(i);
+        s.active = true;
+        s.doppler = true;
+        s.setPosition(toCartesian({float(i * 9), 0, 5.0f}));
+        std::fill(r.in[static_cast<size_t>(i)].begin(), r.in[static_cast<size_t>(i)].end(), 0.1f);
+    }
+    r.settle();
+    r.run(512);
+    for (int c = 0; c < 8; ++c)
+        for (int i = 0; i < 512; ++i) CHECK(std::isfinite(r.out[static_cast<size_t>(c)][static_cast<size_t>(i)]));
 }

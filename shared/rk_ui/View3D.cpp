@@ -1,4 +1,5 @@
 #include "View3D.h"
+#include "Visuals.h"
 
 #include "Strings.h"
 
@@ -22,8 +23,8 @@ constexpr float kStand = 1.2f; // ear height (z = 0) above the floor
 View3D::View3D() { setOpaque(true); }
 
 void View3D::setScene(const Scene& s) {
-    const bool layoutChanged = s.layout.speakers.size() != scene_.layout.speakers.size() || s.effectivePanner() != scene_.effectivePanner() ||
-                               s.layout.name != scene_.layout.name;
+    const bool layoutChanged = !panningBuilt_ || !s.samePanning(scene_);
+    panningBuilt_ = true;
     scene_ = s;
     if (layoutChanged) {
         rk::DbapPanner::Params d{s.dbapRolloffDb, s.dbapBlur, s.dbapDirectivity};
@@ -148,6 +149,7 @@ void View3D::paint(juce::Graphics& g) {
     }
 
     std::array<float, rk::kMaxSpeakers> gains{};
+    animating_ = false;
     for (int s = 0; s < (int)scene_.sources.size(); ++s) {
         const auto& src = scene_.sources[(size_t)s];
         const auto c = project(src.position);
@@ -155,18 +157,27 @@ void View3D::paint(juce::Graphics& g) {
         const bool dim = s >= dimFrom_;
         const juce::Colour col = src.mute ? p.text3 : sourceColour(s);
         const float lvl = s < (int)sourceLevels_.size() ? sourceLevels_[(size_t)s] : 0.0f;
-        std::vector<std::pair<juce::Point<float>, float>> lines;
+        struct Path3 { juce::Point<float> to; float energy; uint32_t seed; };
+        std::vector<Path3> lines;
         if (!dim && !src.mute && (s == sel_ || lvl > 0.02f)) {
             panner_.compute({src.position, src.spread}, gains.data());
             for (int m = 0; m < nSpk; ++m)
-                if (gains[(size_t)m] > 0.06f)
+                if (gains[(size_t)m] > 0.04f) {
+                    const float gm = gains[(size_t)m];
                     lines.push_back({project(scene_.layout.speakers[(size_t)m].position).p,
-                                     juce::jlimit(0.0f, 0.85f, std::max(s == sel_ ? 0.55f * gains[(size_t)m] * gains[(size_t)m] + 0.12f : 0.0f,
-                                                                        0.9f * gains[(size_t)m] * std::sqrt(lvl)))});
+                                     std::max(gm * gm * std::sqrt(lvl), s == sel_ ? 0.10f * gm * gm : 0.0f), (uint32_t)(s * 131 + m + 1)});
+                }
         }
         const juce::String name = src.name;
         const bool names = names_;
-        items.push_back({c.depth, [&g, &p, c, base, dim, col, lines, name, names, sizeAt, lvl] {
+        animating_ = animating_ || !lines.empty();
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        for (const auto& l : lines) {
+            drawSoundParticles(particles_, c.p, l.to, col, l.energy, l.seed, now);
+            drawSoundCloud(particles_, l.to, col, l.energy, 9.0f, 12.0f, l.seed + 5000u, now);
+        }
+        if (!dim && !src.mute && lvl > 0.02f) drawSoundCloud(particles_, c.p, col, std::sqrt(lvl), 12.0f, 20.0f, (uint32_t)(s * 977 + 7), now);
+        items.push_back({c.depth, [&g, &p, c, base, dim, col, name, names, sizeAt, lvl] {
                              const float r = dim ? sizeAt(6.0f, c.depth) : sizeAt(10.0f, c.depth);
                              const float a = dim ? 0.45f : 1.0f;
                              // Drop line and shadow on the floor: where the source sits and how high.
@@ -179,11 +190,6 @@ void View3D::paint(juce::Graphics& g) {
                              g.fillPath(dashed);
                              g.setColour(col.withAlpha(0.22f * a));
                              g.fillEllipse(base.p.x - r, base.p.y - r * 0.32f, 2 * r, r * 0.64f);
-                             for (const auto& [to, alpha] : lines) {
-                                 juce::ColourGradient grad(col.withAlpha(alpha), c.p.x, c.p.y, col.withAlpha(alpha * 0.25f), to.x, to.y, false);
-                                 g.setGradientFill(grad);
-                                 g.drawLine(juce::Line<float>(c.p, to), 1.0f);
-                             }
                              if (!dim && lvl > 0.01f) {
                                  const float rr = r + 6.0f;
                                  const float a0 = juce::MathConstants<float>::pi * 1.25f, sweep = juce::MathConstants<float>::pi * 1.5f;
@@ -207,7 +213,12 @@ void View3D::paint(juce::Graphics& g) {
     }
 
     std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.depth > b.depth; });
+    particles_.draw(g, getLocalBounds()); // under speakers and sources
     for (auto& it : items) it.draw();
+    if (animating_ != isTimerRunning()) {
+        if (animating_) startTimerHz(30);
+        else stopTimer();
+    }
 }
 
 void View3D::mouseDown(const juce::MouseEvent& e) {

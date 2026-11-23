@@ -89,9 +89,9 @@ void RoomView::setSourceStyle(const std::vector<juce::Colour>& colours, int dimF
     view3d_.setSourceStyle(colours, dimFrom, names);
 }
 
-void RoomView::setFirstLockedSource(int i) {
-    top_.setFirstLockedSource(i);
-    front_.setFirstLockedSource(i);
+void RoomView::setFirstLockedSource(int i, int firstDaw) {
+    top_.setFirstLockedSource(i, firstDaw);
+    front_.setFirstLockedSource(i, firstDaw);
 }
 
 void RoomView::setEditTarget(StageView::EditTarget t) {

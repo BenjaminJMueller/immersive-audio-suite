@@ -4,6 +4,7 @@
 
 #include "Scene.h"
 #include "Theme.h"
+#include "Visuals.h"
 #include "Widgets.h"
 
 #include <array>
@@ -12,7 +13,7 @@
 
 namespace rkui {
 
-class StageView : public juce::Component {
+class StageView : public juce::Component, private juce::Timer {
 public:
     enum class EditTarget { Sources, Speakers, None };
     /// Top: x right, y front (azimuth). Front: x right, z up. Side: y front (to the right), z up (elevation).
@@ -23,7 +24,11 @@ public:
     void setEditTarget(EditTarget t) { target_ = t; repaint(); }
     void setSelectedSource(int i) { selSource_ = i; repaint(); }
     void setSelectedSpeaker(int i) { selSpeaker_ = i; repaint(); }
-    void setSpeakerLevels(const std::vector<float>& l) { speakerLevels_ = l; repaint(); }
+    void setSpeakerLevels(const std::vector<float>& l) {
+        if (!levelsDiffer(speakerLevels_, l)) return;
+        speakerLevels_ = l;
+        repaint();
+    }
     /// 0..1 per source, drawn as a ring around the source.
     void setSourceLevels(const std::vector<float>& l);
     /// 0..1: how much reverb fills the room right now (a soft glow over the stage).
@@ -32,7 +37,9 @@ public:
     /// `badge` is a step number or empty; `ok` turns the badge green.
     void setCoach(juce::String badge, juce::String title, juce::String text, bool ok = false);
     /// Sources from this index on are shown but cannot be dragged (e.g. tracks from the DAW).
-    void setFirstLockedSource(int i) { firstLocked_ = i; repaint(); }
+    /// Sources from `i` on cannot be dragged. Sources from `firstDaw` on (default: the same
+    /// index) carry a small "DAW" marker.
+    void setFirstLockedSource(int i, int firstDaw = -1) { firstLocked_ = i; firstDaw_ = firstDaw < 0 ? i : firstDaw; repaint(); }
     void setProjection(Projection p);
     /// Look of the sources: their colours (transparent or missing = list colour), from which
     /// index on they are drawn dimmed (other tracks seen from a plugin), and whether they
@@ -98,6 +105,13 @@ private:
     int selSource_ = -1, selSpeaker_ = -1;
     int dragSource_ = -1, dragSpeaker_ = -1;
     bool dragging_ = false;
+    ParticleBatch particles_;
+    bool animating_ = false; // sound particles are visible: keep them twinkling
+    void timerCallback() override {
+        if (animating_ && isShowing()) repaint();
+        else stopTimer();
+    }
+    bool panningBuilt_ = false, panningStale_ = false;
     float scale_ = 40.0f; // pixels per metre
     float zoom_ = 1.0f;
     juce::Point<float> centre_;
@@ -110,6 +124,7 @@ private:
     juce::String coachBadge_, coachTitle_, coachText_;
     bool coachOk_ = false;
     int firstLocked_ = 1 << 30;
+    int firstDaw_ = 1 << 30;
     IconButton fit_{Icon::Fit, "Alles zeigen"};
     Projection proj_ = Projection::Top;
     std::optional<CalibrationOverlay> calib_;

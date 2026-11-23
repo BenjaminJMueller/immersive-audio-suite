@@ -4,6 +4,7 @@
 #include <rk_ui/Pages.h>
 #include <rk_ui/StageView.h>
 #include <rk_ui/Strings.h>
+#include <rk_ui/Snapshots.h>
 #include <rk_ui/Survey.h>
 #include <rk_ui/ReverbPanel.h>
 #include <rk_ui/Visuals.h>
@@ -41,9 +42,21 @@ void roundTrip() {
         src.orbit = i % 2 == 0;
         s.sources.push_back(src);
     }
+    s.sources[1].yawDeg = 135.0f;
+    s.sources[1].directivity = 0.8f;
+    s.sources[1].doppler = true;
     rkui::Scene back;
     EXPECT(rkui::sceneFromJson(rkui::sceneToJson(s), back));
     EXPECT(back.name == s.name);
+    {
+        // Snapshot fade turns the short way: 170 -> -170 passes 180, not 0.
+        rkui::Scene from = s, mid = s;
+        from.sources[1].yawDeg = 170.0f;
+        rkui::Snapshot to = rkui::captureSnapshot(s, {}, "x", 1.0f);
+        to.sources[1].yawDeg = -170.0f;
+        rkui::blendSnapshot(mid, from, to, 0.5f);
+        EXPECT(std::abs(std::abs(mid.sources[1].yawDeg) - 180.0f) < 0.01f);
+    }
     EXPECT(back.presetId == "donut");
     EXPECT(back.innerCount == 6);
     EXPECT(back.layout.speakers.size() == s.layout.speakers.size());
@@ -55,8 +68,22 @@ void roundTrip() {
     EXPECT(back.sources.size() == 5);
     EXPECT(back.sources[3].position.x == 3.0f);
     EXPECT(back.sources[4].test == rkui::TestSignal::Clicks);
+    EXPECT(std::abs(back.sources[1].yawDeg - 135.0f) < 1e-4f);
+    EXPECT(std::abs(back.sources[1].directivity - 0.8f) < 1e-4f);
+    EXPECT(back.sources[1].doppler && !back.sources[0].doppler);
     EXPECT(rkui::sceneToJson(back) == rkui::sceneToJson(s));
     EXPECT(back.effectivePanner() == rk::PannerKind::DBAP);
+    // Binaural: the engine gets the virtual layout around the head, the scene keeps its speakers.
+    EXPECT(!back.binaural);
+    s.binaural = true;
+    EXPECT(rkui::sceneFromJson(rkui::sceneToJson(s), back));
+    EXPECT(back.binaural);
+    const auto cfg = back.engineConfig();
+    EXPECT(cfg.outputMode == rk::OutputMode::Headphones);
+    EXPECT(cfg.layout.speakers.size() == 19);
+    EXPECT(back.layout.speakers.size() == s.layout.speakers.size());
+    back.headphones = false;
+    EXPECT(back.engineConfig().layout.speakers.size() == s.layout.speakers.size());
 }
 
 void rejectsGarbage() {
@@ -389,6 +416,62 @@ void surveys() {
     EXPECT(replaced.speakers.size() == 2);
 }
 
+void snapshots() {
+    rkui::Scene s;
+    rkui::SourceInfo a;
+    a.name = "Gesang";
+    a.position = rk::toCartesian({170.0f, 0.0f, 3.0f});
+    a.gainDb = -6.0f;
+    s.sources.push_back(a);
+    s.reverbWetDb = -10.0f;
+    std::vector<rkui::DawTrackState> daw{{"Bass", 30.0f, 0.0f, 2.0f}};
+    s.snapshots.push_back(rkui::captureSnapshot(s, daw, "Strophe", 3.0f));
+
+    // Round trip through the project file.
+    rkui::Scene back;
+    EXPECT(rkui::sceneFromJson(rkui::sceneToJson(s), back));
+    EXPECT(back.snapshots.size() == 1);
+    if (back.snapshots.size() == 1) {
+        const auto& sn = back.snapshots[0];
+        EXPECT(sn.name == "Strophe");
+        EXPECT(std::abs(sn.fadeSec - 3.0f) < 1e-4f);
+        EXPECT(sn.sources.size() == 1 && std::abs(sn.sources[0].gainDb + 6.0f) < 1e-4f);
+        EXPECT(sn.daw.size() == 1 && sn.daw[0].name == "Bass" && std::abs(sn.daw[0].azimuthDeg - 30.0f) < 1e-3f);
+        EXPECT(std::abs(sn.reverbWetDb + 10.0f) < 1e-4f);
+    }
+
+    // Fading from 170 deg to -170 deg goes through the back (180), not through the front.
+    rkui::Snapshot target = s.snapshots[0];
+    target.sources[0].position = rk::toCartesian({-170.0f, 0.0f, 3.0f});
+    target.sources[0].gainDb = 0.0f;
+    target.sources[0].mute = true;
+    rkui::Scene mid;
+    rkui::blendSnapshot(mid, s, target, 0.5f);
+    const rk::Polar pm = rk::toPolar(mid.sources[0].position);
+    EXPECT(std::abs(std::abs(pm.azimuthDeg) - 180.0f) < 0.5f);
+    EXPECT(std::abs(pm.distance - 3.0f) < 0.01f);
+    EXPECT(std::abs(mid.sources[0].gainDb + 3.0f) < 1e-3f);
+    EXPECT(mid.sources[0].mute); // switches right away
+    rkui::Scene start;
+    rkui::blendSnapshot(start, s, target, 0.0f);
+    EXPECT(!start.sources[0].mute);
+    EXPECT(rkui::fadeCurve(0.0f) == 0.0f && rkui::fadeCurve(1.0f) == 1.0f && std::abs(rkui::fadeCurve(0.5f) - 0.5f) < 1e-6f);
+
+    // Hostile snapshot data is clamped, never NaN.
+    const char* bad = R"({"format":"raumklang","version":1,"snapshots":[{"name":7,"fadeSec":"x","sources":[{"gainDb":1e30}],
+        "reverb":{"decaySec":-4},"daw":[{"name":"T","azimuth":1e9,"distance":-3},{"azimuth":1}],"masterGainDb":null}, 5, "x"]})";
+    rkui::Scene h;
+    EXPECT(rkui::sceneFromJson(juce::String(bad), h));
+    EXPECT(h.snapshots.size() == 1);
+    if (h.snapshots.size() == 1) {
+        const auto& sn = h.snapshots[0];
+        EXPECT(sn.sources.size() == 1 && sn.sources[0].gainDb <= 12.0f);
+        EXPECT(sn.reverb.decaySec >= 0.2f);
+        EXPECT(sn.daw.size() == 1 && sn.daw[0].azimuthDeg <= 180.0f && sn.daw[0].distance >= 0.0f);
+        EXPECT(std::isfinite(sn.fadeSec));
+    }
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     roundTrip();
@@ -401,6 +484,7 @@ int main() {
     speakerAngles();
     visuals();
     surveys();
+    snapshots();
     std::printf("%s (%d failures)\n", failures == 0 ? "ALL SHARED TESTS PASSED" : "SHARED TESTS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

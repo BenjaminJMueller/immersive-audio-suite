@@ -74,6 +74,10 @@ public:
 
 private:
     void timerCallback() override;
+    void housekeeping();
+    int tick_ = 0;
+    bool appGesture_ = false;   // a drag from the app is in progress (message thread)
+    double lastAppMoveMs_ = 0.0;
     void reloadSetup(bool force);
     void applyEngineConfig();
 

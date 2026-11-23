@@ -160,7 +160,7 @@ void drawNoticePill(juce::Graphics& g, float leftLimit, float rightX, float cent
 void drawCoachBar(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& badge, const juce::String& title,
                   const juce::String& text, bool ok);
 
-/// Green/orange card with a plain-language verdict ("Sitzt gut").
+/// Green/orange card with a plain-language verdict ("Positionen bestimmt").
 class StatusCard : public juce::Component {
 public:
     enum class Kind { Ok, Warn, Info };
@@ -187,12 +187,16 @@ public:
         bool dim = false;
         bool check = false;
         float level = 0.0f; // 0..1, drawn as a thin meter
+        bool toggles = false; // show M (mute) and S (solo) buttons on the right
+        bool mute = false, solo = false;
     };
     void setRows(std::vector<Row> rows);
     void setSelected(int row);
     int selected() const { return selected_; }
     void setLevels(const std::vector<float>& levels);
     std::function<void(int)> onSelect;
+    /// A click on a row's M (which = 0) or S (which = 1) button.
+    std::function<void(int row, int which)> onToggle;
     int contentHeight() const;
     void paint(juce::Graphics& g) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -201,10 +205,36 @@ public:
 
 private:
     struct Item { int row; juce::Rectangle<int> bounds; };
+    static juce::Rectangle<float> toggleRect(juce::Rectangle<float> row, int which);
     int hover_ = -1;
     std::vector<Item> layoutItems() const;
     std::vector<Row> rows_;
     int selected_ = -1;
+};
+
+/// The output, pinned at the bottom of the sidebar: overall level as a fader with the
+/// summed output meter under it. Double click resets to 0 dB.
+class OutputStrip : public juce::Component, public juce::SettableTooltipClient {
+public:
+    OutputStrip();
+    void setGainDb(float db);
+    void setLevel(float unit); // 0..1
+    std::function<void(float)> onChange;
+    std::function<void()> onCommit;
+    static constexpr float kMinDb = -60.0f, kMaxDb = 12.0f;
+
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
+
+private:
+    juce::Rectangle<float> track() const;
+    float unitForDb(float db) const;
+    float dbForX(float x) const;
+    float gainDb_ = 0.0f, level_ = 0.0f;
+    bool dragging_ = false;
 };
 
 /// A vertical stack of rows inside a viewport: the inspector. Consecutive setting rows

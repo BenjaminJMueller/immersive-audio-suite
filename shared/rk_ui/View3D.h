@@ -4,19 +4,28 @@
 #pragma once
 
 #include "Scene.h"
+#include "Visuals.h"
 #include "Theme.h"
 
 #include <functional>
 
 namespace rkui {
 
-class View3D : public juce::Component {
+class View3D : public juce::Component, private juce::Timer {
 public:
     View3D();
     void setScene(const Scene& s);
     void setSelectedSource(int i) { sel_ = i; repaint(); }
-    void setSpeakerLevels(const std::vector<float>& l) { speakerLevels_ = l; repaint(); }
-    void setSourceLevels(const std::vector<float>& l) { sourceLevels_ = l; repaint(); }
+    void setSpeakerLevels(const std::vector<float>& l) {
+        if (!levelsDiffer(speakerLevels_, l)) return;
+        speakerLevels_ = l;
+        repaint();
+    }
+    void setSourceLevels(const std::vector<float>& l) {
+        if (!levelsDiffer(sourceLevels_, l)) return;
+        sourceLevels_ = l;
+        repaint();
+    }
     /// Same meaning as StageView::setSourceStyle.
     void setSourceStyle(std::vector<juce::Colour> colours, int dimFrom, bool names);
     void resetView();
@@ -39,6 +48,13 @@ private:
 
     Scene scene_;
     rk::Panner panner_;
+    bool panningBuilt_ = false;
+    ParticleBatch particles_;
+    bool animating_ = false; // sound particles are visible: keep them twinkling
+    void timerCallback() override {
+        if (animating_ && isShowing()) repaint();
+        else stopTimer();
+    }
     std::vector<float> speakerLevels_, sourceLevels_;
     std::vector<juce::Colour> sourceColours_;
     int dimFrom_ = 1 << 30;

@@ -7,6 +7,14 @@
 
 namespace rkui {
 
+/// Meter values worth a repaint: a different count, or any value moved by more than ~half a pixel.
+inline bool levelsDiffer(const std::vector<float>& a, const std::vector<float>& b) {
+    if (a.size() != b.size()) return true;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (std::abs(a[i] - b[i]) > 0.004f) return true;
+    return false;
+}
+
 struct Palette {
     juce::Colour bg, side, bar, group, field, hover, select, stage, line, lineStrong;
     juce::Colour text, text2, text3, accent, accentSoft, onAccent, ok, warn, bad;

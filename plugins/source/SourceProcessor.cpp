@@ -16,9 +16,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout makeLayout() {
     p.push_back(std::make_unique<P>(juce::ParameterID{"distance", 1}, "Abstand", dr, 2.0f, A().withLabel("m")));
     p.push_back(std::make_unique<P>(juce::ParameterID{"spread", 1}, "Breite", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f, A().withLabel("%")));
     p.push_back(std::make_unique<P>(juce::ParameterID{"gain", 1}, "Pegel", juce::NormalisableRange<float>(-60.0f, 12.0f, 0.1f), 0.0f, A().withLabel("dB")));
-    p.push_back(std::make_unique<P>(juce::ParameterID{"reverbSend", 1}, "Hallanteil", juce::NormalisableRange<float>(-80.0f, 6.0f, 0.1f), -12.0f, A().withLabel("dB")));
+    p.push_back(std::make_unique<P>(juce::ParameterID{"reverbSend", 1}, "Hall-Send", juce::NormalisableRange<float>(-80.0f, 6.0f, 0.1f), -12.0f, A().withLabel("dB")));
     p.push_back(std::make_unique<P>(juce::ParameterID{"stereoWidth", 1}, "Stereobreite", juce::NormalisableRange<float>(0.0f, 180.0f, 0.1f), 60.0f, A().withLabel(juce::String::fromUTF8("\xc2\xb0"))));
-    p.push_back(std::make_unique<P>(juce::ParameterID{"distanceAmount", 1}, "Entfernung", juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 100.0f, A().withLabel("%")));
+    p.push_back(std::make_unique<P>(juce::ParameterID{"distanceAmount", 1}, "Distanzeffekt", juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 100.0f, A().withLabel("%")));
     p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"route", 1}, "Ausgabe",
                                                              juce::StringArray{"Automatisch", "An die App", "In der DAW"}, 0));
     return {p.begin(), p.end()};
@@ -41,12 +41,15 @@ SourceProcessor::SourceProcessor()
     distAmt_ = params.getRawParameterValue("distanceAmount");
     route_ = params.getRawParameterValue("route");
     reloadSetup(true);
-    timerCallback(); // connect to the app right away
-    startTimer(500);
+    housekeeping(); // connect to the app right away
+    startTimer(40);
 }
 
 SourceProcessor::~SourceProcessor() {
     stopTimer();
+    if (appGesture_) // a drag from the app was still open: close it for the host
+        for (const char* id : {"azimuth", "elevation", "distance"})
+            if (auto* prm = params.getParameter(id)) prm->endChangeGesture();
     sender_.release();
 }
 
@@ -161,6 +164,29 @@ void SourceProcessor::setSourcePosition(rk::Vec3 p) {
 }
 
 void SourceProcessor::timerCallback() {
+    // Fast part: the user drags this track in the app. Applied as a normal parameter change
+    // inside a gesture, so the DAW records it as automation (touch/latch/write).
+    float az = 0.0f, el = 0.0f, dist = 0.0f;
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (sender_.takeMove(az, el, dist)) {
+        const char* ids[3] = {"azimuth", "elevation", "distance"};
+        const float vals[3] = {az, el, dist};
+        for (int k = 0; k < 3; ++k)
+            if (auto* prm = params.getParameter(ids[k])) {
+                if (!appGesture_) prm->beginChangeGesture();
+                prm->setValueNotifyingHost(prm->convertTo0to1(vals[k]));
+            }
+        appGesture_ = true;
+        lastAppMoveMs_ = now;
+    } else if (appGesture_ && now - lastAppMoveMs_ > 300.0) {
+        for (const char* id : {"azimuth", "elevation", "distance"})
+            if (auto* prm = params.getParameter(id)) prm->endChangeGesture();
+        appGesture_ = false;
+    }
+    if (++tick_ % 12 == 0) housekeeping(); // about twice a second
+}
+
+void SourceProcessor::housekeeping() {
     reloadSetup(false);
     engine.collectGarbage();
     // Bridge housekeeping (message thread): open, claim a slot while the app runs, stay alive.

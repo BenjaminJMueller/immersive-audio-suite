@@ -20,7 +20,7 @@ public:
     void setSpeakerLevels(const std::vector<float>& l);
     void setSourceLevels(const std::vector<float>& l);
     void setSourceStyle(const std::vector<juce::Colour>& colours, int dimFrom, bool names);
-    void setFirstLockedSource(int i);
+    void setFirstLockedSource(int i, int firstDaw = -1);
     // The app also edits speakers and shows calibration and the coach bar.
     void setEditTarget(StageView::EditTarget t);
     void setSelectedSpeaker(int i);

@@ -1,5 +1,7 @@
 #include "Scene.h"
 
+#include <rk/binaural.hpp>
+
 namespace rkui {
 namespace {
 
@@ -49,6 +51,23 @@ rk::Vec3 getVec(const juce::var& o, const char* key, rk::Vec3 def) {
 
 } // namespace
 
+bool Scene::samePanning(const Scene& o) const {
+    if (layout.speakers.size() != o.layout.speakers.size() || autoPanner != o.autoPanner || panner != o.panner ||
+        layout.name != o.layout.name)
+        return false;
+    if (std::abs(dbapRolloffDb - o.dbapRolloffDb) > 1e-6f || std::abs(dbapBlur - o.dbapBlur) > 1e-6f ||
+        std::abs(dbapDirectivity - o.dbapDirectivity) > 1e-6f)
+        return false;
+    for (size_t m = 0; m < layout.speakers.size(); ++m) {
+        const auto& a = layout.speakers[m];
+        const auto& b = o.layout.speakers[m];
+        if (a.enabled != b.enabled || a.isSubwoofer != b.isSubwoofer || rk::length(a.position - b.position) > 1e-6f ||
+            rk::length(a.aim - b.aim) > 1e-6f)
+            return false;
+    }
+    return true;
+}
+
 rk::PannerKind Scene::effectivePanner() const {
     return autoPanner ? rk::analyze(layout).recommended : panner;
 }
@@ -62,6 +81,10 @@ rk::EngineConfig Scene::engineConfig() const {
     c.dbap.directivity = dbapDirectivity;
     c.ambiOrder = 3;
     c.outputMode = headphones ? rk::OutputMode::Headphones : rk::OutputMode::Speakers;
+    if (headphones && binaural) {
+        c.layout = rk::binauralVirtualLayout();
+        c.panner = rk::PannerKind::VBAP;
+    }
     return c;
 }
 
@@ -114,6 +137,122 @@ rk::SpeakerLayout layoutFromVar(const juce::var& v) {
     return l;
 }
 
+namespace {
+
+juce::var sourceToVar(const SourceInfo& x) {
+    auto* so = new juce::DynamicObject();
+    so->setProperty("name", x.name);
+    so->setProperty("input", x.inputChannel);
+    so->setProperty("test", static_cast<int>(x.test));
+    so->setProperty("position", vec(x.position));
+    so->setProperty("gainDb", x.gainDb);
+    so->setProperty("spread", x.spread);
+    so->setProperty("reverbSendDb", x.reverbSendDb);
+    so->setProperty("distanceAmount", x.distanceAmount);
+    so->setProperty("yaw", x.yawDeg);
+    so->setProperty("directivity", x.directivity);
+    so->setProperty("doppler", x.doppler);
+    so->setProperty("mute", x.mute);
+    so->setProperty("solo", x.solo);
+    so->setProperty("orbit", x.orbit);
+    so->setProperty("orbitSpeed", x.orbitSpeed);
+    return juce::var(so);
+}
+
+SourceInfo sourceFromVar(const juce::var& e, int index) {
+    SourceInfo x;
+    x.name = getS(e, "name", juce::String("Quelle") + " " + juce::String(index + 1));
+    x.inputChannel = getI(e, "input", 0, 0, 63);
+    x.test = static_cast<TestSignal>(getI(e, "test", 0, 0, 3));
+    x.position = getVec(e, "position", {0, 2, 0});
+    x.gainDb = getF(e, "gainDb", 0.0f, -80.0f, 12.0f);
+    x.spread = getF(e, "spread", 0.0f, 0.0f, 1.0f);
+    x.reverbSendDb = getF(e, "reverbSendDb", -12.0f, -80.0f, 6.0f);
+    x.distanceAmount = getF(e, "distanceAmount", 1.0f, 0.0f, 2.0f);
+    x.yawDeg = getF(e, "yaw", 0.0f, -180.0f, 180.0f);
+    x.directivity = getF(e, "directivity", 0.0f, 0.0f, 1.0f);
+    x.doppler = getB(e, "doppler", false);
+    x.mute = getB(e, "mute", false);
+    x.solo = getB(e, "solo", false);
+    x.orbit = getB(e, "orbit", false);
+    x.orbitSpeed = getF(e, "orbitSpeed", 0.1f, -2.0f, 2.0f);
+    return x;
+}
+
+juce::var reverbToVar(const rk::ReverbParams& p, float wetDb) {
+    auto* r = new juce::DynamicObject();
+    r->setProperty("decaySec", p.decaySec);
+    r->setProperty("dampingHz", p.dampingHz);
+    r->setProperty("preDelayMs", p.preDelayMs);
+    r->setProperty("size", p.size);
+    r->setProperty("lowRatio", p.lowRatio);
+    r->setProperty("earlyDb", p.earlyDb);
+    r->setProperty("clusterDb", p.clusterDb);
+    r->setProperty("tailDb", p.tailDb);
+    r->setProperty("wetDb", wetDb);
+    return juce::var(r);
+}
+
+void reverbFromVar(const juce::var& r, rk::ReverbParams& p, float& wetDb) {
+    p.decaySec = getF(r, "decaySec", 1.8f, 0.2f, 12.0f);
+    p.dampingHz = getF(r, "dampingHz", 6000.0f, 1000.0f, 20000.0f);
+    p.preDelayMs = getF(r, "preDelayMs", 15.0f, 0.0f, 250.0f);
+    p.size = getF(r, "size", 1.0f, 0.3f, 2.0f);
+    p.lowRatio = getF(r, "lowRatio", 1.0f, 0.3f, 3.0f);
+    p.earlyDb = getF(r, "earlyDb", -6.0f, -80.0f, 6.0f);
+    p.clusterDb = getF(r, "clusterDb", -9.0f, -80.0f, 6.0f);
+    p.tailDb = getF(r, "tailDb", 0.0f, -80.0f, 6.0f);
+    wetDb = getF(r, "wetDb", -6.0f, -80.0f, 6.0f);
+}
+
+juce::var snapshotToVar(const Snapshot& sn) {
+    auto* o = new juce::DynamicObject();
+    o->setProperty("name", sn.name);
+    o->setProperty("fadeSec", sn.fadeSec);
+    juce::Array<juce::var> src;
+    for (const auto& x : sn.sources) src.add(sourceToVar(x));
+    o->setProperty("sources", src);
+    o->setProperty("reverb", reverbToVar(sn.reverb, sn.reverbWetDb));
+    o->setProperty("masterGainDb", sn.masterGainDb);
+    juce::Array<juce::var> daw;
+    for (const auto& t : sn.daw) {
+        auto* d = new juce::DynamicObject();
+        d->setProperty("name", t.name);
+        d->setProperty("azimuth", t.azimuthDeg);
+        d->setProperty("elevation", t.elevationDeg);
+        d->setProperty("distance", t.distance);
+        daw.add(juce::var(d));
+    }
+    o->setProperty("daw", daw);
+    return juce::var(o);
+}
+
+Snapshot snapshotFromVar(const juce::var& v, int index) {
+    Snapshot sn;
+    sn.name = getS(v, "name", juce::String("Szene") + " " + juce::String(index + 1));
+    sn.fadeSec = getF(v, "fadeSec", 2.0f, 0.0f, 60.0f);
+    if (const auto* a = v.getProperty("sources", juce::var()).getArray())
+        for (const auto& e : *a) {
+            if (static_cast<int>(sn.sources.size()) >= kMaxSceneSources) break;
+            if (e.isObject()) sn.sources.push_back(sourceFromVar(e, static_cast<int>(sn.sources.size())));
+        }
+    reverbFromVar(v.getProperty("reverb", juce::var()), sn.reverb, sn.reverbWetDb);
+    sn.masterGainDb = getF(v, "masterGainDb", 0.0f, -80.0f, 12.0f);
+    if (const auto* a = v.getProperty("daw", juce::var()).getArray())
+        for (const auto& e : *a) {
+            if (static_cast<int>(sn.daw.size()) >= 32 || !e.isObject()) continue;
+            DawTrackState t;
+            t.name = getS(e, "name", {});
+            t.azimuthDeg = getF(e, "azimuth", 0.0f, -180.0f, 180.0f);
+            t.elevationDeg = getF(e, "elevation", 0.0f, -90.0f, 90.0f);
+            t.distance = getF(e, "distance", 2.0f, 0.0f, 50.0f);
+            if (t.name.isNotEmpty()) sn.daw.push_back(t);
+        }
+    return sn;
+}
+
+} // namespace
+
 juce::var sceneToVar(const Scene& s) {
     auto* o = new juce::DynamicObject();
     o->setProperty("format", "raumklang");
@@ -135,38 +274,17 @@ juce::var sceneToVar(const Scene& s) {
     o->setProperty("dbapRolloffDb", s.dbapRolloffDb);
     o->setProperty("dbapBlur", s.dbapBlur);
     o->setProperty("dbapDirectivity", s.dbapDirectivity);
-    auto* r = new juce::DynamicObject();
-    r->setProperty("decaySec", s.reverb.decaySec);
-    r->setProperty("dampingHz", s.reverb.dampingHz);
-    r->setProperty("preDelayMs", s.reverb.preDelayMs);
-    r->setProperty("size", s.reverb.size);
-    r->setProperty("lowRatio", s.reverb.lowRatio);
-    r->setProperty("earlyDb", s.reverb.earlyDb);
-    r->setProperty("clusterDb", s.reverb.clusterDb);
-    r->setProperty("tailDb", s.reverb.tailDb);
-    r->setProperty("wetDb", s.reverbWetDb);
-    o->setProperty("reverb", juce::var(r));
+    o->setProperty("reverb", reverbToVar(s.reverb, s.reverbWetDb));
     o->setProperty("masterGainDb", s.masterGainDb);
     o->setProperty("limiter", s.limiter);
     o->setProperty("headphones", s.headphones);
+    o->setProperty("binaural", s.binaural);
     juce::Array<juce::var> src;
-    for (const auto& x : s.sources) {
-        auto* so = new juce::DynamicObject();
-        so->setProperty("name", x.name);
-        so->setProperty("input", x.inputChannel);
-        so->setProperty("test", static_cast<int>(x.test));
-        so->setProperty("position", vec(x.position));
-        so->setProperty("gainDb", x.gainDb);
-        so->setProperty("spread", x.spread);
-        so->setProperty("reverbSendDb", x.reverbSendDb);
-        so->setProperty("distanceAmount", x.distanceAmount);
-        so->setProperty("mute", x.mute);
-        so->setProperty("solo", x.solo);
-        so->setProperty("orbit", x.orbit);
-        so->setProperty("orbitSpeed", x.orbitSpeed);
-        src.add(juce::var(so));
-    }
+    for (const auto& x : s.sources) src.add(sourceToVar(x));
     o->setProperty("sources", src);
+    juce::Array<juce::var> snaps;
+    for (const auto& sn : s.snapshots) snaps.add(snapshotToVar(sn));
+    o->setProperty("snapshots", snaps);
     return juce::var(o);
 }
 
@@ -191,37 +309,22 @@ Scene sceneFromVar(const juce::var& v) {
     s.dbapRolloffDb = getF(v, "dbapRolloffDb", 6.0f, 1.0f, 18.0f);
     s.dbapBlur = getF(v, "dbapBlur", 0.3f, 0.01f, 50.0f);
     s.dbapDirectivity = getF(v, "dbapDirectivity", 0.7f, 0.0f, 1.0f);
-    const juce::var r = v.getProperty("reverb", juce::var());
-    s.reverb.decaySec = getF(r, "decaySec", 1.8f, 0.2f, 12.0f);
-    s.reverb.dampingHz = getF(r, "dampingHz", 6000.0f, 1000.0f, 20000.0f);
-    s.reverb.preDelayMs = getF(r, "preDelayMs", 15.0f, 0.0f, 250.0f);
-    s.reverb.size = getF(r, "size", 1.0f, 0.3f, 2.0f);
-    s.reverb.lowRatio = getF(r, "lowRatio", 1.0f, 0.3f, 3.0f);
-    s.reverb.earlyDb = getF(r, "earlyDb", -6.0f, -80.0f, 6.0f);
-    s.reverb.clusterDb = getF(r, "clusterDb", -9.0f, -80.0f, 6.0f);
-    s.reverb.tailDb = getF(r, "tailDb", 0.0f, -80.0f, 6.0f);
-    s.reverbWetDb = getF(r, "wetDb", -6.0f, -80.0f, 6.0f);
+    reverbFromVar(v.getProperty("reverb", juce::var()), s.reverb, s.reverbWetDb);
     s.masterGainDb = getF(v, "masterGainDb", 0.0f, -80.0f, 12.0f);
     s.limiter = getB(v, "limiter", true);
     s.headphones = getB(v, "headphones", false);
+    s.binaural = getB(v, "binaural", false);
     if (const auto* a = v.getProperty("sources", juce::var()).getArray()) {
         for (const auto& e : *a) {
             if (static_cast<int>(s.sources.size()) >= kMaxSceneSources) break;
             if (!e.isObject()) continue;
-            SourceInfo x;
-            x.name = getS(e, "name", juce::String("Quelle") + " " + juce::String(static_cast<int>(s.sources.size()) + 1));
-            x.inputChannel = getI(e, "input", 0, 0, 63);
-            x.test = static_cast<TestSignal>(getI(e, "test", 0, 0, 3));
-            x.position = getVec(e, "position", {0, 2, 0});
-            x.gainDb = getF(e, "gainDb", 0.0f, -80.0f, 12.0f);
-            x.spread = getF(e, "spread", 0.0f, 0.0f, 1.0f);
-            x.reverbSendDb = getF(e, "reverbSendDb", -12.0f, -80.0f, 6.0f);
-            x.distanceAmount = getF(e, "distanceAmount", 1.0f, 0.0f, 2.0f);
-            x.mute = getB(e, "mute", false);
-            x.solo = getB(e, "solo", false);
-            x.orbit = getB(e, "orbit", false);
-            x.orbitSpeed = getF(e, "orbitSpeed", 0.1f, -2.0f, 2.0f);
-            s.sources.push_back(x);
+            s.sources.push_back(sourceFromVar(e, static_cast<int>(s.sources.size())));
+        }
+    }
+    if (const auto* a = v.getProperty("snapshots", juce::var()).getArray()) {
+        for (const auto& e : *a) {
+            if (static_cast<int>(s.snapshots.size()) >= kMaxSnapshots) break;
+            if (e.isObject()) s.snapshots.push_back(snapshotFromVar(e, static_cast<int>(s.snapshots.size())));
         }
     }
     return s;

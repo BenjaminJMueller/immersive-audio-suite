@@ -45,6 +45,8 @@ private:
 
     rkui::Scene shown_;
     juce::String shownSetupJson_;
+    juce::String shownSourcesKey_;
+    int setupCountdown_ = 0;
     rk::Panner panner_;
     std::vector<float> levels_;
     float inputLevel_ = 0.0f;

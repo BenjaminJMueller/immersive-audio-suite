@@ -52,10 +52,10 @@ juce::String hzText(float hz) {
 const std::vector<RoomPreset>& roomPresets() {
     static const std::vector<RoomPreset> list = {
         {"Studio", preset(0.5f, 9000.0f, 4.0f, 0.5f, 1.1f, -4.0f, -10.0f, -2.0f), -10.0f},
-        {"Kammer", preset(1.1f, 7000.0f, 8.0f, 0.7f, 1.2f, -5.0f, -9.0f, -1.0f), -8.0f},
+        {"Chamber", preset(1.1f, 7000.0f, 8.0f, 0.7f, 1.2f, -5.0f, -9.0f, -1.0f), -8.0f},
         {"Saal", preset(2.4f, 5500.0f, 24.0f, 1.2f, 1.3f, -6.0f, -9.0f, -4.0f), -6.0f},
         {"Kirche", preset(4.8f, 4000.0f, 40.0f, 1.9f, 1.4f, -9.0f, -8.0f, 0.0f), -5.0f},
-        {"Platte", preset(1.8f, 12000.0f, 0.0f, 0.45f, 0.8f, -80.0f, -12.0f, 0.0f), -8.0f},
+        {"Plate", preset(1.8f, 12000.0f, 0.0f, 0.45f, 0.8f, -80.0f, -12.0f, 0.0f), -8.0f},
     };
     return list;
 }
@@ -275,7 +275,7 @@ void ReverbPanel::paintCurve(juce::Graphics& g) {
         g.drawEllipse(r.reduced(1.0f), 2.0f);
         g.setFont(uiFont(12.5f, active));
         g.setColour(p.text);
-        const juce::String label = names[b] + juce::String::fromUTF8(" \xc2\xb7 ") + secText(reverbBandRt(params_, b));
+        const juce::String label = names[b] + ": " + secText(reverbBandRt(params_, b));
         g.drawText(label, juce::Rectangle<float>(h.x - 70.0f, h.y - 32.0f, 140.0f, 16.0f), juce::Justification::centred);
     }
 }

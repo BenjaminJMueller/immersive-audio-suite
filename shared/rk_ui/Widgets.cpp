@@ -428,14 +428,35 @@ void SidebarList::paint(juce::Graphics& g) {
         }
         auto badge = juce::Rectangle<float>(r.getX() + 10, r.getCentreY() - 10, 20, 20);
         drawNumberBadge(g, badge, row.number, row.dim ? row.colour.withSaturation(0.0f).withAlpha(0.6f) : row.colour);
-        auto text = r.withTrimmedLeft(42).withTrimmedRight(row.trailing.isNotEmpty() || row.check ? 64 : 8);
+        const float rightPad = row.toggles ? (row.trailing.isNotEmpty() ? 74.0f : 58.0f) : (row.trailing.isNotEmpty() || row.check ? 64.0f : 8.0f);
+        auto text = r.withTrimmedLeft(42).withTrimmedRight(rightPad);
         g.setColour(row.dim ? p.text3 : p.text);
         g.setFont(uiFont(13.5f));
         g.drawText(row.title, text.withHeight(r.getHeight() * 0.55f).translated(0, 3), juce::Justification::centredLeft, true);
         g.setColour(p.text3);
         g.setFont(uiFont(11.5f));
         g.drawText(row.subtitle, text.withTrimmedTop(r.getHeight() * 0.5f).withTrimmedBottom(3), juce::Justification::centredLeft, true);
-        if (row.trailing.isNotEmpty()) {
+        if (row.toggles) {
+            for (int w = 0; w < 2; ++w) {
+                const bool on = w == 0 ? row.mute : row.solo;
+                const auto b = toggleRect(r, w);
+                const juce::Colour c = w == 0 ? p.warn : p.accent;
+                g.setColour(on ? c : p.field);
+                g.fillRoundedRectangle(b, 4.0f);
+                if (!on) {
+                    g.setColour(p.lineStrong);
+                    g.drawRoundedRectangle(b.reduced(0.5f), 4.0f, 1.0f);
+                }
+                g.setColour(on ? p.onAccent : p.text2);
+                g.setFont(uiFont(11.0f, true));
+                g.drawText(w == 0 ? "M" : "S", b, juce::Justification::centred, false);
+            }
+            if (row.trailing.isNotEmpty()) {
+                g.setColour(p.text2);
+                g.setFont(uiFont(12.0f));
+                g.drawText(row.trailing, juce::Rectangle<float>(toggleRect(r, 0).getX() - 18, r.getY(), 16, r.getHeight()), juce::Justification::centred, false);
+            }
+        } else if (row.trailing.isNotEmpty()) {
             g.setColour(p.text2);
             g.setFont(uiFont(12.0f));
             g.drawText(row.trailing, r.withTrimmedRight(10).withLeft(r.getRight() - 70), juce::Justification::centredRight, true);
@@ -457,9 +478,20 @@ void SidebarList::paint(juce::Graphics& g) {
     }
 }
 
+juce::Rectangle<float> SidebarList::toggleRect(juce::Rectangle<float> row, int which) {
+    return {row.getRight() - 52.0f + (float)which * 24.0f, row.getCentreY() - 10.0f, 20.0f, 20.0f};
+}
+
 void SidebarList::mouseUp(const juce::MouseEvent& e) {
     for (const auto& it : layoutItems())
         if (it.bounds.contains(e.getPosition())) {
+            const Row& row = rows_[(size_t)it.row];
+            if (row.toggles)
+                for (int w = 0; w < 2; ++w)
+                    if (toggleRect(it.bounds.toFloat(), w).expanded(2.0f).contains(e.position)) {
+                        if (onToggle) onToggle(it.row, w);
+                        return;
+                    }
             selected_ = it.row;
             repaint();
             if (onSelect) onSelect(it.row);
@@ -476,6 +508,102 @@ void SidebarList::mouseMove(const juce::MouseEvent& e) {
 
 void SidebarList::mouseExit(const juce::MouseEvent&) {
     if (hover_ != -1) { hover_ = -1; repaint(); }
+}
+
+// ---------------------------------------------------------------------------
+OutputStrip::OutputStrip() { setRepaintsOnMouseActivity(true); }
+
+void OutputStrip::setGainDb(float db) {
+    if (dragging_ || std::abs(db - gainDb_) < 1e-4f) return;
+    gainDb_ = db;
+    repaint();
+}
+
+void OutputStrip::setLevel(float unit) {
+    unit = juce::jlimit(0.0f, 1.0f, unit);
+    if (std::abs(unit - level_) < 0.01f) return;
+    level_ = unit;
+    repaint();
+}
+
+juce::Rectangle<float> OutputStrip::track() const {
+    return getLocalBounds().toFloat().reduced(16.0f, 0.0f).withTop(30.0f).withHeight(16.0f);
+}
+
+float OutputStrip::unitForDb(float db) const { return juce::jmap(juce::jlimit(kMinDb, kMaxDb, db), kMinDb, kMaxDb, 0.0f, 1.0f); }
+
+float OutputStrip::dbForX(float x) const {
+    const auto t = track();
+    const float db = juce::jmap(juce::jlimit(t.getX(), t.getRight(), x), t.getX(), t.getRight(), kMinDb, kMaxDb);
+    return std::round(db * 2.0f) / 2.0f; // half-dB steps
+}
+
+void OutputStrip::paint(juce::Graphics& g) {
+    const Palette& p = palette();
+    g.setColour(p.line);
+    g.fillRect(0.0f, 0.0f, (float)getWidth(), 1.0f);
+    g.setColour(p.text);
+    g.setFont(uiFont(13.0f, true));
+    g.drawText(tr("Master"), 16, 8, getWidth() / 2, 18, juce::Justification::centredLeft, false);
+    g.setColour(p.text2);
+    g.setFont(uiFont(12.0f));
+    const juce::String v = gainDb_ <= kMinDb + 0.01f ? juce::String::fromUTF8("\xe2\x88\x92\xe2\x88\x9e") : num(gainDb_, 1) + " dB";
+    g.drawText(v, getWidth() / 2, 8, getWidth() / 2 - 16, 18, juce::Justification::centredRight, false);
+
+    const auto t = track();
+    const float cy = t.getCentreY();
+    // Fader track with the 0 dB mark.
+    g.setColour(p.track);
+    g.fillRoundedRectangle(t.getX(), cy - 2.0f, t.getWidth(), 4.0f, 2.0f);
+    const float x = t.getX() + t.getWidth() * unitForDb(gainDb_);
+    g.setColour(p.accent);
+    g.fillRoundedRectangle(t.getX(), cy - 2.0f, x - t.getX(), 4.0f, 2.0f);
+    const float zx = t.getX() + t.getWidth() * unitForDb(0.0f);
+    g.setColour(p.text3);
+    g.fillRect(zx - 0.5f, cy + 4.0f, 1.0f, 4.0f);
+    g.setColour(p.knob);
+    g.fillEllipse(x - 7.0f, cy - 7.0f, 14.0f, 14.0f);
+    g.setColour(p.lineStrong);
+    g.drawEllipse(x - 7.0f, cy - 7.0f, 14.0f, 14.0f, 0.75f);
+    // Output meter: the loudest output channel.
+    const auto m = juce::Rectangle<float>(t.getX(), t.getBottom() + 6.0f, t.getWidth(), 4.0f);
+    g.setColour(p.select);
+    g.fillRoundedRectangle(m, 2.0f);
+    if (level_ > 0.001f) {
+        g.setColour(level_ > 0.95f ? p.bad : (level_ > 0.8f ? p.warn : p.ok));
+        g.fillRoundedRectangle(m.withWidth(m.getWidth() * level_), 2.0f);
+    }
+}
+
+void OutputStrip::mouseDown(const juce::MouseEvent& e) {
+    if (!track().expanded(0.0f, 8.0f).contains(e.position)) return;
+    dragging_ = true;
+    gainDb_ = dbForX(e.position.x);
+    if (onChange) onChange(gainDb_);
+    repaint();
+}
+
+void OutputStrip::mouseDrag(const juce::MouseEvent& e) {
+    if (!dragging_) return;
+    const float db = dbForX(e.position.x);
+    if (std::abs(db - gainDb_) < 1e-4f) return;
+    gainDb_ = db;
+    if (onChange) onChange(gainDb_);
+    repaint();
+}
+
+void OutputStrip::mouseUp(const juce::MouseEvent&) {
+    if (!dragging_) return;
+    dragging_ = false;
+    if (onCommit) onCommit();
+}
+
+void OutputStrip::mouseDoubleClick(const juce::MouseEvent&) {
+    dragging_ = false;
+    gainDb_ = 0.0f;
+    if (onChange) onChange(0.0f);
+    if (onCommit) onCommit();
+    repaint();
 }
 
 // ---------------------------------------------------------------------------

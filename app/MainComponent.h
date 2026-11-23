@@ -12,6 +12,7 @@
 #include <rk_ui/Pages.h>
 #include <rk_ui/ReverbPanel.h>
 #include <rk_ui/RoomView.h>
+#include <rk_ui/Snapshots.h>
 #include <rk_ui/Strings.h>
 #include <rk_ui/Visuals.h>
 #include <rk_ui/Widgets.h>
@@ -66,6 +67,10 @@ private:
     int dawTrackLevelIndex(int track) const;
     void selectSource(int i);
     void selectRoomPreset(int i);
+    /// Moves DAW track `j` (index into dawTracks_): sent to its plugin, shown here at once.
+    void moveDawTrack(int j, float azimuthDeg, float elevationDeg, float distance);
+    struct DawMove { rk::Vec3 position; double until = 0.0; };
+    std::array<DawMove, rk::bridge::kSlots> dawMoves_{}; // shown until the plugin has caught up
     void selectSpeaker(int i);
     void addSource();
     void startDemo();
@@ -117,6 +122,20 @@ private:
     juce::Viewport sidebarView_;
     rkui::RoomView stage_;
     rkui::ReverbPanel reverbPanel_; // replaces the room view in step 3
+    rkui::SnapshotBar snapBar_;      // under the room view
+    rkui::OutputStrip outputStrip_;  // pinned at the bottom of the sidebar
+
+    // Snapshots: storing, recalling with a fade, and the menu of one snapshot.
+    void storeSnapshot();
+    void recallSnapshot(int i);
+    void snapshotMenu(int i);
+    std::vector<rkui::DawTrackState> currentDawStates() const;
+    void stepSnapshotFade(double now);
+    int activeSnapshot_ = -1;
+    bool fading_ = false;
+    double fadeStart_ = 0.0, fadeMs_ = 0.0;
+    rkui::Scene fadeFrom_;
+    std::vector<rkui::DawTrackState> fadeDawFrom_;
     rkui::FormPage inspector_;
     std::unique_ptr<IntroOverlay> intro_;
     juce::String deviceError_;
@@ -124,10 +143,14 @@ private:
     juce::String dawKey_;
     double lastDawScan_ = 0.0;
     int dawPageTrack_ = -1;                       // DAW track the inspector shows, -1 none
+    std::array<rkui::ParamSlider*, 3> posSliders_{}; // azimuth, elevation, distance of the selected source (owned by inspector_)
     std::vector<rkui::ParamSlider*> dawSliders_;  // owned by inspector_, valid while dawPageTrack_ >= 0
     rkui::StatusCard* dawCard_ = nullptr;
     rkui::SpectrumAnalyzer analyzer_;
     juce::String statusText_;
+    juce::String dawStageKey_;   // positions of the DAW tracks last drawn
+    juce::String deviceSummary_; // sample rate and latency, under the project name
+    double deviceSummaryAt_ = 0.0;
     std::array<bool, rk::kMaxSources> sourceHasSignal_{};
     std::array<double, rk::kMaxSources> signalSeen_{};
     juce::TooltipWindow tooltips_{this, 600};

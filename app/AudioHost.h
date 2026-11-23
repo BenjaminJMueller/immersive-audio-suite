@@ -48,6 +48,9 @@ public:
     int numDeviceOutputs() const noexcept { return numOutputs_.load(); }
     int numDeviceInputs() const noexcept { return numInputs_.load(); }
     double sampleRate() const noexcept { return sampleRate_.load(); }
+    /// Message thread: sample rate and output latency of the open device, like "48 kHz, 10,7 ms latency".
+    /// Empty when no device is open.
+    juce::String deviceSummary();
     juce::String takeError();
 
     /// Plugin bridge (message thread): announce the app and list the connected DAW tracks.
@@ -56,6 +59,10 @@ public:
     uint32_t takeBridgeDropouts() noexcept { return receiver_.takeDropouts(); }
     /// Latest parameters of a DAW track, as the audio thread applied them.
     rk::bridge::TrackParams bridgeParams(int slot) const noexcept;
+    /// The user dragged a DAW track in the app: the track's plugin takes the new position.
+    bool requestBridgeMove(int slot, float azimuthDeg, float elevationDeg, float distance) noexcept {
+        return receiver_.requestMove(slot, azimuthDeg, elevationDeg, distance);
+    }
     /// Newest `n` (<= kScopeSize) samples of the summed output, for the visualisation (any thread).
     static constexpr int kScopeSize = 4096;
     void readScope(float* dst, int n) const noexcept;

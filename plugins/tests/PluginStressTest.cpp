@@ -144,6 +144,14 @@ void bridgeEndToEnd() {
     EXPECT(tracks.size() == 1 && tracks[0].sending && tracks[0].channels == 1);
     EXPECT(src.linkStatus().sending);
 
+    // The user drags the track in the app: the plugin's own parameters follow, so the
+    // DAW sees a normal parameter change (and records it as automation).
+    EXPECT(app.requestMove(st.slot, -75.0f, 20.0f, 6.5f));
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(200);
+    EXPECT(std::abs(src.params.getRawParameterValue("azimuth")->load() - -75.0f) < 0.2f);
+    EXPECT(std::abs(src.params.getRawParameterValue("elevation")->load() - 20.0f) < 0.2f);
+    EXPECT(std::abs(src.params.getRawParameterValue("distance")->load() - 6.5f) < 0.05f);
+
     // Destination "In der DAW": the plugin renders the speakers itself again.
     auto* route = src.params.getParameter("route");
     route->setValueNotifyingHost(route->convertTo0to1(2.0f));

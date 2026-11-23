@@ -31,7 +31,7 @@ class Engine;
 namespace rk::bridge {
 
 inline constexpr uint32_t kMagic = 0x31424b52u; // "RKB1"
-inline constexpr uint32_t kVersion = 1;
+inline constexpr uint32_t kVersion = 2; // 2: the app can move a track
 inline constexpr int kSlots = 32;
 inline constexpr int kMaxChannels = 2;
 inline constexpr int kRingFrames = 16384; // power of two, about 340 ms at 48 kHz
@@ -124,11 +124,16 @@ public:
     void write(const float* const* channels, int numChannels, int numFrames, double sampleRate,
                const TrackParams& params) noexcept;
 
+    /// Normal thread: true once per new position the user dragged the track to in the app.
+    /// The plugin applies it to its own parameters, so the DAW can record it as automation.
+    bool takeMove(float& azimuthDeg, float& elevationDeg, float& distance) noexcept;
+
 private:
     SharedMemory mem_;
     Shared* shared_ = nullptr;
     std::atomic<int> slot_{-1};
     uint64_t token_ = 0;
+    uint32_t moveSeen_ = 0;
 };
 
 /// What the app knows about one slot (UI thread).
@@ -153,6 +158,8 @@ public:
     void heartbeat(double sampleRate);
     /// Normal thread: the slots that currently belong to a plugin.
     std::vector<TrackInfo> scan() const;
+    /// Normal thread: asks the plugin in `slot` to move its track (the user dragged it in the app).
+    bool requestMove(int slot, float azimuthDeg, float elevationDeg, float distance) noexcept;
 
     /// Audio thread, once per callback before read(): resets state if the rate changed.
     void beginBlock(double sampleRate) noexcept;

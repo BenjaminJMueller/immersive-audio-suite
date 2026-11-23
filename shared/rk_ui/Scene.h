@@ -21,11 +21,35 @@ struct SourceInfo {
     float spread = 0.0f;
     float reverbSendDb = -12.0f;
     float distanceAmount = 1.0f;
+    float yawDeg = 0.0f;            // where it faces: 0 = towards the listener
+    float directivity = 0.0f;       // 0 = all directions alike, 1 = strongly directed
+    bool doppler = false;
     bool mute = false;
     bool solo = false;
     bool orbit = false;
     float orbitSpeed = 0.1f;        // revolutions per second
 };
+
+/// Position of a DAW track as stored in a snapshot (tracks are matched by name).
+struct DawTrackState {
+    juce::String name;
+    float azimuthDeg = 0.0f, elevationDeg = 0.0f, distance = 2.0f;
+};
+
+/// A stored state of the mix: every source, the room and the master level, plus the
+/// positions of the DAW tracks. Recalling it fades there over `fadeSec`. The speaker
+/// layout is not part of it.
+struct Snapshot {
+    juce::String name;
+    float fadeSec = 2.0f;
+    std::vector<SourceInfo> sources;
+    rk::ReverbParams reverb;
+    float reverbWetDb = -6.0f;
+    float masterGainDb = 0.0f;
+    std::vector<DawTrackState> daw;
+};
+
+constexpr int kMaxSnapshots = 64;
 
 struct Scene {
     juce::String name;              // empty = untitled
@@ -49,8 +73,15 @@ struct Scene {
     float masterGainDb = 0.0f;
     bool limiter = true;
     bool headphones = false;
+    /// With headphones: true renders the sources binaurally around the head, independent of
+    /// the speaker setup; false lets you listen to the speaker setup itself.
+    bool binaural = false;
     std::vector<SourceInfo> sources;
+    std::vector<Snapshot> snapshots;
 
+    /// True when the speakers and panner settings equal those of `o` (what the views' panners
+    /// are built from). Cheap; lets views skip rebuilding when only sources moved.
+    bool samePanning(const Scene& o) const;
     /// The panner actually used (resolves "automatic").
     rk::PannerKind effectivePanner() const;
     rk::EngineConfig engineConfig() const;

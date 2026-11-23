@@ -66,7 +66,7 @@ struct ProposedSpeaker {
     bool hasDelay = false;
     float delayMs = 0.0f;
     float uncertainty = -1.0f; // metres, < 0 unknown
-    juce::String note;       // short, German, e.g. "Nicht gehört"
+    juce::String note;       // short, German, e.g. "Nicht erkannt"
     bool warn = false;
 };
 
