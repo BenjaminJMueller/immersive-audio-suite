@@ -131,9 +131,6 @@ void ReturnEditor::refreshRoom() {
     }
     room_.setSourceStyle({}, 1 << 30, true);
     room_.setScene(scene_);
-    std::vector<float> lv(scene_.sources.size(), 0.0f);
-    for (size_t i = 0; i < lv.size(); ++i) lv[i] = scene_.sources[i].mute ? 0.0f : 0.5f;
-    room_.setSourceLevels(lv);
 }
 
 void ReturnEditor::refreshStatus() {
@@ -199,6 +196,13 @@ void ReturnEditor::refreshStatus() {
         if (m < spk.size()) spk[m] = levels_[c];
     }
     room_.setSpeakerLevels(spk);
+    // The tracks only animate while audio really comes back: a plugin that sends silence
+    // (DAW stopped) shows nothing. Each track gets the loudest returned level.
+    float loudest = 0.0f;
+    for (float v : levels_) loudest = std::max(loudest, v);
+    std::vector<float> lv(scene_.sources.size(), 0.0f);
+    for (size_t i = 0; i < lv.size(); ++i) lv[i] = scene_.sources[i].mute || !st.receiving ? 0.0f : loudest;
+    room_.setSourceLevels(lv);
 }
 
 void ReturnEditor::timerCallback() {

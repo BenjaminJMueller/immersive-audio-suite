@@ -193,7 +193,7 @@ private:
     double deviceSummaryAt_ = 0.0;
     std::array<bool, rk::kMaxSources> sourceHasSignal_{};
     std::array<double, rk::kMaxSources> signalSeen_{};
-    juce::TooltipWindow tooltips_{this, 600};
+    rkui::RoundTooltipWindow tooltips_{this, 600};
 
     bool calibrating_ = false;
     bool phoneMode_ = false;

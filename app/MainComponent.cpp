@@ -2218,7 +2218,7 @@ void MainComponent::updateCoach() {
             stage_.setCoach("!", tr("Bitte prüfen"), calib_->message());
         } else if (calib_ != nullptr && calib_->nextPoint() >= 0) {
             const int j = calib_->nextPoint();
-            stage_.setCoach("M" + juce::String(j + 1), tr("Mikrofon auf Messpunkt") + " " + juce::String(j + 1) + " " + tr("stellen"), calib_->describePoint(j));
+            stage_.setCoach("M" + juce::String(j + 1), (tr("Mikrofon auf Messpunkt") + " " + juce::String(j + 1) + " " + tr("stellen")).trimEnd(), calib_->describePoint(j));
         } else {
             stage_.setCoach({}, tr("Alle Punkte gemessen"), tr("Rechts das Ergebnis zeigen."), true);
         }

@@ -47,7 +47,7 @@ private:
     rk::bridge::Receiver tracks_; // to show where the tracks are (read only)
     int roomCountdown_ = 0;
     std::vector<std::unique_ptr<ParamBinding>> bindings_;
-    juce::TooltipWindow tooltips_{this, 600};
+    rkui::RoundTooltipWindow tooltips_{this, 600};
     std::vector<float> levels_;
     uint32_t recentDropouts_ = 0;
     int dropoutHold_ = 0;
