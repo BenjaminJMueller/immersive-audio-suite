@@ -274,6 +274,16 @@ void View3D::paint(juce::Graphics& g) {
     }
 
     std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.depth > b.depth; });
+    // Reverb on every main speaker, as in the plan views.
+    if (reverbLevel_ > 0.02f) {
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        for (int m = 0; m < nSpk; ++m) {
+            const auto& sp = scene_.layout.speakers[(size_t)m];
+            if (!sp.enabled || sp.isSubwoofer) continue;
+            drawSoundCloud(particles_, project(sp.position).p, reverbColour(), 0.6f * reverbLevel_, 8.0f, 26.0f, (uint32_t)(90001 + m * 37), now, 0.8f);
+        }
+        animating_ = true;
+    }
     particles_.draw(g, getLocalBounds()); // under speakers and sources
     for (auto& it : items) it.draw();
     if (animating_ != isTimerRunning()) {

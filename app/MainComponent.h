@@ -152,6 +152,8 @@ private:
     rkui::RoomView stage_;
     rkui::ReverbPanel reverbPanel_; // replaces the room view in step 3
     rkui::SnapshotBar snapBar_;      // under the room view
+    float reverbEnv_ = 0.0f;       // reverb level for the views, rings out with RT60
+    double reverbEnvTime_ = 0.0;
     rkui::ReductionMeter* limiterMeter_ = nullptr; // on the output page while it is shown
     rkui::OutputStrip outputStrip_;  // pinned at the bottom of the sidebar
 

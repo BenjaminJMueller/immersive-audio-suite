@@ -518,8 +518,14 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
         const float wetTarget = dbToGain(safeClamp(reverbWetDb.load(std::memory_order_relaxed), -80.0f, 6.0f, -6.0f));
         const float step = (wetTarget - wetCur_) * invN;
         float w = wetCur_;
-        for (int i = 0; i < n; ++i) { w += step; reverbBus_[static_cast<size_t>(i)] *= w; }
+        double energy = 0.0;
+        for (int i = 0; i < n; ++i) {
+            w += step;
+            reverbBus_[static_cast<size_t>(i)] *= w;
+            energy += static_cast<double>(reverbBus_[static_cast<size_t>(i)]) * reverbBus_[static_cast<size_t>(i)];
+        }
         wetCur_ = wetTarget;
+        if (!rt->mains.empty()) storeMax(reverbIn_, static_cast<float>(std::sqrt(energy / n)));
         float* mainPtr[kMaxSpeakers];
         int numMain = 0;
         for (int m : rt->mains) mainPtr[numMain++] = mixPtr_[static_cast<size_t>(m)];

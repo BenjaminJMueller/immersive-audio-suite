@@ -96,6 +96,9 @@ public:
 
     // ---- metering (read by the UI, reset on read) --------------------------
     float takeOutputPeak(int channel) noexcept;
+    /// RMS of what goes into the reverb (all sends, after the wet level) since the last call.
+    /// The UI lets it ring out with the room's reverb time to show the tail.
+    float takeReverbInput() noexcept { return reverbIn_.exchange(0.0f, std::memory_order_relaxed); }
     /// Largest limiter gain reduction on output `channel` since the last call, in dB (>= 0).
     float takeLimiterReduction(int channel) noexcept;
     float takeSourcePeak(int source) noexcept;
@@ -186,6 +189,7 @@ private:
 
     std::array<std::atomic<float>, kMaxSpeakers> outPeak_;
     std::array<std::atomic<float>, kMaxSpeakers> limiterGr_; // 1 - smallest gain since last take
+    std::atomic<float> reverbIn_{0.0f};
     std::array<std::atomic<float>, kMaxSources> srcPeak_;
     std::atomic<uint32_t> limiterEvents_{0};
     std::atomic<uint32_t> invalidInputs_{0};

@@ -29,6 +29,13 @@ void StageView::setSourceLevels(const std::vector<float>& l) {
     repaint();
 }
 
+void StageView::setReverbLevel(float unit) {
+    unit = std::isfinite(unit) ? juce::jlimit(0.0f, 1.0f, unit) : 0.0f;
+    if (std::abs(unit - reverbLevel_) < 0.005f) return;
+    reverbLevel_ = unit;
+    repaint();
+}
+
 void StageView::setSourceStyle(std::vector<juce::Colour> colours, int dimFrom, bool names) {
     sourceColours_ = std::move(colours);
     dimFrom_ = dimFrom;
@@ -190,6 +197,7 @@ void StageView::paintLegend(juce::Graphics& g) {
         items.push_back({1, sourceColour(0), tracks ? tr("Spuren") : (named ? scene_.sources[0].name : tr("Quelle"))});
         if (named && (int)scene_.sources.size() > dimFrom_) items.push_back({1, p.text3, tr("andere Spuren")});
         items.push_back({2, sourceColour(0), tr("Signalverteilung")});
+        if (scene_.reverbWetDb > -79.0f) items.push_back({2, reverbColour(), tr("Hall")});
     }
     const juce::Font f = uiFont(11.5f);
     auto tw = [&f](const juce::String& t) { return juce::GlyphArrangement::getStringWidth(f, t); };
@@ -384,6 +392,16 @@ void StageView::paint(juce::Graphics& g) {
             particles += drawSoundParticles(particles_, a, b, col, energy, (uint32_t)(s * 131 + m + 1), now, width);
             // Where the energy lands: a small cloud around the speaker.
             particles += drawSoundCloud(particles_, b, col, energy, 12.0f, 18.0f, (uint32_t)(s * 131 + m + 5000), now);
+        }
+    }
+    // Reverb: the engine plays it on every main speaker (each a different, decorrelated
+    // mix), so a soft cloud in the reverb colour around each of them, fading with the tail.
+    if (reverbLevel_ > 0.02f) {
+        const float energy = 0.6f * reverbLevel_;
+        for (int m = 0; m < nSpk; ++m) {
+            const auto& sp = scene_.layout.speakers[(size_t)m];
+            if (!sp.enabled || sp.isSubwoofer) continue;
+            particles += drawSoundCloud(particles_, toScreen(sp.position), reverbColour(), energy, 10.0f, 34.0f, (uint32_t)(90001 + m * 37), now, 0.85f);
         }
     }
     particles_.draw(g, getLocalBounds());

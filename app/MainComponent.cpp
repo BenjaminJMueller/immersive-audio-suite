@@ -1862,6 +1862,16 @@ void MainComponent::timerCallback() {
         if (src[(size_t)s] > 0.05f) signalSeen_[(size_t)s] = now;
         sourceHasSignal_[(size_t)s] = now - signalSeen_[(size_t)s] < 2000.0;
     }
+    {
+        // Reverb in the views: what goes into the reverb, ringing out with the room's mid
+        // reverb time (-60 dB after RT60), like the tail itself.
+        const double dtSec = reverbEnvTime_ > 0.0 ? juce::jlimit(0.0, 0.5, (now - reverbEnvTime_) * 0.001) : 0.0;
+        reverbEnvTime_ = now;
+        const float rt = juce::jmax(0.2f, rkui::reverbBandRt(scene_.reverb, 1));
+        reverbEnv_ = juce::jmax(reverbEnv_ * std::pow(10.0f, -3.0f * (float)dtSec / rt), host_.engine.takeReverbInput());
+        if (!std::isfinite(reverbEnv_)) reverbEnv_ = 0.0f;
+        stage_.setReverbLevel(scene_.reverbWetDb <= -79.0f ? 0.0f : levelToUnit(reverbEnv_));
+    }
     std::vector<float> spkView(spk.begin(), spk.begin() + juce::jmax(0, scene_.headphones ? 0 : nOut));
     stage_.setSpeakerLevels(spkView);
     if (reverbPanel_.isVisible()) {

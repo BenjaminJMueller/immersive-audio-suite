@@ -77,6 +77,12 @@ void RoomView::setSpeakerLevels(const std::vector<float>& l) {
     if (view3d_.isVisible()) view3d_.setSpeakerLevels(l);
 }
 
+void RoomView::setReverbLevel(float unit) {
+    if (top_.isVisible()) top_.setReverbLevel(unit);
+    if (front_.isVisible()) front_.setReverbLevel(unit);
+    if (view3d_.isVisible()) view3d_.setReverbLevel(unit);
+}
+
 void RoomView::setSourceLevels(const std::vector<float>& l) {
     if (top_.isVisible()) top_.setSourceLevels(l);
     if (front_.isVisible()) front_.setSourceLevels(l);
