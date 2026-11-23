@@ -159,13 +159,13 @@ void View3D::paint(juce::Graphics& g) {
         const float lvl = s < (int)sourceLevels_.size() ? sourceLevels_[(size_t)s] : 0.0f;
         struct Path3 { juce::Point<float> to; float energy; uint32_t seed; };
         std::vector<Path3> lines;
-        if (!dim && !src.mute && (s == sel_ || lvl > 0.02f)) {
+        if (!dim && !src.mute && lvl > 0.02f) {
             panner_.compute({src.position, src.spread}, gains.data());
             for (int m = 0; m < nSpk; ++m)
                 if (gains[(size_t)m] > 0.04f) {
                     const float gm = gains[(size_t)m];
                     lines.push_back({project(scene_.layout.speakers[(size_t)m].position).p,
-                                     std::max(gm * gm * std::sqrt(lvl), s == sel_ ? 0.10f * gm * gm : 0.0f), (uint32_t)(s * 131 + m + 1)});
+                                     gm * gm * std::sqrt(lvl), (uint32_t)(s * 131 + m + 1)});
                 }
         }
         const juce::String name = src.name;

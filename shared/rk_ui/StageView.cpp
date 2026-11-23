@@ -361,19 +361,19 @@ void StageView::paint(juce::Graphics& g) {
     for (int s = 0; s < (int)scene_.sources.size() && s < dimFrom_; ++s) {
         const auto& src = scene_.sources[(size_t)s];
         const float lvl = s < (int)sourceLevels_.size() ? sourceLevels_[(size_t)s] : 0.0f;
-        const bool sel = target_ != EditTarget::Speakers && s == selSource_;
-        if (src.mute || (lvl < 0.02f && !sel)) continue;
+        // Only sources that actually sound: silence shows nothing, not even for the selection.
+        if (src.mute || lvl < 0.02f) continue;
         panner_.compute({src.position, src.spread}, gains.data());
         const auto a = toScreen(src.position);
         const juce::Colour col = sourceColour(s);
         const float width = src.spread * 18.0f;
-        const float srcEnergy = std::max(std::sqrt(lvl), sel ? 0.10f : 0.0f);
+        const float srcEnergy = std::sqrt(lvl);
         particles += drawSoundCloud(particles_, a, col, srcEnergy, 13.0f, 30.0f + src.spread * 40.0f, (uint32_t)(s * 977 + 7), now);
         for (int m = 0; m < nSpk; ++m) {
             const float gm = gains[(size_t)m];
             if (gm < 0.04f) continue;
             const auto b = toScreen(scene_.layout.speakers[(size_t)m].position);
-            const float energy = std::max(gm * gm * std::sqrt(lvl), sel ? 0.10f * gm * gm : 0.0f);
+            const float energy = gm * gm * std::sqrt(lvl);
             particles += drawSoundParticles(particles_, a, b, col, energy, (uint32_t)(s * 131 + m + 1), now, width);
             // Where the energy lands: a small cloud around the speaker.
             particles += drawSoundCloud(particles_, b, col, energy, 12.0f, 18.0f, (uint32_t)(s * 131 + m + 5000), now);
