@@ -993,6 +993,37 @@ void NoteRow::paint(juce::Graphics& g) {
     t.draw(g, getLocalBounds().toFloat().withTrimmedLeft(4).withTrimmedRight(4));
 }
 
+juce::TextLayout StepList::layoutFor(int i, float width) const {
+    juce::AttributedString a;
+    a.setLineSpacing(2.0f);
+    a.append(steps_[i], uiFont(12.5f), palette().text2);
+    juce::TextLayout t;
+    t.createLayout(a, juce::jmax(60.0f, width - 30.0f));
+    return t;
+}
+
+int StepList::heightFor(int width) const {
+    float h = 2.0f;
+    for (int i = 0; i < steps_.size(); ++i) h += juce::jmax(18.0f, layoutFor(i, (float)width).getHeight()) + 8.0f;
+    return juce::roundToInt(h);
+}
+
+void StepList::paint(juce::Graphics& g) {
+    const Palette& p = palette();
+    float y = 2.0f;
+    for (int i = 0; i < steps_.size(); ++i) {
+        const auto t = layoutFor(i, (float)getWidth());
+        const juce::Rectangle<float> dot(4.0f, y, 18.0f, 18.0f);
+        g.setColour(p.accent.withAlpha(0.18f));
+        g.fillEllipse(dot);
+        g.setColour(p.accent);
+        g.setFont(uiFont(11.0f, true));
+        g.drawText(juce::String(i + 1), dot, juce::Justification::centred, false);
+        t.draw(g, juce::Rectangle<float>(30.0f, y + 1.0f, (float)getWidth() - 30.0f, t.getHeight()));
+        y += juce::jmax(18.0f, t.getHeight()) + 8.0f;
+    }
+}
+
 void drawCoachBar(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& coachBadge_, const juce::String& coachTitle_,
                   const juce::String& coachText_, bool coachOk_) {
     if (coachTitle_.isEmpty()) return;

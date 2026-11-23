@@ -309,6 +309,19 @@ private:
     juce::Viewport viewport_;
 };
 
+/// Numbered steps of a procedure, always visible: a small numbered circle per step and the
+/// wrapped text beside it.
+class StepList : public juce::Component {
+public:
+    explicit StepList(juce::StringArray steps) : steps_(std::move(steps)) {}
+    int heightFor(int width) const;
+    void paint(juce::Graphics& g) override;
+
+private:
+    juce::TextLayout layoutFor(int i, float width) const;
+    juce::StringArray steps_;
+};
+
 /// Label | gain reduction bar | value, for a limiter or compressor. The bar grows from the
 /// right, like on a mixing console; it holds peaks briefly and falls back slowly.
 class ReductionMeter : public juce::Component, public juce::SettableTooltipClient {

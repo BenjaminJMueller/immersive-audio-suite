@@ -474,7 +474,7 @@ rkui::PageContext MainComponent::pageContext() {
     };
     c.commit = [this] { commit(); };
     c.calibrate = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->startCalibration(); }); };
-    c.importSurvey = [this] { chooseSurveyFile(); };
+    c.importSurvey = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->startPhoneIntro(); }); };
     c.rebuild = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshSidebar(); } }); };
     return c;
 }
@@ -2002,7 +2002,9 @@ void MainComponent::updateCoach() {
     const rk::LayoutInfo info = rk::analyze(scene_.layout);
     const bool layoutOk = info.numActive > 0 && std::find(info.hints.begin(), info.hints.end(), "single_speaker") == info.hints.end();
     if (calibrating_) {
-        if (phoneMode_) {
+        if (phoneMode_ && !proposal_) {
+            stage_.setCoach("i", tr("Mit dem iPhone einmessen"), tr("Die fertige Messung auf das Fenster ziehen."));
+        } else if (phoneMode_) {
             stage_.setCoach({}, tr("iPhone-Messung prüfen"), tr("Gestrichelt: bisher. Rechts die Zuordnung wählen und übernehmen."));
         } else if (proposal_) {
             stage_.setCoach({}, tr("Ergebnis prüfen"), tr("Gestrichelt: bisher. Rechts übernehmen oder verwerfen."), true);
@@ -2148,7 +2150,7 @@ juce::String MainComponent::calibrationSubtitle(int m) const {
         if (q.measured && q.hasGain) t << dot << rkui::num(q.gainDb, 1) << " dB";
         return t;
     }
-    if (calib_ == nullptr) return {};
+    if (calib_ == nullptr) return tr("Ausgang") + " " + juce::String(m + 1);
     if (calib_->playingSpeaker() == m) return tr("Misst") + u8("\xe2\x80\xa6");
     int heard = 0, tried = 0;
     for (int j = 0; j < (int)calib_->points().size(); ++j) {
@@ -2169,9 +2171,7 @@ void MainComponent::buildCalibrationPage() {
     back->onClick = [this] {
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
     };
-    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Einmessen mit Mikrofon"),
-        tr("Ein Messmikrofon (oder ein gutes Kugelmikrofon) nach oben zeigend auf ein Stativ, auf Ohrhöhe. Jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. "
-           "Aus der Laufzeit folgt der Abstand, aus mehreren Messpunkten die genaue Position. Laufzeit und Pegel werden am Messpunkt 1 ausgeglichen.")), 26);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Einmessen mit Mikrofon")), 26);
 
     if (proposal_) {
         const auto& v = calib_->verdict();
@@ -2211,6 +2211,16 @@ void MainComponent::buildCalibrationPage() {
                                  "Die Ausrichtung bleibt, wie sie war (zur Mitte, nach außen oder nach innen). Für die genaue Richtung jedes Lautsprechers die iPhone-Messung verwenden."));
         return;
     }
+
+    // The procedure, always visible (no info bubble to open first).
+    addSteps(calibSettings_.positions
+                ? tr("1. Ein Messmikrofon mit Kugelcharakteristik nach oben zeigend auf ein Stativ stellen, auf Ohrhöhe, genau auf den angezeigten Messpunkt. Auf 10 cm genau reicht.\n"
+                     "2. „Messen“ drücken und still sein. Jeder Lautsprecher spielt nacheinander einen kurzen Sweep, zusammen etwa 2,5 Sekunden pro Lautsprecher.\n"
+                     "3. Mikrofon auf den nächsten Messpunkt stellen und wieder messen. M1 ist der Hörplatz, die anderen liegen rundherum, einer davon höher.\n"
+                     "4. „Ergebnis zeigen“, prüfen und übernehmen. Aus den Laufzeiten folgen Abstand und Position, Laufzeit und Pegel werden am Hörplatz ausgeglichen.")
+                : tr("1. Ein Messmikrofon mit Kugelcharakteristik nach oben zeigend auf ein Stativ stellen, auf Ohrhöhe, genau am Hörplatz.\n"
+                     "2. „Messen“ drücken und still sein. Jeder Lautsprecher spielt nacheinander einen kurzen Sweep, zusammen etwa 2,5 Sekunden pro Lautsprecher.\n"
+                     "3. „Ergebnis zeigen“, prüfen und übernehmen. Laufzeit und Pegel werden am Hörplatz ausgeglichen. Positionen misst der Modus „Mit Positionen“."));
 
     const bool locked = calib_->measuredPoints() > 0 || calib_->phase() == Calibration::Phase::Measuring;
     const juce::StringArray inputs = host_.inputNames();
@@ -2299,11 +2309,7 @@ void MainComponent::buildCalibrationPage() {
     temp->setTooltip(tr("Die Schallgeschwindigkeit steigt um etwa 0,6 m/s pro °C. 5 °C Abweichung ergeben auf 5 m etwa 4 cm Fehler."));
     temp->onChange = [this](double v) { calibSettings_.temperature = (float)v; };
     temp->onCommit = [this] { if (calib_ != nullptr && calib_->measuredPoints() == 0) restartCalibration(); };
-    inspector_.addDetails(tr("Ablauf: Mikrofon auf den angezeigten Messpunkt stellen, „Messen“ drücken und still sein. Jeder Lautsprecher spielt etwa 2,5 Sekunden. Dann zum nächsten Punkt.\n\n"
-                             "Messpunkt 1 ist der Hörplatz. Die anderen liegen rundherum, einer davon höher, damit auch die Höhe der Lautsprecher bestimmt werden kann. "
-                             "Auf 10 cm genau aufstellen reicht, den Rest rechnet Raumklang heraus.\n\n"
-                             "Beim Donut liegen die Punkte im Ring zwischen innen und außen. Dass die Säule manche Lautsprecher verdeckt, ist eingeplant.\n\n"
-                             "Während der Messung schweigen alle Quellen und die DAW-Spuren."));
+    addNote(tr("Beim Donut liegen die Messpunkte im Ring zwischen innen und außen. Dass die Säule manche Lautsprecher verdeckt, ist eingeplant. Während der Messung schweigen alle Quellen und die DAW-Spuren."));
 }
 
 void MainComponent::buildPhonePage() {
@@ -2313,6 +2319,21 @@ void MainComponent::buildPhonePage() {
     back->onClick = [this] {
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
     };
+    if (!proposal_) { // nothing loaded yet: explain how it works
+        inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Mit dem iPhone einmessen")), 26);
+        addNote(tr("Die App „Raumklang Messen“ misst mit dem LiDAR-Sensor, wo jeder Lautsprecher hängt und wohin er zeigt. Laufzeit und Pegel misst sie nicht, dafür danach „Mit Mikrofon einmessen“ im Modus „Schnell“."));
+        inspector_.add(std::make_unique<rkui::SectionHeader>(tr("So geht es")), 26);
+        addSteps(tr("1. Hörplatz: in der App auf den Boden unter dem Hörplatz zielen und „Setzen“ tippen. Die Ohrhöhe lässt sich einstellen, Standard ist 1,20 m.\n"
+                   "2. Vorne: auf die Richtung zielen, die in Raumklang vorne ist, und „Setzen“ tippen.\n"
+                   "3. Lautsprecher: auf die Front jedes Lautsprechers zielen und „Setzen“ tippen, in der Reihenfolge der Ausgänge 1, 2, 3 und so weiter. Die Ausrichtung folgt aus der Fläche der Front.\n"
+                   "4. „Fertig“ tippen und die Datei per AirDrop, Mail oder iCloud an diesen Rechner schicken.\n"
+                   "5. Die Datei auf das Raumklang-Fenster ziehen oder hier laden. Danach zeigt Raumklang, wie sich die Lautsprecher verschieben, und übernimmt die Positionen erst nach Bestätigung."));
+        auto* load = inspector_.add(rkui::makeButton(tr("Messung laden …"), true), 32);
+        load->onClick = [this] { chooseSurveyFile(); };
+        inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Voraussetzungen")), 26);
+        addNote(tr("Ein iPhone oder iPad mit LiDAR-Sensor: iPhone 12 Pro oder neuer aus der Pro-Reihe, iPad Pro ab 2020. Die App steht noch nicht im App Store und wird mit Xcode aus dem Ordner ios im Projekt auf das Gerät gespielt."));
+        return;
+    }
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("iPhone-Messung"), tr("Positionen und Ausrichtung aus der App „Raumklang Messen“. Laufzeit und Pegel bleiben, wie sie sind. Danach lohnt sich „Mit Mikrofon einmessen“ im Modus „Schnell“.")), 26);
     auto card = std::make_unique<rkui::StatusCard>();
     const int nm = (int)survey_.speakers.size(), ns = (int)scene_.layout.speakers.size();
@@ -2342,6 +2363,38 @@ void MainComponent::buildPhonePage() {
     };
     inspector_.addDetails(tr("Die App misst mit LiDAR, wo jeder Lautsprecher hängt und wohin er zeigt. Der Hörplatz und die Richtung „vorne“ werden in der App festgelegt.\n\n"
                              "Die Datei kommt per AirDrop, Mail oder Cloud auf den Rechner und lässt sich einfach auf das Raumklang-Fenster ziehen."));
+}
+
+void MainComponent::addNote(const juce::String& text) {
+    auto note = std::make_unique<rkui::NoteRow>(text);
+    const int h = note->heightFor(juce::jmax(200, inspector_.getWidth() - 24));
+    inspector_.add(std::move(note), h);
+}
+
+void MainComponent::addSteps(const juce::String& text) {
+    // "1. …\n2. …": one step per line, the numbers are drawn by the list.
+    juce::StringArray steps;
+    for (auto line : juce::StringArray::fromLines(text)) {
+        line = line.trim();
+        if (line.isEmpty()) continue;
+        const int dot = line.indexOf(". ");
+        if (dot > 0 && dot < 3 && line.substring(0, dot).containsOnly("0123456789")) line = line.substring(dot + 2);
+        steps.add(line);
+    }
+    auto list = std::make_unique<rkui::StepList>(steps);
+    const int h = list->heightFor(juce::jmax(200, inspector_.getWidth() - 24));
+    inspector_.add(std::move(list), h);
+}
+
+void MainComponent::startPhoneIntro() {
+    if (step_ != StepSpeakers) setStep(StepSpeakers);
+    endCalibration();
+    speakerTestRunning_ = false;
+    host_.engine.speakerTest = -1;
+    survey_ = {};
+    calibrating_ = true;
+    phoneMode_ = true;
+    refreshAll();
 }
 
 void MainComponent::chooseSurveyFile() {

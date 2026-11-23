@@ -108,14 +108,14 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
     {
         std::vector<ActionList::Action> acts;
         if (ctx.calibrate) acts.push_back({tr("Mit Mikrofon einmessen"), tr("Laufzeit, Pegel und Position messen"), ctx.calibrate});
-        if (ctx.importSurvey) acts.push_back({tr("iPhone-Messung laden"), tr("Position und Ausrichtung aus „Raumklang Messen“"), ctx.importSurvey});
+        if (ctx.importSurvey) acts.push_back({tr("Mit dem iPhone einmessen"), tr("Position und Ausrichtung mit „Raumklang Messen“"), ctx.importSurvey});
         acts.push_back({tr("Laufzeit und Pegel ausgleichen"), tr("Ohne Messung, aus den Abständen im Layout"), [ctx] {
                             alignDistances(ctx.scene->layout);
                             ctx.changed(true);
                             ctx.commit();
                             ctx.rebuild();
                         }});
-        page.add(std::make_unique<SectionHeader>(tr("Einmessen"), tr("Mit Mikrofon: Raumklang spielt über jeden Lautsprecher einen kurzen Messton und berechnet daraus Laufzeit, Pegel und, mit mehreren Messpunkten, die genaue Position.\n\nMit dem iPhone: In der App „Raumklang Messen“ jeden Lautsprecher antippen und die Messung hier laden oder auf das Fenster ziehen.\n\nLaufzeit und Pegel ausgleichen: Gleicht Laufzeit und Pegel aus, als stünden alle Lautsprecher so weit weg wie der fernste. Das braucht keine Messung, setzt aber ein genaues Layout voraus.")), 26);
+        page.add(std::make_unique<SectionHeader>(tr("Einmessen"), tr("Mit Mikrofon: Raumklang spielt über jeden Lautsprecher einen kurzen Messton und berechnet daraus Laufzeit, Pegel und, mit mehreren Messpunkten, die genaue Position.\n\nMit dem iPhone: Die App „Raumklang Messen“ misst mit dem LiDAR-Sensor Position und Ausrichtung jedes Lautsprechers. Die nächste Seite erklärt den Ablauf.\n\nLaufzeit und Pegel ausgleichen: Gleicht Laufzeit und Pegel aus, als stünden alle Lautsprecher so weit weg wie der fernste. Das braucht keine Messung, setzt aber ein genaues Layout voraus.")), 26);
         auto list = std::make_unique<ActionList>(std::move(acts));
         const int h = list->idealHeight();
         page.add(std::move(list), h);

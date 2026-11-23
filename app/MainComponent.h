@@ -111,6 +111,12 @@ private:
     void endCalibration();
     void buildCalibrationPage();
     void buildPhonePage();
+    /// "Mit dem iPhone einmessen": explains the measurement before a file is loaded.
+    void startPhoneIntro();
+    /// A wrapped paragraph in the inspector, always visible.
+    void addNote(const juce::String& text);
+    /// Numbered steps ("1. …" per line), always visible.
+    void addSteps(const juce::String& text);
     void evaluateCalibration();
     void acceptProposal();
     void chooseSurveyFile();
