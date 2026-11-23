@@ -238,7 +238,7 @@ public:
 
 private:
     struct Item { int row; juce::Rectangle<int> bounds; };
-    static juce::Rectangle<float> toggleRect(juce::Rectangle<float> row, int which);
+    static juce::Rectangle<float> toggleRect(juce::Rectangle<float> row, int which, bool withMenu = false);
     static juce::Rectangle<float> menuRect(juce::Rectangle<float> row);
     int hover_ = -1;
     std::vector<Item> layoutItems() const;

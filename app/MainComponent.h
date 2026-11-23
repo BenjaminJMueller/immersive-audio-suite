@@ -88,6 +88,8 @@ private:
     void addSource();
     void addSpeaker();
     void speakerMenu(int i, juce::Rectangle<int> area);
+    void sourceMenu(int i, juce::Rectangle<int> area);
+    void removeSource(int i);
     void startDemo();
     void startEmpty();
     void openProject();

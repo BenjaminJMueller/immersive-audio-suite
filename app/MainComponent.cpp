@@ -323,6 +323,7 @@ MainComponent::MainComponent()
     };
     sidebar_.onMenu = [this](int row, juce::Rectangle<int> area) {
         if (step_ == StepSpeakers && !calibrating_) speakerMenu(row, area);
+        else if (step_ == StepSources && row < (int)scene_.sources.size()) sourceMenu(row, area);
     };
     addAndMakeVisible(outputStrip_);
     outputStrip_.setTooltip(tr("Master-Pegel aller Ausgänge. Doppelklick setzt auf 0 dB."));
@@ -817,6 +818,7 @@ void MainComponent::refreshSidebar() {
             r.solo = s.solo;
             r.dim = s.mute || (anySolo && !s.solo);
             r.group = dawTracks_.empty() ? juce::String() : tr("Im Projekt");
+            r.menu = step_ == StepSources; // rename, duplicate, remove
             rows.push_back(r);
         }
         const int n = (int)scene_.sources.size();
@@ -1197,14 +1199,7 @@ void MainComponent::buildSourcesPage() {
     };
     auto* rm = inspector_.add(rkui::makeButton(tr("Entfernen"), false, true), 30);
     rm->getProperties().set("danger", true);
-    rm->onClick = [this, i] {
-        if (i >= (int)scene_.sources.size()) return;
-        scene_.sources.erase(scene_.sources.begin() + i);
-        selSource_ = juce::jmin(i, (int)scene_.sources.size() - 1);
-        applyScene(false);
-        commit();
-        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
-    };
+    rm->onClick = [this, i] { removeSource(i); };
     inspector_.addDetails(tr("Pegel, Breite und Hall-Send lassen sich mit einem Doppelklick auf den Regler zurücksetzen, ein Doppelklick auf den Wert erlaubt die Eingabe von Zahlen.\n\n"
                              "„Kreisbahn“ bewegt die Quelle von selbst um den Hörplatz, gut zum Prüfen eines Aufbaus.\n\n"
                              "Aus der DAW kommen Spuren über das Plugin „Raumklang Quelle“ dazu, ohne zusätzliche Programme für das Routing."));
@@ -1416,6 +1411,61 @@ void MainComponent::addSpeaker() {
     applyScene(true);
     commit();
     selectSpeaker((int)v.size() - 1);
+}
+
+void MainComponent::removeSource(int i) {
+    if (i < 0 || i >= (int)scene_.sources.size()) return;
+    scene_.sources.erase(scene_.sources.begin() + i);
+    if (selSource_ == i) selSource_ = juce::jmin(i, (int)scene_.sources.size() - 1);
+    else if (selSource_ > i) --selSource_;
+    applyScene(false);
+    commit();
+    juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
+}
+
+void MainComponent::sourceMenu(int i, juce::Rectangle<int> area) {
+    if (i < 0 || i >= (int)scene_.sources.size()) return;
+    juce::PopupMenu m;
+    m.addItem(1, tr("Umbenennen …"));
+    m.addItem(2, tr("Duplizieren"), (int)scene_.sources.size() < rkui::kMaxSceneSources);
+    m.addSeparator();
+    m.addItem(3, tr("Entfernen"));
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(area), [this, i](int r) {
+        auto& v = scene_.sources;
+        if (i >= (int)v.size() || r == 0) return;
+        if (r == 1) {
+            auto* w = new juce::AlertWindow(tr("Quelle umbenennen"), {}, juce::MessageBoxIconType::NoIcon);
+            w->addTextEditor("name", v[(size_t)i].name);
+            w->addButton(tr("Umbenennen"), 1, juce::KeyPress(juce::KeyPress::returnKey));
+            w->addButton(tr("Abbrechen"), 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            w->enterModalState(true, juce::ModalCallbackFunction::create([this, i, w](int ok) {
+                auto& vv = scene_.sources;
+                if (ok == 1 && i < (int)vv.size()) {
+                    const juce::String n = w->getTextEditorContents("name").trim().substring(0, 64);
+                    if (n.isNotEmpty()) {
+                        vv[(size_t)i].name = n;
+                        commit();
+                        refreshSidebar();
+                        rebuildInspector();
+                    }
+                }
+            }), true);
+        } else if (r == 2) {
+            if ((int)v.size() >= rkui::kMaxSceneSources) return;
+            rkui::SourceInfo copy = v[(size_t)i];
+            copy.name = copy.name + " " + tr("Kopie");
+            copy.solo = false;
+            const rk::Polar p = rk::toPolar(copy.position);
+            copy.position = rk::toCartesian({std::fmod(p.azimuthDeg - 20.0f + 540.0f, 360.0f) - 180.0f, p.elevationDeg, p.distance});
+            v.insert(v.begin() + i + 1, copy);
+            selSource_ = i + 1;
+            applyScene(false);
+            commit();
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
+        } else if (r == 3) {
+            removeSource(i);
+        }
+    });
 }
 
 void MainComponent::speakerMenu(int i, juce::Rectangle<int> area) {
@@ -2045,8 +2095,16 @@ void MainComponent::updateCoach() {
     }
 }
 
-bool MainComponent::keyPressed(const juce::KeyPress&) {
-    return false; // shortcuts are commands, see getCommandInfo()
+bool MainComponent::keyPressed(const juce::KeyPress& k) {
+    // Delete / backspace removes the selected source (undo brings it back). Text fields
+    // take these keys themselves, so this only fires with the focus on the window.
+    if ((k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) && step_ == StepSources && !calibrating_ &&
+        selSource_ >= 0 && selSource_ < (int)scene_.sources.size() &&
+        dynamic_cast<juce::TextEditor*>(juce::Component::getCurrentlyFocusedComponent()) == nullptr) {
+        removeSource(selSource_);
+        return true;
+    }
+    return false; // other shortcuts are commands, see getCommandInfo()
 }
 
 // ---------------------------------------------------------------------------

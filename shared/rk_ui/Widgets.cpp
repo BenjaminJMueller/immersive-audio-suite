@@ -571,7 +571,8 @@ void SidebarList::paint(juce::Graphics& g) {
         }
         auto badge = juce::Rectangle<float>(r.getX() + 10, r.getCentreY() - 10, 20, 20);
         drawNumberBadge(g, badge, row.number, row.dim ? row.colour.withSaturation(0.0f).withAlpha(0.6f) : row.colour);
-        const float rightPad = row.toggles ? (row.trailing.isNotEmpty() ? 74.0f : 58.0f) : (row.trailing.isNotEmpty() || row.check || row.menu ? 64.0f : 8.0f);
+        const float rightPad = row.toggles ? (row.trailing.isNotEmpty() ? 74.0f : 58.0f) + (row.menu ? 28.0f : 0.0f)
+                                           : (row.trailing.isNotEmpty() || row.check || row.menu ? 64.0f : 8.0f);
         auto text = r.withTrimmedLeft(42).withTrimmedRight(rightPad);
         g.setColour(row.dim ? p.text3 : p.text);
         g.setFont(uiFont(13.5f));
@@ -582,7 +583,7 @@ void SidebarList::paint(juce::Graphics& g) {
         if (row.toggles) {
             for (int w = 0; w < 2; ++w) {
                 const bool on = w == 0 ? row.mute : row.solo;
-                const auto b = toggleRect(r, w);
+                const auto b = toggleRect(r, w, row.menu);
                 const juce::Colour c = w == 0 ? p.warn : p.accent;
                 g.setColour(on ? c : p.field);
                 g.fillRoundedRectangle(b, 4.0f);
@@ -597,7 +598,14 @@ void SidebarList::paint(juce::Graphics& g) {
             if (row.trailing.isNotEmpty()) {
                 g.setColour(p.text2);
                 g.setFont(uiFont(12.0f));
-                g.drawText(row.trailing, juce::Rectangle<float>(toggleRect(r, 0).getX() - 18, r.getY(), 16, r.getHeight()), juce::Justification::centred, false);
+                g.drawText(row.trailing, juce::Rectangle<float>(toggleRect(r, 0, row.menu).getX() - 18, r.getY(), 16, r.getHeight()), juce::Justification::centred, false);
+            }
+            if (row.menu && (it.row == hover_ || it.row == selected_)) {
+                const auto m = menuRect(r);
+                g.setColour(p.field);
+                g.fillRoundedRectangle(m, 5.0f);
+                g.setColour(p.text2);
+                for (int k = -1; k <= 1; ++k) g.fillEllipse(m.getCentreX() + (float)k * 5.0f - 1.5f, m.getCentreY() - 1.5f, 3.0f, 3.0f);
             }
         } else if (row.trailing.isNotEmpty()) {
             g.setColour(p.text2);
@@ -632,8 +640,9 @@ juce::Rectangle<float> SidebarList::menuRect(juce::Rectangle<float> row) {
     return {row.getRight() - 34.0f, row.getCentreY() - 11.0f, 26.0f, 22.0f};
 }
 
-juce::Rectangle<float> SidebarList::toggleRect(juce::Rectangle<float> row, int which) {
-    return {row.getRight() - 52.0f + (float)which * 24.0f, row.getCentreY() - 10.0f, 20.0f, 20.0f};
+juce::Rectangle<float> SidebarList::toggleRect(juce::Rectangle<float> row, int which, bool withMenu) {
+    // With a "…" menu the M and S buttons move left to make room for it.
+    return {row.getRight() - 52.0f - (withMenu ? 28.0f : 0.0f) + (float)which * 24.0f, row.getCentreY() - 10.0f, 20.0f, 20.0f};
 }
 
 void SidebarList::mouseUp(const juce::MouseEvent& e) {
@@ -649,7 +658,7 @@ void SidebarList::mouseUp(const juce::MouseEvent& e) {
             }
             if (row.toggles)
                 for (int w = 0; w < 2; ++w)
-                    if (toggleRect(it.bounds.toFloat(), w).expanded(2.0f).contains(e.position)) {
+                    if (toggleRect(it.bounds.toFloat(), w, row.menu).expanded(2.0f).contains(e.position)) {
                         if (onToggle) onToggle(it.row, w);
                         return;
                     }
