@@ -21,7 +21,8 @@ namespace rkapp {
 
 class IntroOverlay;
 
-class MainComponent : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer {
+class MainComponent : public juce::Component, public juce::FileDragAndDropTarget, public juce::MenuBarModel,
+                      public juce::ApplicationCommandTarget, private juce::Timer {
 public:
     MainComponent();
     ~MainComponent() override;
@@ -37,6 +38,15 @@ public:
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
     void loadSurvey(const juce::File& file);
+
+    // Menu bar (macOS) and keyboard commands (all systems).
+    juce::StringArray getMenuBarNames() override;
+    juce::PopupMenu getMenuForIndex(int index, const juce::String& name) override;
+    void menuItemSelected(int, int) override {}
+    juce::ApplicationCommandTarget* getNextCommandTarget() override { return nullptr; }
+    void getAllCommands(juce::Array<juce::CommandID>& commands) override;
+    void getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info) override;
+    bool perform(const InvocationInfo& info) override;
 
 private:
     enum Step { StepSpeakers = 0, StepSources = 1, StepRoom = 2, StepOutput = 3 };
@@ -80,6 +90,12 @@ private:
     void openProject();
     void saveProjectAs();
     void showHelpMenu();
+    void setUiLanguage(bool german);
+    void setUiTheme(bool dark);
+    /// Replaces the current project after asking, unless it is saved in a file anyway.
+    void confirmReplaceProject(std::function<void()> then);
+    juce::ApplicationCommandManager commands_;
+    juce::ScopedMessageBox replaceBox_;
     void applyTheme();
     void updateCoach();
     void updateTooltips();
