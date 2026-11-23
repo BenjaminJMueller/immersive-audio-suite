@@ -11,17 +11,15 @@ Stabilität geht vor neuen Funktionen. Jede Phase wird erst abgeschlossen, wenn 
 
 ## Phase 2 · Ohne Routing aus der DAW in die App (0.2)
 
-Das ist der wichtigste Unterschied zu SpatGRIS, das dafür BlackHole bzw. JACK braucht.
+Die DAW soll ihren Ton ohne virtuelle Audiogeräte oder Audio-Server an die App geben.
 
-- Direkte Verbindung *Quelle*-Plugin → App über Shared Memory: Jede Spur bleibt Mono oder Stereo, die App rechnet und spielt auf das Audiogerät. Funktioniert damit auch in Ableton Live und Logic, ohne virtuelle Audiogeräte.
-- Positionen aus der DAW-Automation erscheinen live in der App.
+- Erledigt: direkte Verbindung *Quelle*-Plugin → App über Shared Memory: Jede Spur bleibt Mono oder Stereo, die App rechnet und spielt auf das Audiogerät. Funktioniert damit auch in Ableton Live und Logic, ohne virtuelle Audiogeräte.
+- Erledigt: Positionen aus der DAW-Automation erscheinen live in der App, Spuren lassen sich in der App verschieben.
 - Weiche Layoutwechsel ohne hörbare Blende (Überblendung zwischen altem und neuem Layout).
 
-## Phase 3 · Gleichstand mit SpatGRIS (0.3)
+## Phase 3 · Mehr Funktionen (0.3)
 
-Was SpatGRIS kann und Raumklang noch fehlt:
-
-- OSC-Fernsteuerung (Positionen, Pegel, Breite), kompatibel zu den OSC-Befehlen von SpatGRIS und zu ADM-OSC
+- OSC-Fernsteuerung (Positionen, Pegel, Breite), kompatibel zu ADM-OSC
 - Aufnahme der Lautsprecherausgänge als Mehrkanal-WAV, auch als Stereo- oder Kopfhörer-Mischung
 - Breite getrennt nach horizontal und vertikal
 - Direktausgänge: eine Quelle unverändert auf einen bestimmten Lautsprecher
@@ -36,7 +34,6 @@ Was SpatGRIS kann und Raumklang noch fehlt:
 ## Phase 4 · Aufbau vor Ort (0.4)
 
 - Mehrere Räume / Hall-Zonen, Frühreflexionen abhängig von der Quellposition
-
 - Entzerrung (EQ) je Lautsprecher beim Einmessen. Position, Laufzeit und Pegel werden schon gemessen (Mikrofon oder iPhone).
 - Szenen und Übergänge für Theater und Installationen (Grundlage erledigt: Szenen mit Überblendzeit)
 - Bass-Management mit mehreren Subwoofern
