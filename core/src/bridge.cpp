@@ -77,6 +77,23 @@ struct ReturnShared {
     std::atomic<float> audio[kReturnChannels][kRingFrames];
 };
 
+// App -> plugin mix changes for one slot. The app stores the values and the owner token
+// of the slot it means, then sets the bits in `mask` (release). The plugin takes the mask
+// (exchange 0) and applies the values only if the owner is its own token.
+struct MixSlot {
+    std::atomic<uint64_t> owner;
+    std::atomic<uint32_t> mask;
+    std::atomic<uint32_t> reserved;
+    std::atomic<float> vals[5]; // gain dB, spread 0..1, reverb send dB, stereo width deg, distance amount
+};
+
+struct ControlShared {
+    std::atomic<uint32_t> magic;
+    std::atomic<uint32_t> version;
+    MixSlot slots[kSlots];
+};
+
+static_assert(std::is_standard_layout_v<ControlShared>);
 static_assert(std::is_standard_layout_v<ReturnShared>);
 static_assert(std::is_standard_layout_v<Slot>);
 static_assert(std::is_standard_layout_v<Shared>);
@@ -239,6 +256,19 @@ Shared* attach(SharedMemory& mem, const std::string& name) {
     return s;
 }
 
+ControlShared* attachControl(SharedMemory& mem, const std::string& bridgeName) {
+    if (!mem.open(bridgeName + "-ctl", sizeof(ControlShared))) return nullptr;
+    auto* s = static_cast<ControlShared*>(mem.data());
+    uint32_t expected = 0;
+    if (s->magic.compare_exchange_strong(expected, kControlMagic)) {
+        s->version.store(1);
+    } else if (expected != kControlMagic) {
+        mem.close();
+        return nullptr;
+    }
+    return s;
+}
+
 ReturnShared* attachReturn(SharedMemory& mem, const std::string& name) {
     if (!mem.open(name, sizeof(ReturnShared))) return nullptr;
     auto* s = static_cast<ReturnShared*>(mem.data());
@@ -317,6 +347,7 @@ Sender::~Sender() { release(); }
 bool Sender::open(const std::string& name) {
     if (shared_ != nullptr) return true;
     shared_ = attach(mem_, name);
+    if (shared_ != nullptr && control_ == nullptr) control_ = attachControl(controlMem_, name); // optional
     return shared_ != nullptr;
 }
 
@@ -338,6 +369,7 @@ int Sender::claim() {
             s.lastWriteMs.store(0);
             s.channels.store(1);
             moveSeen_ = s.moveSeq.load(std::memory_order_acquire); // ignore moves meant for a previous owner
+            if (control_ != nullptr) control_->slots[i].mask.store(0); // and mix changes
             token_ = token;
             slot_.store(i, std::memory_order_release);
             return i;
@@ -449,18 +481,26 @@ bool driftRead(DriftState& st, uint64_t w, int block, int numFrames, double samp
     st.smoothedError += (error - st.smoothedError) * std::min(1.0, numFrames / (0.5 * sampleRate));
     const double ratio = 1.0 + std::clamp(st.smoothedError * 2.0e-5, -0.005, 0.005);
     const double needed = numFrames * ratio + 2.0;
-    if (fill < needed) {
-        // Ran dry (the other side stopped or stalled): silence until data is back.
-        if (w != st.lastWrite) dropouts.fetch_add(1, std::memory_order_relaxed);
-        st.lastWrite = w;
+    // The writer stopped (DAW paused, or it no longer calls the plugin): nothing new arrived
+    // for two callbacks and less than three blocks are left. Fade out over what is left
+    // instead of cutting the signal, which would click. Normally the fill never gets this low,
+    // because the target keeps two of the writer's blocks in reserve.
+    st.idle = w == st.lastWrite ? st.idle + 1 : 0;
+    const bool stalled = st.idle >= 2 && fill < needed + 2.0 * numFrames * ratio;
+    const bool dry = fill < needed;
+    if (dry && w != st.lastWrite) dropouts.fetch_add(1, std::memory_order_relaxed);
+    st.lastWrite = w;
+    const int avail = (int)std::clamp(std::floor((fill - 2.0) / ratio), 0.0, (double)kRingFrames);
+    const int frames = dry ? std::min(numFrames, avail) : numFrames;
+    if (frames <= 0 || (dry && st.fade <= 0.0f)) {
         st.running = false;
         st.resumeFrom = w;
         silence();
         return false;
     }
-    st.lastWrite = w;
 
     const float fadeStep = 1.0f / std::max(1.0f, 0.005f * (float)sampleRate);
+    const float outStep = (stalled || dry) ? st.fade / (float)std::max(1, avail) : 0.0f;
     float fadeEnd = st.fade;
     for (int ch = 0; ch < outChannels; ++ch) {
         float* dst = out[ch];
@@ -472,16 +512,24 @@ bool driftRead(DriftState& st, uint64_t w, int block, int numFrames, double samp
         const std::atomic<float>* r = ring(ch);
         double pos = st.readPos;
         float fade = st.fade;
-        for (int k = 0; k < numFrames; ++k) {
+        for (int k = 0; k < frames; ++k) {
             const uint64_t i0 = (uint64_t)pos;
             const float frac = (float)(pos - (double)i0);
             const float a = r[i0 & kRingMask].load(std::memory_order_relaxed);
             const float b = r[(i0 + 1) & kRingMask].load(std::memory_order_relaxed);
-            fade = std::min(1.0f, fade + fadeStep);
+            fade = outStep > 0.0f ? std::max(0.0f, fade - outStep) : std::min(1.0f, fade + fadeStep);
             dst[k] = sanitizeSample(a + (b - a) * frac) * fade;
             pos += ratio;
         }
+        std::fill(dst + frames, dst + numFrames, 0.0f);
         fadeEnd = fade;
+    }
+    if (dry) { // played out to the end: wait for new audio
+        st.running = false;
+        st.resumeFrom = w;
+        st.fade = 0.0f;
+        st.readPos += frames * ratio;
+        return true;
     }
     st.fade = fadeEnd;
     st.readPos += numFrames * ratio;
@@ -496,6 +544,7 @@ Receiver::~Receiver() = default;
 bool Receiver::open(const std::string& name) {
     if (shared_ != nullptr) return true;
     shared_ = attach(mem_, name);
+    if (shared_ != nullptr && control_ == nullptr) control_ = attachControl(controlMem_, name); // optional
     return shared_ != nullptr;
 }
 
@@ -531,6 +580,48 @@ bool Receiver::requestMove(int slot, float azimuthDeg, float elevationDeg, float
     s.movePos[1].store(elevationDeg, std::memory_order_relaxed);
     s.movePos[2].store(distance, std::memory_order_relaxed);
     s.moveSeq.fetch_add(1, std::memory_order_release);
+    return true;
+}
+
+bool Sender::takeMix(MixChange& out) noexcept {
+    const int i = slot();
+    if (control_ == nullptr || i < 0) return false;
+    MixSlot& m = control_->slots[i];
+    if (m.mask.load(std::memory_order_relaxed) == 0) return false;
+    const uint32_t mask = m.mask.exchange(0, std::memory_order_acq_rel) & MixChange::All;
+    if (mask == 0 || m.owner.load(std::memory_order_relaxed) != token_) return false;
+    TrackParams p;
+    p.gainDb = m.vals[0].load(std::memory_order_relaxed);
+    p.spread = m.vals[1].load(std::memory_order_relaxed);
+    p.reverbSendDb = m.vals[2].load(std::memory_order_relaxed);
+    p.stereoWidthDeg = m.vals[3].load(std::memory_order_relaxed);
+    p.distanceAmount = m.vals[4].load(std::memory_order_relaxed);
+    p = p.sanitized(); // shared memory is hostile
+    out.mask = mask;
+    out.gainDb = p.gainDb;
+    out.spread = p.spread;
+    out.reverbSendDb = p.reverbSendDb;
+    out.stereoWidthDeg = p.stereoWidthDeg;
+    out.distanceAmount = p.distanceAmount;
+    return true;
+}
+
+bool Receiver::requestMix(int slot, const MixChange& c) noexcept {
+    if (shared_ == nullptr || control_ == nullptr || slot < 0 || slot >= kSlots) return false;
+    const uint32_t mask = c.mask & MixChange::All;
+    const uint64_t owner = shared_->slots[slot].owner.load();
+    if (owner == 0 || mask == 0) return false;
+    MixSlot& m = control_->slots[slot];
+    if (m.owner.load(std::memory_order_relaxed) != owner) {
+        m.mask.store(0, std::memory_order_relaxed); // pending bits were meant for a previous owner
+        m.owner.store(owner, std::memory_order_relaxed);
+    }
+    if (mask & MixChange::Gain) m.vals[0].store(c.gainDb, std::memory_order_relaxed);
+    if (mask & MixChange::Spread) m.vals[1].store(c.spread, std::memory_order_relaxed);
+    if (mask & MixChange::ReverbSend) m.vals[2].store(c.reverbSendDb, std::memory_order_relaxed);
+    if (mask & MixChange::StereoWidth) m.vals[3].store(c.stereoWidthDeg, std::memory_order_relaxed);
+    if (mask & MixChange::DistanceAmount) m.vals[4].store(c.distanceAmount, std::memory_order_relaxed);
+    m.mask.fetch_or(mask, std::memory_order_release);
     return true;
 }
 

@@ -32,6 +32,7 @@ namespace rk::bridge {
 
 inline constexpr uint32_t kMagic = 0x31424b52u; // "RKB1"
 inline constexpr uint32_t kVersion = 2; // 2: the app can move a track
+inline constexpr uint32_t kControlMagic = 0x31434b52u; // "RKC1"
 inline constexpr int kSlots = 32;
 inline constexpr int kMaxChannels = 2;
 inline constexpr int kRingFrames = 16384; // power of two, about 340 ms at 48 kHz
@@ -65,6 +66,22 @@ void applyTrack(Engine& engine, int first, int inputBase, int channels, const Tr
 struct Slot;
 struct Shared;
 struct ReturnShared;
+struct ControlShared;
+
+/// Mix values the user changed for a DAW track in the app (app -> plugin).
+/// Only the values whose bit is set in `mask` were changed.
+struct MixChange {
+    enum : uint32_t { Gain = 1u, Spread = 2u, ReverbSend = 4u, StereoWidth = 8u, DistanceAmount = 16u, All = 31u };
+    uint32_t mask = 0;
+    float gainDb = 0.0f;
+    float spread = 0.0f;          // 0..1
+    float reverbSendDb = -12.0f;
+    float stereoWidthDeg = 60.0f;
+    float distanceAmount = 1.0f;  // 0..2
+};
+
+// App -> plugin mix changes live in a second, small block named "<bridge name>-ctl". A
+// separate block keeps the layout of the audio block unchanged, so older plugins keep working.
 
 /// Read position of one drift-corrected ring reader (audio thread state).
 struct DriftState {
@@ -75,6 +92,7 @@ struct DriftState {
     /// Write position when the reader last ran dry: it only starts again on audio
     /// written after that, never by replaying what it already played.
     uint64_t resumeFrom = 0;
+    int idle = 0;      // callbacks in a row without new audio
     float fade = 0.0f;
 };
 
@@ -127,10 +145,15 @@ public:
     /// Normal thread: true once per new position the user dragged the track to in the app.
     /// The plugin applies it to its own parameters, so the DAW can record it as automation.
     bool takeMove(float& azimuthDeg, float& elevationDeg, float& distance) noexcept;
+    /// Normal thread: true if the user changed mix values of this track in the app. Values
+    /// are sanitised; the plugin applies those in `out.mask` to its own parameters.
+    bool takeMix(MixChange& out) noexcept;
 
 private:
     SharedMemory mem_;
+    SharedMemory controlMem_;
     Shared* shared_ = nullptr;
+    ControlShared* control_ = nullptr;
     std::atomic<int> slot_{-1};
     uint64_t token_ = 0;
     uint32_t moveSeen_ = 0;
@@ -160,6 +183,8 @@ public:
     std::vector<TrackInfo> scan() const;
     /// Normal thread: asks the plugin in `slot` to move its track (the user dragged it in the app).
     bool requestMove(int slot, float azimuthDeg, float elevationDeg, float distance) noexcept;
+    /// Normal thread: asks the plugin in `slot` to take over the mix values in `change.mask`.
+    bool requestMix(int slot, const MixChange& change) noexcept;
 
     /// Audio thread, once per callback before read(): resets state if the rate changed.
     void beginBlock(double sampleRate) noexcept;
@@ -177,7 +202,9 @@ private:
         uint64_t owner = 0;
     };
     SharedMemory mem_;
+    SharedMemory controlMem_;
     Shared* shared_ = nullptr;
+    ControlShared* control_ = nullptr;
     double sampleRate_ = 48000.0;
     std::array<ReadState, kSlots> state_{};
     std::atomic<uint32_t> dropouts_{0};

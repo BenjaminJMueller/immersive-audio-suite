@@ -79,8 +79,11 @@ private:
     void selectRoomPreset(int i);
     /// Moves DAW track `j` (index into dawTracks_): sent to its plugin, shown here at once.
     void moveDawTrack(int j, float azimuthDeg, float elevationDeg, float distance);
+    /// Level (0), spread (1) or reverb send (2) of DAW track `j`, changed in the app.
+    void changeDawMix(int j, int index, float value);
     struct DawMove { rk::Vec3 position; double until = 0.0; };
     std::array<DawMove, rk::bridge::kSlots> dawMoves_{}; // shown until the plugin has caught up
+    std::array<double, rk::bridge::kSlots> dawMixUntil_{}; // mix sliders held until the plugin has caught up
     void selectSpeaker(int i);
     void addSource();
     void addSpeaker();

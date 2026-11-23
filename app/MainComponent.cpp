@@ -688,7 +688,7 @@ void MainComponent::buildDawTrackPage(int j) {
     dawPageTrack_ = j;
     juce::String name = juce::String::fromUTF8(t.name.c_str());
     if (name.isEmpty()) name = tr("Spur") + " " + juce::String(j + 1);
-    inspector_.add(std::make_unique<rkui::SectionHeader>(name, tr("Diese Spur kommt über das Plugin „Raumklang Quelle“ aus der DAW. Die Position lässt sich hier und in der Ansicht ziehen, das Plugin übernimmt sie. Liest die DAW gerade Automation, gewinnt die Automation.")), 26);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(name, tr("Diese Spur kommt über das Plugin „Raumklang Quelle“ aus der DAW. Position und Klang lassen sich hier einstellen, die Position auch in der Ansicht ziehen. Das Plugin übernimmt die Werte. Liest die DAW gerade Automation, gewinnt die Automation.")), 26);
     // Only a problem gets a card. A connected track needs no message, the list shows it playing.
     if (t.sampleRateMismatch) {
         dawCard_ = inspector_.add(std::make_unique<rkui::StatusCard>(), 72);
@@ -710,8 +710,10 @@ void MainComponent::buildDawTrackPage(int j) {
                 moveDawTrack(j, (float)dawSliders_[0]->getValue(), (float)dawSliders_[1]->getValue(), (float)dawSliders_[2]->getValue());
             };
         } else {
-            sl->setEnabledState(false);
-            sl->setTooltip(tr("Im Plugin in der DAW einstellen."));
+            // Level, spread and send: also taken over by the plugin, inside a gesture.
+            sl->setTooltip(tr("Ändert den Wert im Plugin. Steht die Spur in der DAW auf Automation schreiben, wird die Änderung aufgenommen."));
+            const int index = (int)dawSliders_.size() - 3; // 0 level, 1 spread, 2 send
+            sl->onChange = [this, j, index](double v) { changeDawMix(j, index, (float)v); };
         }
         dawSliders_.push_back(sl);
     };
@@ -735,7 +737,8 @@ void MainComponent::refreshDawValues() {
     const double v[6] = {p.azimuthDeg, p.elevationDeg, p.distance, p.gainDb, p.spread * 100.0, p.reverbSendDb};
     // While the user moves the track here, the plugin's values lag behind: leave position alone.
     const bool moving = slot >= 0 && slot < rk::bridge::kSlots && juce::Time::getMillisecondCounterHiRes() < dawMoves_[(size_t)slot].until;
-    for (int i = moving ? 3 : 0; i < 6; ++i)
+    const bool mixing = slot >= 0 && slot < rk::bridge::kSlots && juce::Time::getMillisecondCounterHiRes() < dawMixUntil_[(size_t)slot];
+    for (int i = moving ? 3 : 0; i < (mixing ? 3 : 6); ++i)
         if (std::abs(dawSliders_[(size_t)i]->getValue() - v[i]) > 1e-4) dawSliders_[(size_t)i]->setValue(v[i]);
 }
 
@@ -855,6 +858,22 @@ void MainComponent::moveDawTrack(int j, float azimuthDeg, float elevationDeg, fl
     dawMoves_[(size_t)slot] = {rk::toCartesian({azimuthDeg, elevationDeg, distance}), juce::Time::getMillisecondCounterHiRes() + 600.0};
     showStage();
     refreshSidebar();
+}
+
+void MainComponent::changeDawMix(int j, int index, float value) {
+    if (j < 0 || j >= (int)dawTracks_.size()) return;
+    const int slot = dawTracks_[(size_t)j].slot;
+    if (slot < 0 || slot >= rk::bridge::kSlots) return;
+    rk::bridge::MixChange c;
+    switch (index) {
+        case 0: c.mask = rk::bridge::MixChange::Gain; c.gainDb = value; break;
+        case 1: c.mask = rk::bridge::MixChange::Spread; c.spread = value / 100.0f; break;
+        case 2: c.mask = rk::bridge::MixChange::ReverbSend; c.reverbSendDb = value; break;
+        default: return;
+    }
+    if (!host_.requestBridgeMix(slot, c)) return;
+    // Until the plugin's values come back through the bridge, keep the slider where the user put it.
+    dawMixUntil_[(size_t)slot] = juce::Time::getMillisecondCounterHiRes() + 600.0;
 }
 
 std::vector<rkui::DawTrackState> MainComponent::currentDawStates() const {

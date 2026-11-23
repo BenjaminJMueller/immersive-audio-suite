@@ -4,6 +4,9 @@
 // the app through a file, so every instance always uses the same room.
 #pragma once
 
+#include <array>
+#include <map>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <rk/bridge.hpp>
 #include <rk/engine.hpp>
@@ -76,8 +79,17 @@ private:
     void timerCallback() override;
     void housekeeping();
     int tick_ = 0;
-    bool appGesture_ = false;   // a drag from the app is in progress (message thread)
-    double lastAppMoveMs_ = 0.0;
+    // Changes made in the app (position, mix), per parameter id (message thread).
+    struct AppGesture {
+        bool open = false;
+        double lastMs = 0.0;
+    };
+    std::map<juce::String, AppGesture> appGestures_;
+    void applyFromApp(const char* id, float value, double now);
+    void endAppGestures(double now, bool all);
+    void declickTransportStop(juce::AudioBuffer<float>& buffer, int numIn, int n) noexcept;
+    bool wasPlaying_ = false;             // audio thread
+    std::array<float, 2> lastIn_{};       // audio thread: last input sample per channel
     void reloadSetup(bool force);
     void applyEngineConfig();
 

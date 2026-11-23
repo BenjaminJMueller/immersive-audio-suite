@@ -38,7 +38,10 @@ std::string testName() {
 
 struct Names {
     std::string name = testName();
-    ~Names() { SharedMemory::unlink(name); }
+    ~Names() {
+        SharedMemory::unlink(name);
+        SharedMemory::unlink(name + "-ctl");
+    }
 };
 
 struct Out {
@@ -192,6 +195,62 @@ TEST_CASE("bridge: the app moves a track, the plugin picks it up once, a new own
     CHECK_FALSE(other.takeMove(az, el, dist)); // meant for the previous plugin
     CHECK_FALSE(rx.requestMove(-1, 0, 0, 1));
     CHECK_FALSE(rx.requestMove(kSlots, 0, 0, 1));
+}
+
+TEST_CASE("bridge: the app changes mix values, the plugin takes only those, a new owner ignores them") {
+    Names nm;
+    Sender tx;
+    Receiver rx;
+    REQUIRE(tx.open(nm.name));
+    REQUIRE(rx.open(nm.name));
+    MixChange c;
+    c.mask = MixChange::Gain;
+    c.gainDb = -6.0f;
+    CHECK_FALSE(rx.requestMix(0, c)); // nobody owns slot 0
+    const int slot = tx.claim();
+    REQUIRE(slot >= 0);
+    MixChange got;
+    CHECK_FALSE(tx.takeMix(got));
+
+    // Two changes before the plugin polls: both arrive, the second value wins.
+    REQUIRE(rx.requestMix(slot, c));
+    MixChange s2;
+    s2.mask = MixChange::Spread | MixChange::ReverbSend;
+    s2.spread = 0.4f;
+    s2.reverbSendDb = -20.0f;
+    REQUIRE(rx.requestMix(slot, s2));
+    c.gainDb = -3.0f;
+    REQUIRE(rx.requestMix(slot, c));
+    REQUIRE(tx.takeMix(got));
+    CHECK(got.mask == (MixChange::Gain | MixChange::Spread | MixChange::ReverbSend));
+    CHECK(got.gainDb == doctest::Approx(-3.0f));
+    CHECK(got.spread == doctest::Approx(0.4f));
+    CHECK(got.reverbSendDb == doctest::Approx(-20.0f));
+    CHECK_FALSE(tx.takeMix(got)); // only once
+
+    // Garbage is clamped, never passed on as NaN.
+    MixChange bad;
+    bad.mask = MixChange::All;
+    bad.gainDb = NAN;
+    bad.spread = 7.0f;
+    bad.reverbSendDb = -1.0e9f;
+    bad.stereoWidthDeg = INFINITY;
+    bad.distanceAmount = -3.0f;
+    REQUIRE(rx.requestMix(slot, bad));
+    REQUIRE(tx.takeMix(got));
+    CHECK(std::isfinite(got.gainDb));
+    CHECK(got.spread <= 1.0f);
+    CHECK(std::isfinite(got.reverbSendDb));
+    CHECK(std::isfinite(got.stereoWidthDeg));
+    CHECK(got.distanceAmount >= 0.0f);
+
+    REQUIRE(rx.requestMix(slot, c));
+    tx.release();
+    Sender other;
+    REQUIRE(other.open(nm.name));
+    REQUIRE(other.claim() == slot);
+    CHECK_FALSE(other.takeMix(got)); // meant for the previous plugin
+    CHECK_FALSE(rx.requestMix(kSlots, c));
 }
 
 TEST_CASE("bridge: slots are limited and freed slots are reused") {
@@ -554,12 +613,18 @@ TEST_CASE("bridge: when the DAW stops (pause), the app goes silent and never rep
     CHECK(heard > 90);
     // Pause: the DAW no longer calls the plugin. The app keeps reading for 10 seconds.
     int loud = 0;
+    float prev = out.l.back(), maxStep = 0.0f;
     for (int i = 0; i < 48000 * 10 / 256; ++i) {
         rx.read(tx.slot(), out.ptr, 256, p);
+        for (float v : out.l) {
+            maxStep = std::max(maxStep, std::fabs(v - prev));
+            prev = v;
+        }
         for (float v : out.l)
             if (std::fabs(v) > 1.0e-6f) { ++loud; break; }
     }
-    CHECK(loud <= 2); // at most the frames still in flight, then silence
+    CHECK(loud <= 4);        // the frames still in flight, faded out, then silence
+    CHECK(maxStep < 0.005f); // no click: a hard cut would jump by 0.5
     // Play again: new audio arrives (with a different value), nothing old.
     std::fill(block.begin(), block.end(), -0.25f);
     int fresh = 0, stale = 0;
@@ -594,5 +659,5 @@ TEST_CASE("return: when the app stops writing, the plugin goes silent and never 
         for (float v : out.data[0])
             if (std::fabs(v) > 1.0e-6f) { ++loud; break; }
     }
-    CHECK(loud <= 2);
+    CHECK(loud <= 4); // the frames still in flight, faded out
 }
