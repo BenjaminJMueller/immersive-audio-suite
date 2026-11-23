@@ -6,6 +6,18 @@ using rkui::u8;
 
 namespace rkapp {
 
+namespace {
+enum : juce::CommandID {
+    CmdNew = 0x2001, CmdDemo, CmdOpen, CmdSaveAs, CmdLoadSurvey,
+    CmdUndo, CmdRedo,
+    CmdStep1, CmdStep2, CmdStep3, CmdStep4,
+    CmdViewTop, CmdViewFront, CmdViewSplit, CmdView3D,
+    CmdDark, CmdLight, CmdGerman, CmdEnglish,
+    CmdIntro, CmdWebsite, CmdCheckUpdates
+};
+bool german() { return rkui::language() == rkui::Language::German; }
+} // namespace
+
 // ---------------------------------------------------------------------------
 // First-run onboarding: what Raumklang does, the four areas of the app, then how to start.
 // It can be opened again from the help menu.
@@ -415,11 +427,29 @@ MainComponent::MainComponent()
 
     setWantsKeyboardFocus(true);
     setSize(1320, 820);
+
+    // Keyboard shortcuts go through the command manager, so the macOS menu bar shows them too.
+    commands_.registerAllCommandsForTarget(this);
+    stage_.onModeChanged = [this](rkui::RoomView::Mode) { commands_.commandStatusChanged(); };
+    commands_.setFirstCommandTarget(this);
+    addKeyListener(commands_.getKeyMappings());
+    setApplicationCommandManagerToWatch(&commands_);
+   #if JUCE_MAC
+    {
+        juce::PopupMenu appleExtras;
+        appleExtras.addCommandItem(&commands_, CmdCheckUpdates);
+        juce::MenuBarModel::setMacMainMenu(this, &appleExtras);
+    }
+   #endif
     startTimerHz(30);
 }
 
 MainComponent::~MainComponent() {
     stopTimer();
+   #if JUCE_MAC
+    juce::MenuBarModel::setMacMainMenu(nullptr);
+   #endif
+    setApplicationCommandManagerToWatch(nullptr);
     saveNow();
     if (!host_.simulating())
         if (auto xml = host_.devices.createStateXml()) settings_->setValue("audioDevice", xml.get());
@@ -512,8 +542,10 @@ void MainComponent::commit() {
     committed_ = now;
     dirty_ = true;
     rkui::writeSharedSetup(scene_);
+    const bool menuChanges = !undoBtn_.isEnabled() || redoBtn_.isEnabled();
     undoBtn_.setEnabled(true);
     redoBtn_.setEnabled(false);
+    if (menuChanges) commands_.commandStatusChanged();
 }
 
 void MainComponent::undo() {
@@ -550,6 +582,7 @@ void MainComponent::loadScene(const rkui::Scene& s, bool resetHistory) {
 
 void MainComponent::refreshAll() {
     steps_.setSelected(step_);
+    commands_.commandStatusChanged(); // ticks and enabled items in the menu bar
     showStage();
     stage_.setSelectedSource(selSource_);
     stage_.setSelectedSpeaker(selSpeaker_);
@@ -1514,17 +1547,9 @@ void MainComponent::showHelpMenu() {
     m.addItem(7, tr("Nach Updates suchen …"));
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&helpBtn_), [this](int r) {
         if (r == 1 || r == 2) {
-            rkui::setLanguage(r == 1 ? rkui::Language::German : rkui::Language::English);
-            settings_->setValue("language", r == 1 ? "de" : "en");
-            settings_->saveIfNeeded();
-            steps_.setItems(juce::StringArray{tr("Lautsprecher"), tr("Quellen"), tr("Raum"), tr("Ausgabe")});
-            updateTooltips();
-            refreshAll();
+            setUiLanguage(r == 1);
         } else if (r == 3 || r == 4) {
-            rkui::setDarkMode(r == 3);
-            settings_->setValue("theme", r == 3 ? "dark" : "light");
-            settings_->saveIfNeeded();
-            applyTheme();
+            setUiTheme(r == 3);
         } else if (r == 5) {
             showIntro(true);
         } else if (r == 7) {
@@ -1533,6 +1558,161 @@ void MainComponent::showHelpMenu() {
             juce::URL("https://github.com/BenjaminJMueller/immersive-audio-suite").launchInDefaultBrowser();
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+
+void MainComponent::setUiLanguage(bool german) {
+    rkui::setLanguage(german ? rkui::Language::German : rkui::Language::English);
+    settings_->setValue("language", german ? "de" : "en");
+    settings_->saveIfNeeded();
+    steps_.setItems(juce::StringArray{tr("Lautsprecher"), tr("Quellen"), tr("Raum"), tr("Ausgabe")});
+    updateTooltips();
+    refreshAll();
+    commands_.commandStatusChanged();
+    menuItemsChanged();
+}
+
+void MainComponent::setUiTheme(bool dark) {
+    rkui::setDarkMode(dark);
+    settings_->setValue("theme", dark ? "dark" : "light");
+    settings_->saveIfNeeded();
+    applyTheme();
+    commands_.commandStatusChanged();
+}
+
+void MainComponent::confirmReplaceProject(std::function<void()> then) {
+    if (projectFile_ != juce::File()) { // saved in its file on every change
+        saveNow();
+        then();
+        return;
+    }
+    const auto opts = juce::MessageBoxOptions{}
+                          .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                          .withTitle(tr("Aktuelles Projekt ersetzen?"))
+                          .withMessage(tr("Das Projekt ist in keiner Datei gesichert. Mit „Sichern unter …“ bleibt es erhalten."))
+                          .withButton(tr("Ersetzen"), 1)
+                          .withButton(tr("Abbrechen"), 0)
+                          .withAssociatedComponent(this);
+    replaceBox_ = juce::NativeMessageBox::showScopedAsync(opts, [then](int result) { if (result == 1 && then) then(); });
+}
+
+
+juce::StringArray MainComponent::getMenuBarNames() {
+    if (german()) return {"Ablage", "Bearbeiten", "Darstellung", "Hilfe"};
+    return {"File", "Edit", "View", "Help"};
+}
+
+juce::PopupMenu MainComponent::getMenuForIndex(int index, const juce::String&) {
+    juce::PopupMenu m;
+    auto* c = &commands_;
+    switch (index) {
+    case 0:
+        m.addCommandItem(c, CmdNew);
+        m.addCommandItem(c, CmdDemo);
+        m.addSeparator();
+        m.addCommandItem(c, CmdOpen);
+        m.addCommandItem(c, CmdSaveAs);
+        m.addSeparator();
+        m.addCommandItem(c, CmdLoadSurvey);
+        break;
+    case 1:
+        m.addCommandItem(c, CmdUndo);
+        m.addCommandItem(c, CmdRedo);
+        break;
+    case 2: {
+        for (auto id : {CmdStep1, CmdStep2, CmdStep3, CmdStep4}) m.addCommandItem(c, id);
+        m.addSeparator();
+        for (auto id : {CmdViewTop, CmdViewFront, CmdViewSplit, CmdView3D}) m.addCommandItem(c, id);
+        m.addSeparator();
+        m.addCommandItem(c, CmdDark);
+        m.addCommandItem(c, CmdLight);
+        juce::PopupMenu lang;
+        lang.addCommandItem(c, CmdGerman);
+        lang.addCommandItem(c, CmdEnglish);
+        m.addSubMenu(german() ? "Sprache" : "Language", lang);
+        break;
+    }
+    case 3:
+        m.addCommandItem(c, CmdIntro);
+        m.addCommandItem(c, CmdWebsite);
+       #if !JUCE_MAC
+        m.addCommandItem(c, CmdCheckUpdates);
+       #endif
+        break;
+    default: break;
+    }
+    return m;
+}
+
+void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
+    ids.addArray({CmdNew, CmdDemo, CmdOpen, CmdSaveAs, CmdLoadSurvey, CmdUndo, CmdRedo, CmdStep1, CmdStep2, CmdStep3,
+                  CmdStep4, CmdViewTop, CmdViewFront, CmdViewSplit, CmdView3D, CmdDark, CmdLight, CmdGerman, CmdEnglish,
+                  CmdIntro, CmdWebsite, CmdCheckUpdates});
+}
+
+void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info) {
+    const auto cmd = juce::ModifierKeys::commandModifier;
+    const auto shift = juce::ModifierKeys::shiftModifier;
+    const bool de = german();
+    const auto view = stage_.mode();
+    switch (id) {
+    case CmdNew: info.setInfo(de ? u8("Neues Projekt …") : u8("New project …"), {}, "File", 0); info.addDefaultKeypress('n', cmd); break;
+    case CmdDemo: info.setInfo(de ? u8("Demo öffnen …") : u8("Open demo …"), {}, "File", 0); break;
+    case CmdOpen: info.setInfo(tr("Öffnen …"), {}, "File", 0); info.addDefaultKeypress('o', cmd); break;
+    case CmdSaveAs: info.setInfo(tr("Sichern unter …"), {}, "File", 0); info.addDefaultKeypress('s', cmd); break;
+    case CmdLoadSurvey: info.setInfo(tr("iPhone-Messung laden") + u8(" …"), {}, "File", 0); break;
+    case CmdUndo: info.setInfo(tr("Rückgängig"), {}, "Edit", 0); info.addDefaultKeypress('z', cmd); info.setActive(undoBtn_.isEnabled()); break;
+    case CmdRedo:
+        info.setInfo(tr("Wiederholen"), {}, "Edit", 0);
+        info.addDefaultKeypress('z', cmd | shift);
+        info.addDefaultKeypress('y', cmd);
+        info.setActive(redoBtn_.isEnabled());
+        break;
+    case CmdStep1: case CmdStep2: case CmdStep3: case CmdStep4: {
+        const int k = (int)(id - CmdStep1);
+        static const char* names[] = {"Lautsprecher", "Quellen", "Raum", "Ausgabe"};
+        info.setInfo(tr(names[k]), {}, "View", 0);
+        info.addDefaultKeypress('1' + k, cmd);
+        info.setTicked(step_ == k);
+        break;
+    }
+    case CmdViewTop: info.setInfo(tr("Oben"), {}, "View", 0); info.setTicked(view == rkui::RoomView::Mode::Top); break;
+    case CmdViewFront: info.setInfo(tr("Vorne"), {}, "View", 0); info.setTicked(view == rkui::RoomView::Mode::Front); break;
+    case CmdViewSplit: info.setInfo(tr("Geteilt"), {}, "View", 0); info.setTicked(view == rkui::RoomView::Mode::Split); break;
+    case CmdView3D: info.setInfo("3D", {}, "View", 0); info.setTicked(view == rkui::RoomView::Mode::ThreeD); break;
+    case CmdDark: info.setInfo(de ? "Dunkel" : "Dark", {}, "View", 0); info.setTicked(rkui::isDark()); break;
+    case CmdLight: info.setInfo(de ? "Hell" : "Light", {}, "View", 0); info.setTicked(!rkui::isDark()); break;
+    case CmdGerman: info.setInfo("Deutsch", {}, "View", 0); info.setTicked(de); break;
+    case CmdEnglish: info.setInfo("English", {}, "View", 0); info.setTicked(!de); break;
+    case CmdIntro: info.setInfo(de ? u8("Einführung zeigen") : "Show introduction", {}, "Help", 0); break;
+    case CmdWebsite: info.setInfo(de ? "Projektseite auf GitHub" : "Project page on GitHub", {}, "Help", 0); break;
+    case CmdCheckUpdates: info.setInfo(tr("Nach Updates suchen …"), {}, "Help", 0); break;
+    default: break;
+    }
+}
+
+bool MainComponent::perform(const InvocationInfo& info) {
+    switch (info.commandID) {
+    case CmdNew: confirmReplaceProject([this] { projectFile_ = juce::File(); startEmpty(); }); return true;
+    case CmdDemo: confirmReplaceProject([this] { projectFile_ = juce::File(); startDemo(); }); return true;
+    case CmdOpen: openProject(); return true;
+    case CmdSaveAs: saveProjectAs(); return true;
+    case CmdLoadSurvey: chooseSurveyFile(); return true;
+    case CmdUndo: undo(); return true;
+    case CmdRedo: redo(); return true;
+    case CmdStep1: case CmdStep2: case CmdStep3: case CmdStep4: setStep((int)(info.commandID - CmdStep1)); return true;
+    case CmdViewTop: case CmdViewFront: case CmdViewSplit: case CmdView3D:
+        stage_.setMode((rkui::RoomView::Mode)(info.commandID - CmdViewTop));
+        commands_.commandStatusChanged();
+        return true;
+    case CmdDark: case CmdLight: setUiTheme(info.commandID == CmdDark); return true;
+    case CmdGerman: case CmdEnglish: setUiLanguage(info.commandID == CmdGerman); return true;
+    case CmdIntro: showIntro(true); return true;
+    case CmdWebsite: juce::URL("https://github.com/BenjaminJMueller/immersive-audio-suite").launchInDefaultBrowser(); return true;
+    case CmdCheckUpdates: updater_.check(this, true); return true;
+    default: return false;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1818,18 +1998,8 @@ void MainComponent::updateCoach() {
     }
 }
 
-bool MainComponent::keyPressed(const juce::KeyPress& key) {
-    const auto mods = key.getModifiers();
-    if (key.getKeyCode() == 'Z' && mods.isCommandDown()) {
-        if (mods.isShiftDown()) redo();
-        else undo();
-        return true;
-    }
-    if (key.getKeyCode() == 'Y' && mods.isCommandDown()) { redo(); return true; }
-    if (key.getKeyCode() == 'S' && mods.isCommandDown()) { saveProjectAs(); return true; }
-    if (key.getKeyCode() == 'O' && mods.isCommandDown()) { openProject(); return true; }
-    if (key.getKeyCode() >= '1' && key.getKeyCode() <= '4' && mods.isCommandDown()) { setStep(key.getKeyCode() - '1'); return true; }
-    return false;
+bool MainComponent::keyPressed(const juce::KeyPress&) {
+    return false; // shortcuts are commands, see getCommandInfo()
 }
 
 // ---------------------------------------------------------------------------
