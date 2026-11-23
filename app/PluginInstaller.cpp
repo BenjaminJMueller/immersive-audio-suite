@@ -26,6 +26,10 @@ juce::Array<juce::File> bundledPlugins() {
     return out;
 }
 
+/// Plugins of earlier versions that no longer exist or were renamed. Left installed, they
+/// show up in the DAW next to the current ones.
+const char* const kObsoletePlugins[] = {"Raumklang Raum", "Raumklang R\xc3\xbc" "ckweg"};
+
 bool run(const juce::StringArray& args, juce::String& output) {
     juce::ChildProcess p;
     if (!p.start(args)) return false;
@@ -43,6 +47,11 @@ bool pluginInstallDue(juce::PropertySet& settings, int build) {
     if (settings.getIntValue("pluginsInstalledBuild", 0) != build) return true;
     for (const auto& p : plugins)
         if (!destinationFor(p).isDirectory()) return true; // removed by hand
+    const juce::File user = juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("Library/Audio/Plug-Ins");
+    for (const char* name : kObsoletePlugins)
+        if (user.getChildFile("Components").getChildFile(juce::String::fromUTF8(name) + ".component").exists() ||
+            user.getChildFile("VST3").getChildFile(juce::String::fromUTF8(name) + ".vst3").exists())
+            return true; // an old plugin came back (e.g. from a backup)
     return false;
 }
 
@@ -69,6 +78,14 @@ PluginInstallResult installBundledPlugins() {
         run({"/usr/bin/xattr", "-dr", "com.apple.quarantine", dst.getFullPathName()}, out);
         r.installed.add(p.getFileName());
     }
+    // Old plugins, in the user's folder and (if writable) the system-wide one.
+    for (const auto& base : {juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("Library/Audio/Plug-Ins"),
+                             juce::File("/Library/Audio/Plug-Ins")})
+        for (const char* name : kObsoletePlugins)
+            for (const char* ext : {"Components/%s.component", "VST3/%s.vst3"}) {
+                const juce::File old = base.getChildFile(juce::String(ext).replace("%s", juce::String::fromUTF8(name)));
+                if (old.exists() && old.deleteRecursively()) r.removed.add(old.getFileName());
+            }
     // Makes Logic and GarageBand see new Audio Units without logging out.
     run({"/usr/bin/killall", "-9", "AudioComponentRegistrar"}, out);
     r.ok = true;

@@ -9,6 +9,7 @@ AudioHost::AudioHost() {
     receiver_.open(); // may fail (e.g. sandbox): the app then simply works without DAW tracks
     returnSender_.open();
     returnBuffers_.assign(static_cast<size_t>(rk::kMaxSpeakers) * kGenBlock, 0.0f);
+    for (int c = 0; c < rk::kMaxSpeakers; ++c) route_[(size_t)c].store(c);
     for (int i = 0; i < kMaxGenerated; ++i) {
         testSignal[(size_t)i].store(0);
         pink_[(size_t)i] = rk::PinkNoise(0x9e3779b9u * (uint32_t)(i + 1));
@@ -106,6 +107,16 @@ void AudioHost::startSimulation(const rk::SpeakerLayout& realRoom) {
             std::this_thread::sleep_until(next);
         }
     });
+}
+
+void AudioHost::setRouting(const std::vector<int>& speakerOutputs) noexcept {
+    bool identity = true;
+    for (int c = 0; c < rk::kMaxSpeakers; ++c) {
+        const int o = c < (int)speakerOutputs.size() ? juce::jlimit(-1, rk::kMaxSpeakers - 1, speakerOutputs[(size_t)c]) : c;
+        identity = identity && o == c;
+        route_[(size_t)c].store(o, std::memory_order_relaxed);
+    }
+    routeIdentity_.store(identity, std::memory_order_release);
 }
 
 std::vector<rk::bridge::TrackInfo> AudioHost::scanBridge() {
@@ -271,14 +282,24 @@ void AudioHost::audioDeviceIOCallbackWithContext(const float* const* inputs, int
         }
         // Measuring: calibration.process() replaces the engine output (silence + sweep on one
         // speaker) and records the mic, before the signals go to the device or back to the DAW.
-        if (toDaw) {
-            for (int c = 0; c < rk::kMaxSpeakers; ++c) out[c] = &returnBuffers_[(size_t)c * kGenBlock];
-            engine.process(in, kTotalInputs, out, rk::kMaxSpeakers, n);
-            calibration.process(in, numInputs, out, numOutputs, n);
-            const int spk = juce::jlimit(0, rk::bridge::kReturnChannels, engine.numOutputChannels());
-            returnSender_.write(out, spk, n);
+        const bool identity = routeIdentity_.load(std::memory_order_relaxed);
+        if (toDaw || !identity) {
+            // Speakers first into their own buffers, then to the DAW and through the routing.
+            const int spk = juce::jlimit(1, rk::kMaxSpeakers, engine.numOutputChannels());
+            for (int c = 0; c < spk; ++c) out[c] = &returnBuffers_[(size_t)c * kGenBlock];
+            engine.process(in, kTotalInputs, out, spk, n);
+            calibration.process(in, numInputs, out, spk, n);
+            if (toDaw) returnSender_.write(out, std::min(spk, rk::bridge::kReturnChannels), n);
             for (int c = 0; c < numOutputs; ++c)
-                if (outputs[c] != nullptr) std::memcpy(outputs[c] + off, out[c], sizeof(float) * (size_t)n);
+                if (outputs[c] != nullptr) std::fill(outputs[c] + off, outputs[c] + off + n, 0.0f);
+            for (int c = 0; c < spk; ++c) {
+                const int o = identity ? c : route_[(size_t)c].load(std::memory_order_relaxed);
+                if (o < 0 || o >= numOutputs || outputs[o] == nullptr) continue;
+                float* dst = outputs[o] + off;
+                const float* src = out[c];
+                for (int i = 0; i < n; ++i) dst[i] += src[i];
+            }
+            for (int c = 0; c < numOutputs; ++c) out[c] = outputs[c] != nullptr ? outputs[c] + off : nullptr;
         } else {
             for (int c = 0; c < numOutputs; ++c) out[c] = outputs[c] != nullptr ? outputs[c] + off : nullptr;
             engine.process(in, kTotalInputs, out, numOutputs, n);

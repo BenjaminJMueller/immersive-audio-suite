@@ -724,11 +724,11 @@ void OutputStrip::paint(juce::Graphics& g) {
     g.setColour(p.text);
     g.setFont(uiFont(13.0f, true));
     g.drawText(tr("Master"), 16, 8, getWidth() / 2, 18, juce::Justification::centredLeft, false);
-    if (reduction_ > 0.0f) { // the limiter works right now
+    if (reduction_ > 0.0f) { // compressor or limiter work right now
         const int mw = juce::roundToInt(juce::GlyphArrangement::getStringWidth(uiFont(13.0f, true), tr("Master")));
         g.setColour(p.warn);
         g.setFont(uiFont(11.5f, true));
-        g.drawText(tr("Limiter") + " " + juce::String::fromUTF8("\xe2\x88\x92") + num(reduction_, 1) + " dB", 16 + mw + 8, 8, getWidth() / 2, 18,
+        g.drawText(juce::String("GR ") + juce::String::fromUTF8("\xe2\x88\x92") + num(reduction_, 1) + " dB", 16 + mw + 8, 8, getWidth() / 2, 18,
                    juce::Justification::centredLeft, false);
     }
     g.setColour(p.text2);

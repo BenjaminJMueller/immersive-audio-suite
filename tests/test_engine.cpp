@@ -455,3 +455,87 @@ TEST_CASE("limiter: adjustable ceiling and release, gain reduction is reported")
     lim.process(z.data(), (int)z.size(), true, peak);
     CHECK(peak <= rk::PeakLimiter::kCeiling);
 }
+
+TEST_CASE("compressor: one gain for all outputs, the ratio of the channels stays") {
+    rk::LinkedCompressor comp;
+    comp.prepare(48000.0);
+    rk::LinkedCompressor::Params p;
+    p.enabled = true;
+    p.thresholdDb = -20.0f;
+    p.ratio = 4.0f;
+    p.kneeDb = 0.0f;
+    p.attackMs = 1.0f;
+    p.releaseMs = 100.0f;
+    // Loud channel at 0 dBFS, quiet channel at -20 dBFS, constant.
+    std::vector<float> a(48000, 1.0f), b(48000, 0.1f);
+    float* ch[2] = {a.data(), b.data()};
+    const float most = comp.process(ch, 2, (int)a.size(), p);
+    // 20 dB over the threshold at 4:1 -> 15 dB gain reduction, settled after the attack.
+    CHECK(most == doctest::Approx(15.0f).epsilon(0.01));
+    CHECK(20.0f * std::log10(a.back()) == doctest::Approx(-15.0f).epsilon(0.01));
+    // The quiet channel is turned down by exactly the same amount: the image stays.
+    CHECK(a.back() / b.back() == doctest::Approx(10.0f).epsilon(1.0e-4));
+
+    // Below the threshold nothing happens (after the release).
+    std::vector<float> c(96000, 0.05f);
+    float* q[1] = {c.data()};
+    comp.process(q, 1, (int)c.size(), p);
+    CHECK(c.back() == doctest::Approx(0.05f).epsilon(0.001));
+
+    // Soft knee: reduction starts below the threshold, but only by little.
+    CHECK(rk::LinkedCompressor::curveReductionDb(-22.0f, -20.0f, 4.0f, 6.0f) > 0.0f);
+    CHECK(rk::LinkedCompressor::curveReductionDb(-24.0f, -20.0f, 4.0f, 6.0f) == 0.0f);
+    CHECK(rk::LinkedCompressor::curveReductionDb(-10.0f, -20.0f, 4.0f, 6.0f) == doctest::Approx(7.5f));
+
+    // Make-up raises the level, switching off releases smoothly without a jump.
+    p.makeupDb = 6.0f;
+    std::vector<float> d(4800, 0.05f);
+    float* r[1] = {d.data()};
+    comp.process(r, 1, (int)d.size(), p);
+    CHECK(d.back() == doctest::Approx(0.05f * std::pow(10.0f, 6.0f / 20.0f)).epsilon(0.001));
+    p.enabled = false;
+    std::vector<float> e(4800, 0.05f);
+    float* t[1] = {e.data()};
+    comp.process(t, 1, (int)e.size(), p);
+    float maxStep = 0.0f;
+    for (size_t i = 1; i < e.size(); ++i) maxStep = std::max(maxStep, std::fabs(e[i] - e[i - 1]));
+    CHECK(maxStep < 1.0e-4f);
+    CHECK(e.back() == doctest::Approx(0.05f).epsilon(0.001));
+
+    // Garbage parameters never produce garbage.
+    p.enabled = true;
+    p.thresholdDb = NAN;
+    p.ratio = INFINITY;
+    p.attackMs = -1.0f;
+    std::vector<float> f(256, 2.0f);
+    float* u[1] = {f.data()};
+    comp.process(u, 1, (int)f.size(), p);
+    for (float v : f) CHECK(std::isfinite(v));
+}
+
+TEST_CASE("compressor: engine turns all speakers down together, before the limiter") {
+    Rig r(1, 4);
+    r.setLayout(presets::ring(4, 2.0f), PannerKind::VBAP);
+    r.noReverb();
+    auto& s = r.engine.source(0);
+    s.active = true;
+    s.setPosition(toCartesian({30.0f, 0, 2.0f}));
+    std::fill(r.in[0].begin(), r.in[0].end(), 0.5f);
+    r.settle();
+    r.run(4096);
+    std::vector<float> before(4);
+    for (int c = 0; c < 4; ++c) before[(size_t)c] = std::fabs(r.out[(size_t)c][4000]);
+    r.engine.compressorEnabled = true;
+    r.engine.compressorThresholdDb = -30.0f;
+    r.engine.compressorRatio = 10.0f;
+    r.engine.compressorAttackMs = 1.0f;
+    for (int k = 0; k < 4; ++k) r.run(4096);
+    CHECK(r.engine.takeCompressorReduction() > 3.0f);
+    int loudest = 0;
+    for (int c = 1; c < 4; ++c)
+        if (before[(size_t)c] > before[(size_t)loudest]) loudest = c;
+    const float g = std::fabs(r.out[(size_t)loudest][4000]) / before[(size_t)loudest];
+    CHECK(g < 0.7f);
+    for (int c = 0; c < 4; ++c)
+        if (before[(size_t)c] > 1.0e-3f) CHECK(std::fabs(r.out[(size_t)c][4000]) / before[(size_t)c] == doctest::Approx(g).epsilon(0.01));
+}

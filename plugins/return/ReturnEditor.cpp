@@ -156,6 +156,11 @@ void ReturnEditor::refreshStatus() {
     } else if (st.rateMismatch) {
         text = L("Abtastrate passt nicht: App ", "Sample rate differs: app ") + rateText(st.appSampleRate) + L(", DAW ", ", DAW ") +
                rateText(st.sampleRate) + L(". Beide gleich einstellen.", ". Set both to the same rate.");
+    } else if (!st.processing) {
+        // The room above still shows the tracks (they come from the app), but no audio passes:
+        // the DAW does not run this track right now.
+        text = L("Die DAW verarbeitet diese Spur gerade nicht. Spur ausw\xc3\xa4hlen, Input-Monitoring einschalten oder die Wiedergabe starten.",
+                 "The DAW is not processing this track right now. Select the track, turn on input monitoring or start playback.");
     } else if (st.offline) {
         text = L("Nur Echtzeit-Bounce: Die App rechnet in Echtzeit.", "Real-time bounce only: the app renders in real time.");
     } else if (st.firstChannel > st.appChannels) {

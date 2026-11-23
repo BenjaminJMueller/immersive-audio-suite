@@ -105,6 +105,7 @@ juce::var layoutToVar(const rk::SpeakerLayout& l) {
         so->setProperty("group", s.group);
         so->setProperty("subwoofer", s.isSubwoofer);
         so->setProperty("enabled", s.enabled);
+        if (s.output != rk::Speaker::kOutputAuto) so->setProperty("output", s.output);
         spk.add(juce::var(so));
     }
     o->setProperty("speakers", spk);
@@ -130,6 +131,7 @@ rk::SpeakerLayout layoutFromVar(const juce::var& v) {
             s.group = getI(e, "group", 0, 0, 63);
             s.isSubwoofer = getB(e, "subwoofer", false);
             s.enabled = getB(e, "enabled", true);
+            s.output = getI(e, "output", rk::Speaker::kOutputAuto, rk::Speaker::kOutputNone, rk::kMaxSpeakers - 1);
             l.speakers.push_back(s);
         }
     }
@@ -279,6 +281,13 @@ juce::var sceneToVar(const Scene& s) {
     o->setProperty("limiter", s.limiter);
     o->setProperty("limiterCeilingDb", s.limiterCeilingDb);
     o->setProperty("limiterReleaseMs", s.limiterReleaseMs);
+    o->setProperty("compressor", s.compressor);
+    o->setProperty("compThresholdDb", s.compThresholdDb);
+    o->setProperty("compRatio", s.compRatio);
+    o->setProperty("compAttackMs", s.compAttackMs);
+    o->setProperty("compReleaseMs", s.compReleaseMs);
+    o->setProperty("compKneeDb", s.compKneeDb);
+    o->setProperty("compMakeupDb", s.compMakeupDb);
     o->setProperty("headphones", s.headphones);
     o->setProperty("binaural", s.binaural);
     juce::Array<juce::var> src;
@@ -316,6 +325,13 @@ Scene sceneFromVar(const juce::var& v) {
     s.limiter = getB(v, "limiter", true);
     s.limiterCeilingDb = getF(v, "limiterCeilingDb", -0.1f, -20.0f, 0.0f);
     s.limiterReleaseMs = getF(v, "limiterReleaseMs", 80.0f, 1.0f, 2000.0f);
+    s.compressor = getB(v, "compressor", false);
+    s.compThresholdDb = getF(v, "compThresholdDb", -18.0f, -60.0f, 0.0f);
+    s.compRatio = getF(v, "compRatio", 3.0f, 1.0f, 20.0f);
+    s.compAttackMs = getF(v, "compAttackMs", 10.0f, 0.1f, 200.0f);
+    s.compReleaseMs = getF(v, "compReleaseMs", 150.0f, 5.0f, 2000.0f);
+    s.compKneeDb = getF(v, "compKneeDb", 6.0f, 0.0f, 24.0f);
+    s.compMakeupDb = getF(v, "compMakeupDb", 0.0f, 0.0f, 24.0f);
     s.headphones = getB(v, "headphones", false);
     s.binaural = getB(v, "binaural", false);
     if (const auto* a = v.getProperty("sources", juce::var()).getArray()) {

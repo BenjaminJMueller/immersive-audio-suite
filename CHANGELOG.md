@@ -2,6 +2,12 @@
 
 ## Unveröffentlicht
 
+- **3D-Kompressor**: Ein Kompressor für alle Lautsprecher gemeinsam im Schritt Ausgabe, vor dem Limiter. Er misst den lautesten Ausgang und senkt alle um denselben Betrag ab, so bleibt die räumliche Abbildung stehen. Threshold, Ratio, Attack, Release, Knee und Make-up, Gain Reduction als Anzeige.
+- **Routing**: Im Schritt Ausgabe lässt sich jeder Lautsprecher auf einen beliebigen Ausgang des Audio-Interfaces legen oder ganz vom Interface trennen. Das Routing wird im Projekt gespeichert und gilt auch beim Einmessen.
+- **Menüs mit runden Ecken**: alle Menüs und Auswahllisten, auch das Hilfemenü (?).
+- **Raumklang Return**: Ruft die DAW das Plugin nicht auf (Spur nicht ausgewählt, kein Input-Monitoring, Wiedergabe gestoppt), sagt das Plugin das jetzt, statt still zu bleiben.
+- **Alte Plugins weg**: Die Plugin-Installation entfernt *Raumklang Raum* und *Raumklang Rückweg* früherer Versionen (Mac: AU und VST3, Windows: VST3).
+- **Master-Streifen**: zeigt die gesamte Gain Reduction von Kompressor und Limiter als „GR“.
 - **Update repariert**: Der Update-Dialog zeigt jetzt die Änderungen als Liste, den Download mit Fortschritt und jeden Fehler. Darf Raumklang sich nicht selbst ersetzen (App-Verwaltung von macOS, Start aus dem Disk-Image), sagt es das vor dem Beenden und legt die neue Version in *Downloads/Raumklang-Update*. Das Installationsskript löscht die alte App nicht mehr, wenn das Verschieben scheitert, schreibt *Update.log* und meldet beim nächsten Start, ob es geklappt hat.
 - **Plugins ohne Terminal**: Auf dem Mac stecken die Plugins signiert in Raumklang.app. Die App installiert sie beim ersten Start jeder Version selbst (AU und VST3 in ~/Library/Audio/Plug-Ins), über *Hilfe → Plugins installieren* jederzeit neu. *Plugins installieren.command* entfällt.
 - **Dateinamen mit Version**: Raumklang-0.1.N-mac.dmg, Raumklang-0.1.N-mac.zip und Raumklang-0.1.N-Windows.zip. Die Release-Notizen und der Update-Dialog nehmen die Punkte aus dem Pull Request statt „Merge pull request …“.

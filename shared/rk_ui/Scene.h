@@ -74,6 +74,14 @@ struct Scene {
     bool limiter = true;
     float limiterCeilingDb = -0.1f; // dBFS
     float limiterReleaseMs = 80.0f;
+    // Compressor over all speakers together (one gain for all, the image stays in place).
+    bool compressor = false;
+    float compThresholdDb = -18.0f;
+    float compRatio = 3.0f;
+    float compAttackMs = 10.0f;
+    float compReleaseMs = 150.0f;
+    float compKneeDb = 6.0f;
+    float compMakeupDb = 0.0f;
     bool headphones = false;
     /// With headphones: true renders the sources binaurally around the head, independent of
     /// the speaker setup; false lets you listen to the speaker setup itself.
