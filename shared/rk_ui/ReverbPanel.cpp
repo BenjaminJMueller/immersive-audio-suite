@@ -125,7 +125,35 @@ void ReverbPanel::setParams(const rk::ReverbParams& raw, float wetDb) {
     if (same) return;
     params_ = p;
     wetDb_ = wetDb;
-    if (drag_ < 0) scaleRt_ = maxRt();
+    if (drag_ < 0) animateScaleTo(maxRt());
+    repaint();
+}
+
+float ReverbPanel::timeRangeFor(const rk::ReverbParams& p) {
+    // Enough for the reflections and half of the tail.
+    const float need = std::max(p.preDelayMs + kClusterMs[rk::kClusterTaps - 1] * p.size + 60.0f, p.decaySec * 500.0f);
+    for (float r : {300.0f, 600.0f, 1200.0f, 2500.0f, 5000.0f})
+        if (r >= need) return r;
+    return 5000.0f;
+}
+
+void ReverbPanel::animateScaleTo(float target) {
+    scaleTarget_ = target;
+    rangeTarget_ = timeRangeFor(params_);
+    if (rangeMs_ <= 0.0f) rangeMs_ = rangeTarget_;
+    const bool moving = std::abs(scaleTarget_ - scaleRt_) > 1.0e-3f || std::abs(rangeTarget_ - rangeMs_) > 0.5f;
+    if (moving && !isTimerRunning()) startTimerHz(60);
+}
+
+void ReverbPanel::timerCallback() {
+    // Ease towards the new range instead of jumping, so the curve and grid do not twitch.
+    scaleRt_ += (scaleTarget_ - scaleRt_) * 0.15f;
+    rangeMs_ += (rangeTarget_ - rangeMs_) * 0.15f;
+    const bool rtDone = std::abs(scaleTarget_ - scaleRt_) < 1.0e-3f * scaleTarget_;
+    const bool rangeDone = std::abs(rangeTarget_ - rangeMs_) < 0.5f;
+    if (rtDone) scaleRt_ = scaleTarget_;
+    if (rangeDone) rangeMs_ = rangeTarget_;
+    if (rtDone && rangeDone) stopTimer();
     repaint();
 }
 
@@ -288,11 +316,8 @@ void ReverbPanel::paintTime(juce::Graphics& g) {
     const float size = params_.size;
     const float pre = params_.preDelayMs;
 
-    // Range: enough for the reflections and half of the tail.
-    const float need = std::max(pre + kClusterMs[rk::kClusterTaps - 1] * size + 60.0f, params_.decaySec * 500.0f);
-    float range = 5000.0f;
-    for (float r : {300.0f, 600.0f, 1200.0f, 2500.0f, 5000.0f})
-        if (r >= need) { range = r; break; }
+    juce::ignoreUnused(size);
+    const float range = juce::jmax(100.0f, rangeMs_); // glides like the RT scale
     auto xOf = [&](float ms) { return a.getX() + a.getWidth() * juce::jlimit(0.0f, 1.0f, ms / range); };
     auto hOf = [&](float amp) { return a.getHeight() * juce::jlimit(0.0f, 1.0f, std::sqrt(std::max(0.0f, amp))); };
     auto gainOf = [](float db) { return db <= -79.9f ? 0.0f : std::pow(10.0f, db / 20.0f); };
@@ -302,8 +327,10 @@ void ReverbPanel::paintTime(juce::Graphics& g) {
     g.drawText(tr("Zeitverlauf"), juce::Rectangle<float>(a.getX() - 44.0f, a.getY() - 46.0f, 200.0f, 16.0f), juce::Justification::centredLeft);
     g.setColour(p.text.withAlpha(0.15f));
     g.drawHorizontalLine(juce::roundToInt(a.getBottom()), a.getX(), a.getRight());
-    const float tick = range / 6.0f;
-    for (int i = 0; i <= 6; ++i) {
+    float tick = 1000.0f;
+    for (float t : {50.0f, 100.0f, 200.0f, 250.0f, 500.0f, 1000.0f})
+        if (range / t <= 6.0f) { tick = t; break; }
+    for (int i = 0; tick * (float)i <= range + 1.0e-3f; ++i) {
         const float ms = tick * (float)i;
         g.setColour(p.text3);
         g.drawText(juce::String(juce::roundToInt(ms)) + " ms", juce::Rectangle<float>(xOf(ms) - 36.0f, a.getBottom() + 6.0f, 72.0f, 14.0f),
@@ -409,7 +436,7 @@ void ReverbPanel::mouseExit(const juce::MouseEvent&) {
 
 void ReverbPanel::mouseDown(const juce::MouseEvent& e) {
     drag_ = hitHandle(e.position);
-    if (drag_ >= 0) scaleRt_ = maxRt();
+    if (drag_ >= 0) { stopTimer(); scaleRt_ = scaleTarget_ = maxRt(); rangeMs_ = rangeTarget_; }
 }
 
 void ReverbPanel::mouseDrag(const juce::MouseEvent& e) {
@@ -424,7 +451,7 @@ void ReverbPanel::mouseDrag(const juce::MouseEvent& e) {
 void ReverbPanel::mouseUp(const juce::MouseEvent&) {
     if (drag_ < 0) return;
     drag_ = -1;
-    scaleRt_ = maxRt();
+    animateScaleTo(maxRt());
     repaint();
     if (onCommit) onCommit();
 }

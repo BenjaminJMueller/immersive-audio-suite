@@ -1,6 +1,7 @@
 // Raumklang core: multichannel feedback delay network reverb.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -58,7 +59,23 @@ private:
         std::vector<float> buf;
         int pos = 0;
         int length = 1;
+        float cur = -1.0f; // length actually read, glides to `length` (-1: jump there)
         float read() const noexcept { return buf[static_cast<size_t>((pos - length + static_cast<int>(buf.size())) % static_cast<int>(buf.size()))]; }
+        /// Reads at a length that glides towards `length` by at most `maxStep` samples per
+        /// sample, with interpolation. A size change then bends the pitch briefly instead of
+        /// jumping in the buffer, which would click.
+        float readGliding(float maxStep) noexcept {
+            const float target = static_cast<float>(length);
+            if (cur < 0.0f) cur = target;
+            else if (cur != target) cur += std::clamp(target - cur, -maxStep, maxStep);
+            const int sz = static_cast<int>(buf.size());
+            const float c = std::clamp(cur, 1.0f, static_cast<float>(sz - 2));
+            const int i0 = static_cast<int>(c);
+            const float f = c - static_cast<float>(i0);
+            const float a = buf[static_cast<size_t>((pos - i0 + sz) % sz)];
+            const float b = buf[static_cast<size_t>((pos - i0 - 1 + 2 * sz) % sz)];
+            return a + (b - a) * f;
+        }
         void write(float v) noexcept { buf[static_cast<size_t>(pos)] = v; pos = (pos + 1) % static_cast<int>(buf.size()); }
     };
     struct Allpass {
@@ -83,6 +100,10 @@ private:
     Delay cluster_; // diffused signal, read at the cluster taps
     std::array<int, kEarlyTaps> earlyLen_{};
     std::array<int, kClusterTaps> clusterLen_{};
+    std::array<float, kEarlyTaps> earlyCur_{};     // gliding tap positions (see Delay::readGliding)
+    std::array<float, kClusterTaps> clusterCur_{};
+    std::array<float, kClusterTaps> clusterGainCur_{};
+    bool snapTaps_ = true;
     std::array<float, kClusterTaps> clusterGain_{};
     float earlyLevel_ = 0.0f, clusterLevel_ = 0.0f, tailLevel_ = 1.0f;
     bool prepared_ = false;

@@ -63,6 +63,8 @@ public:
     bool requestBridgeMove(int slot, float azimuthDeg, float elevationDeg, float distance) noexcept {
         return receiver_.requestMove(slot, azimuthDeg, elevationDeg, distance);
     }
+    /// The user changed level, spread or reverb send of a DAW track in the app.
+    bool requestBridgeMix(int slot, const rk::bridge::MixChange& change) noexcept { return receiver_.requestMix(slot, change); }
     /// Newest `n` (<= kScopeSize) samples of the summed output, for the visualisation (any thread).
     static constexpr int kScopeSize = 4096;
     void readScope(float* dst, int n) const noexcept;

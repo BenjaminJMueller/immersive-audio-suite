@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "PluginInstaller.h"
 #include "MicPermission.h"
 
 using rkui::tr;
@@ -13,7 +14,7 @@ enum : juce::CommandID {
     CmdStep1, CmdStep2, CmdStep3, CmdStep4,
     CmdViewTop, CmdViewFront, CmdViewSplit, CmdView3D,
     CmdDark, CmdLight, CmdGerman, CmdEnglish,
-    CmdIntro, CmdWebsite, CmdCheckUpdates
+    CmdIntro, CmdWebsite, CmdCheckUpdates, CmdInstallPlugins
 };
 bool german() { return rkui::language() == rkui::Language::German; }
 } // namespace
@@ -323,6 +324,7 @@ MainComponent::MainComponent()
     };
     sidebar_.onMenu = [this](int row, juce::Rectangle<int> area) {
         if (step_ == StepSpeakers && !calibrating_) speakerMenu(row, area);
+        else if (step_ == StepSources && row < (int)scene_.sources.size()) sourceMenu(row, area);
     };
     addAndMakeVisible(outputStrip_);
     outputStrip_.setTooltip(tr("Master-Pegel aller Ausgänge. Doppelklick setzt auf 0 dB."));
@@ -424,6 +426,11 @@ MainComponent::MainComponent()
     }
 
     updater_.checkInBackgroundIfDue(this, *settings_);
+    juce::Timer::callAfterDelay(1200, [sp = juce::Component::SafePointer<MainComponent>(this)] {
+        if (sp != nullptr) sp->updater_.showResultOfLastUpdate(sp);
+    });
+    // New version (or first start): put the plugins that ship inside the app in place.
+    if (rkapp::pluginInstallDue(*settings_, rkapp::Updater::currentBuild())) installPlugins(false);
 
     setWantsKeyboardFocus(true);
     setSize(1320, 820);
@@ -471,7 +478,7 @@ rkui::PageContext MainComponent::pageContext() {
     };
     c.commit = [this] { commit(); };
     c.calibrate = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->startCalibration(); }); };
-    c.importSurvey = [this] { chooseSurveyFile(); };
+    c.importSurvey = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->startPhoneIntro(); }); };
     c.rebuild = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshSidebar(); } }); };
     return c;
 }
@@ -529,6 +536,8 @@ void MainComponent::applyScene(bool structural) {
     host_.engine.reverbWetDb = scene_.reverbWetDb;
     host_.engine.masterGainDb = scene_.masterGainDb;
     host_.engine.limiterEnabled = scene_.limiter;
+    host_.engine.limiterCeilingDb = scene_.limiterCeilingDb;
+    host_.engine.limiterReleaseMs = scene_.limiterReleaseMs;
     dirty_ = true;
     lastChange_ = juce::Time::getMillisecondCounterHiRes();
 }
@@ -685,7 +694,7 @@ void MainComponent::buildDawTrackPage(int j) {
     dawPageTrack_ = j;
     juce::String name = juce::String::fromUTF8(t.name.c_str());
     if (name.isEmpty()) name = tr("Spur") + " " + juce::String(j + 1);
-    inspector_.add(std::make_unique<rkui::SectionHeader>(name, tr("Diese Spur kommt über das Plugin „Raumklang Quelle“ aus der DAW. Die Position lässt sich hier und in der Ansicht ziehen, das Plugin übernimmt sie. Liest die DAW gerade Automation, gewinnt die Automation.")), 26);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(name, tr("Diese Spur kommt über das Plugin „Raumklang Quelle“ aus der DAW. Position und Klang lassen sich hier einstellen, die Position auch in der Ansicht ziehen. Das Plugin übernimmt die Werte. Liest die DAW gerade Automation, gewinnt die Automation.")), 26);
     // Only a problem gets a card. A connected track needs no message, the list shows it playing.
     if (t.sampleRateMismatch) {
         dawCard_ = inspector_.add(std::make_unique<rkui::StatusCard>(), 72);
@@ -707,8 +716,10 @@ void MainComponent::buildDawTrackPage(int j) {
                 moveDawTrack(j, (float)dawSliders_[0]->getValue(), (float)dawSliders_[1]->getValue(), (float)dawSliders_[2]->getValue());
             };
         } else {
-            sl->setEnabledState(false);
-            sl->setTooltip(tr("Im Plugin in der DAW einstellen."));
+            // Level, spread and send: also taken over by the plugin, inside a gesture.
+            sl->setTooltip(tr("Ändert den Wert im Plugin. Steht die Spur in der DAW auf Automation schreiben, wird die Änderung aufgenommen."));
+            const int index = (int)dawSliders_.size() - 3; // 0 level, 1 spread, 2 send
+            sl->onChange = [this, j, index](double v) { changeDawMix(j, index, (float)v); };
         }
         dawSliders_.push_back(sl);
     };
@@ -732,7 +743,8 @@ void MainComponent::refreshDawValues() {
     const double v[6] = {p.azimuthDeg, p.elevationDeg, p.distance, p.gainDb, p.spread * 100.0, p.reverbSendDb};
     // While the user moves the track here, the plugin's values lag behind: leave position alone.
     const bool moving = slot >= 0 && slot < rk::bridge::kSlots && juce::Time::getMillisecondCounterHiRes() < dawMoves_[(size_t)slot].until;
-    for (int i = moving ? 3 : 0; i < 6; ++i)
+    const bool mixing = slot >= 0 && slot < rk::bridge::kSlots && juce::Time::getMillisecondCounterHiRes() < dawMixUntil_[(size_t)slot];
+    for (int i = moving ? 3 : 0; i < (mixing ? 3 : 6); ++i)
         if (std::abs(dawSliders_[(size_t)i]->getValue() - v[i]) > 1e-4) dawSliders_[(size_t)i]->setValue(v[i]);
 }
 
@@ -809,6 +821,7 @@ void MainComponent::refreshSidebar() {
             r.solo = s.solo;
             r.dim = s.mute || (anySolo && !s.solo);
             r.group = dawTracks_.empty() ? juce::String() : tr("Im Projekt");
+            r.menu = step_ == StepSources; // rename, duplicate, remove
             rows.push_back(r);
         }
         const int n = (int)scene_.sources.size();
@@ -852,6 +865,22 @@ void MainComponent::moveDawTrack(int j, float azimuthDeg, float elevationDeg, fl
     dawMoves_[(size_t)slot] = {rk::toCartesian({azimuthDeg, elevationDeg, distance}), juce::Time::getMillisecondCounterHiRes() + 600.0};
     showStage();
     refreshSidebar();
+}
+
+void MainComponent::changeDawMix(int j, int index, float value) {
+    if (j < 0 || j >= (int)dawTracks_.size()) return;
+    const int slot = dawTracks_[(size_t)j].slot;
+    if (slot < 0 || slot >= rk::bridge::kSlots) return;
+    rk::bridge::MixChange c;
+    switch (index) {
+        case 0: c.mask = rk::bridge::MixChange::Gain; c.gainDb = value; break;
+        case 1: c.mask = rk::bridge::MixChange::Spread; c.spread = value / 100.0f; break;
+        case 2: c.mask = rk::bridge::MixChange::ReverbSend; c.reverbSendDb = value; break;
+        default: return;
+    }
+    if (!host_.requestBridgeMix(slot, c)) return;
+    // Until the plugin's values come back through the bridge, keep the slider where the user put it.
+    dawMixUntil_[(size_t)slot] = juce::Time::getMillisecondCounterHiRes() + 600.0;
 }
 
 std::vector<rkui::DawTrackState> MainComponent::currentDawStates() const {
@@ -996,6 +1025,7 @@ void MainComponent::setStep(int step) {
 }
 
 void MainComponent::rebuildInspector() {
+    limiterMeter_ = nullptr;
     posSliders_ = {};
     dawPageTrack_ = -1;
     dawSliders_.clear();
@@ -1172,14 +1202,7 @@ void MainComponent::buildSourcesPage() {
     };
     auto* rm = inspector_.add(rkui::makeButton(tr("Entfernen"), false, true), 30);
     rm->getProperties().set("danger", true);
-    rm->onClick = [this, i] {
-        if (i >= (int)scene_.sources.size()) return;
-        scene_.sources.erase(scene_.sources.begin() + i);
-        selSource_ = juce::jmin(i, (int)scene_.sources.size() - 1);
-        applyScene(false);
-        commit();
-        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
-    };
+    rm->onClick = [this, i] { removeSource(i); };
     inspector_.addDetails(tr("Pegel, Breite und Hall-Send lassen sich mit einem Doppelklick auf den Regler zurücksetzen, ein Doppelklick auf den Wert erlaubt die Eingabe von Zahlen.\n\n"
                              "„Kreisbahn“ bewegt die Quelle von selbst um den Hörplatz, gut zum Prüfen eines Aufbaus.\n\n"
                              "Aus der DAW kommen Spuren über das Plugin „Raumklang Quelle“ dazu, ohne zusätzliche Programme für das Routing."));
@@ -1322,12 +1345,30 @@ void MainComponent::buildOutputPage() {
         commit();
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshAll(); } });
     };
-    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Schutz"), tr("Der Limiter ist die letzte Stufe vor jedem Ausgang. Unterhalb des Thresholds verändert er das Signal nicht.")), 26);
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Limiter"), tr("Der Limiter ist die letzte Stufe vor jedem Ausgang. Kein Sample überschreitet das Ceiling. Unterhalb davon verändert er das Signal nicht.\n\n"
+                                                                            "Release bestimmt, wie schnell die Verstärkung nach einer Spitze zurückkehrt. Kurz klingt lauter, kann aber verzerren oder pumpen. Lang arbeitet unauffälliger, nach lauten Spitzen bleibt der Pegel aber länger abgesenkt.")), 26);
     auto* lim = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Limiter")), 28);
     lim->setToggleState(scene_.limiter, juce::dontSendNotification);
     lim->setTooltip(tr("Nur für Messungen ausschalten."));
-    lim->onClick = [this, lim] { scene_.limiter = lim->getToggleState(); applyScene(false); commit(); };
-    inspector_.add(std::make_unique<rkui::NoteRow>(tr("Begrenzt jeden Lautsprecher auf einen Höchstpegel. So kann ein falsch eingestellter Regler oder ein Fehler in der DAW keinen Lautsprecher beschädigen.")), 52);
+    lim->onClick = [this, lim] {
+        scene_.limiter = lim->getToggleState();
+        applyScene(false);
+        commit();
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->rebuildInspector(); });
+    };
+    if (scene_.limiter) {
+        auto* ceil = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Ceiling"), -20, 0, 0.1, "dBFS", 1, -0.1), 32);
+        ceil->setValue(scene_.limiterCeilingDb);
+        ceil->setTooltip(tr("Höchster Pegel an jedem Ausgang."));
+        ceil->onChange = [this](double v) { scene_.limiterCeilingDb = (float)v; applyScene(false); };
+        ceil->onCommit = [this] { commit(); };
+        auto* rel = inspector_.add(std::make_unique<rkui::ParamSlider>(tr("Release"), 1, 2000, 1, "ms", 0, 80), 32);
+        rel->setSkewForCentre(100.0);
+        rel->setValue(scene_.limiterReleaseMs);
+        rel->onChange = [this](double v) { scene_.limiterReleaseMs = (float)v; applyScene(false); };
+        rel->onCommit = [this] { commit(); };
+        limiterMeter_ = inspector_.add(std::make_unique<rkui::ReductionMeter>(tr("Gain Reduction")), 32);
+    }
     auto* test = inspector_.add(rkui::makeButton(speakerTestRunning_ ? tr("Test beenden") : tr("Lautsprecher einzeln anspielen"), speakerTestRunning_), 32);
     test->onClick = [this] {
         speakerTestRunning_ = !speakerTestRunning_;
@@ -1373,6 +1414,61 @@ void MainComponent::addSpeaker() {
     applyScene(true);
     commit();
     selectSpeaker((int)v.size() - 1);
+}
+
+void MainComponent::removeSource(int i) {
+    if (i < 0 || i >= (int)scene_.sources.size()) return;
+    scene_.sources.erase(scene_.sources.begin() + i);
+    if (selSource_ == i) selSource_ = juce::jmin(i, (int)scene_.sources.size() - 1);
+    else if (selSource_ > i) --selSource_;
+    applyScene(false);
+    commit();
+    juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
+}
+
+void MainComponent::sourceMenu(int i, juce::Rectangle<int> area) {
+    if (i < 0 || i >= (int)scene_.sources.size()) return;
+    juce::PopupMenu m;
+    m.addItem(1, tr("Umbenennen …"));
+    m.addItem(2, tr("Duplizieren"), (int)scene_.sources.size() < rkui::kMaxSceneSources);
+    m.addSeparator();
+    m.addItem(3, tr("Entfernen"));
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(area), [this, i](int r) {
+        auto& v = scene_.sources;
+        if (i >= (int)v.size() || r == 0) return;
+        if (r == 1) {
+            auto* w = new juce::AlertWindow(tr("Quelle umbenennen"), {}, juce::MessageBoxIconType::NoIcon);
+            w->addTextEditor("name", v[(size_t)i].name);
+            w->addButton(tr("Umbenennen"), 1, juce::KeyPress(juce::KeyPress::returnKey));
+            w->addButton(tr("Abbrechen"), 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            w->enterModalState(true, juce::ModalCallbackFunction::create([this, i, w](int ok) {
+                auto& vv = scene_.sources;
+                if (ok == 1 && i < (int)vv.size()) {
+                    const juce::String n = w->getTextEditorContents("name").trim().substring(0, 64);
+                    if (n.isNotEmpty()) {
+                        vv[(size_t)i].name = n;
+                        commit();
+                        refreshSidebar();
+                        rebuildInspector();
+                    }
+                }
+            }), true);
+        } else if (r == 2) {
+            if ((int)v.size() >= rkui::kMaxSceneSources) return;
+            rkui::SourceInfo copy = v[(size_t)i];
+            copy.name = copy.name + " " + tr("Kopie");
+            copy.solo = false;
+            const rk::Polar p = rk::toPolar(copy.position);
+            copy.position = rk::toCartesian({std::fmod(p.azimuthDeg - 20.0f + 540.0f, 360.0f) - 180.0f, p.elevationDeg, p.distance});
+            v.insert(v.begin() + i + 1, copy);
+            selSource_ = i + 1;
+            applyScene(false);
+            commit();
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->refreshAll(); });
+        } else if (r == 3) {
+            removeSource(i);
+        }
+    });
 }
 
 void MainComponent::speakerMenu(int i, juce::Rectangle<int> area) {
@@ -1526,26 +1622,56 @@ void MainComponent::applyTheme() {
     refreshAll();
 }
 
+void MainComponent::installPlugins(bool manual) {
+    if (installingPlugins_) return;
+    installingPlugins_ = true;
+    juce::Thread::launch([sp = juce::Component::SafePointer<MainComponent>(this), manual] {
+        const auto r = rkapp::installBundledPlugins();
+        juce::MessageManager::callAsync([sp, manual, r] {
+            if (sp == nullptr) return;
+            sp->installingPlugins_ = false;
+            if (!r.attempted) return;
+            if (r.ok) {
+                rkapp::markPluginsInstalled(*sp->settings_, rkapp::Updater::currentBuild());
+                sp->settings_->saveIfNeeded();
+            }
+            juce::String text;
+            if (r.ok)
+                text = tr("Die Plugins „Raumklang Quelle“ und „Raumklang Return“ sind als AU und VST3 in ~/Library/Audio/Plug-Ins installiert.") +
+                       "\n\n" + tr("Eine DAW, die gerade läuft, sieht die neue Version erst nach einem Neustart.");
+            else
+                text = tr("Die Plugins konnten nicht installiert werden.") + "\n\n" + r.error;
+            if (!manual && r.ok && sp->settings_->getIntValue("pluginsInstalledOnce", 0) == 1) return; // after an update: silently
+            sp->settings_->setValue("pluginsInstalledOnce", 1);
+            sp->pluginBox_ = juce::NativeMessageBox::showScopedAsync(
+                juce::MessageBoxOptions{}
+                    .withIconType(r.ok ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon)
+                    .withTitle(r.ok ? tr("Plugins installiert") : tr("Plugins nicht installiert"))
+                    .withMessage(text)
+                    .withButton("OK", 1),
+                nullptr);
+        });
+    });
+}
+
 void MainComponent::showHelpMenu() {
+    const bool de = rkui::language() == rkui::Language::German;
     juce::PopupMenu m;
     m.addSectionHeader("Raumklang " + juce::String(JUCE_APPLICATION_VERSION_STRING));
-    m.addItem(1, tr("Sprache: Deutsch"), true, rkui::language() == rkui::Language::German);
-    m.addItem(2, tr("Sprache: Englisch"), true, rkui::language() == rkui::Language::English);
-    m.addSeparator();
-    m.addItem(3, rkui::language() == rkui::Language::German ? "Dunkel" : "Dark", true, rkui::isDark());
-    m.addItem(4, rkui::language() == rkui::Language::German ? "Hell" : "Light", true, !rkui::isDark());
-    m.addSeparator();
-    m.addItem(5, rkui::language() == rkui::Language::German ? u8("Einf\xc3\xbchrung zeigen") : "Show introduction");
-    m.addSeparator();
-    m.addSectionHeader(tr("Tastenkürzel"));
-    const juce::String cmd = (juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? u8("\xe2\x8c\x98") : "Strg+";
-    m.addItem(10, cmd + "1 … " + cmd + "4   " + tr("Bereich wechseln"), false);
-    m.addItem(11, cmd + "Z / " + cmd + u8("\xe2\x87\xa7Z   ") + tr("Rückgängig / Wiederholen"), false);
-    m.addItem(12, cmd + "O / " + cmd + "S   " + tr("Öffnen / Sichern unter"), false);
-    m.addItem(13, u8("\xe2\x87\xa7 ") + tr("beim Ziehen   Position rastet ein"), false);
-    m.addItem(6, rkui::language() == rkui::Language::German ? "Projektseite auf GitHub" : "Project page on GitHub");
+    m.addItem(5, de ? u8("Einf\xc3\xbchrung zeigen") : "Show introduction");
+    m.addItem(6, de ? "Projektseite auf GitHub" : "Project page on GitHub");
     m.addItem(7, tr("Nach Updates suchen …"));
-    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&helpBtn_), [this](int r) {
+    if (rkapp::hasBundledPlugins()) m.addItem(8, tr("Plugins installieren"));
+    m.addSeparator();
+    juce::PopupMenu look;
+    look.addItem(3, de ? "Dunkel" : "Dark", true, rkui::isDark());
+    look.addItem(4, de ? "Hell" : "Light", true, !rkui::isDark());
+    m.addSubMenu(de ? "Darstellung" : "Appearance", look);
+    juce::PopupMenu lang;
+    lang.addItem(1, "Deutsch", true, de);
+    lang.addItem(2, "English", true, !de);
+    m.addSubMenu(de ? "Sprache" : "Language", lang);
+    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&helpBtn_).withMinimumWidth(240), [this](int r) {
         if (r == 1 || r == 2) {
             setUiLanguage(r == 1);
         } else if (r == 3 || r == 4) {
@@ -1554,6 +1680,8 @@ void MainComponent::showHelpMenu() {
             showIntro(true);
         } else if (r == 7) {
             updater_.check(this, true);
+        } else if (r == 8) {
+            installPlugins(true);
         } else if (r == 6) {
             juce::URL("https://github.com/BenjaminJMueller/immersive-audio-suite").launchInDefaultBrowser();
         }
@@ -1636,6 +1764,7 @@ juce::PopupMenu MainComponent::getMenuForIndex(int index, const juce::String&) {
     case 3:
         m.addCommandItem(c, CmdIntro);
         m.addCommandItem(c, CmdWebsite);
+        if (rkapp::hasBundledPlugins()) m.addCommandItem(c, CmdInstallPlugins);
        #if !JUCE_MAC
         m.addCommandItem(c, CmdCheckUpdates);
        #endif
@@ -1648,7 +1777,7 @@ juce::PopupMenu MainComponent::getMenuForIndex(int index, const juce::String&) {
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
     ids.addArray({CmdNew, CmdDemo, CmdOpen, CmdSaveAs, CmdLoadSurvey, CmdUndo, CmdRedo, CmdStep1, CmdStep2, CmdStep3,
                   CmdStep4, CmdViewTop, CmdViewFront, CmdViewSplit, CmdView3D, CmdDark, CmdLight, CmdGerman, CmdEnglish,
-                  CmdIntro, CmdWebsite, CmdCheckUpdates});
+                  CmdIntro, CmdWebsite, CmdCheckUpdates, CmdInstallPlugins});
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info) {
@@ -1688,6 +1817,7 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case CmdIntro: info.setInfo(de ? u8("Einführung zeigen") : "Show introduction", {}, "Help", 0); break;
     case CmdWebsite: info.setInfo(de ? "Projektseite auf GitHub" : "Project page on GitHub", {}, "Help", 0); break;
     case CmdCheckUpdates: info.setInfo(tr("Nach Updates suchen …"), {}, "Help", 0); break;
+    case CmdInstallPlugins: info.setInfo(tr("Plugins installieren"), {}, "Help", 0); info.setActive(rkapp::hasBundledPlugins()); break;
     default: break;
     }
 }
@@ -1711,6 +1841,7 @@ bool MainComponent::perform(const InvocationInfo& info) {
     case CmdIntro: showIntro(true); return true;
     case CmdWebsite: juce::URL("https://github.com/BenjaminJMueller/immersive-audio-suite").launchInDefaultBrowser(); return true;
     case CmdCheckUpdates: updater_.check(this, true); return true;
+    case CmdInstallPlugins: installPlugins(true); return true;
     default: return false;
     }
 }
@@ -1772,6 +1903,16 @@ void MainComponent::timerCallback() {
         if (src[(size_t)s] > 0.05f) signalSeen_[(size_t)s] = now;
         sourceHasSignal_[(size_t)s] = now - signalSeen_[(size_t)s] < 2000.0;
     }
+    {
+        // Reverb in the views: what goes into the reverb, ringing out with the room's mid
+        // reverb time (-60 dB after RT60), like the tail itself.
+        const double dtSec = reverbEnvTime_ > 0.0 ? juce::jlimit(0.0, 0.5, (now - reverbEnvTime_) * 0.001) : 0.0;
+        reverbEnvTime_ = now;
+        const float rt = juce::jmax(0.2f, rkui::reverbBandRt(scene_.reverb, 1));
+        reverbEnv_ = juce::jmax(reverbEnv_ * std::pow(10.0f, -3.0f * (float)dtSec / rt), host_.engine.takeReverbInput());
+        if (!std::isfinite(reverbEnv_)) reverbEnv_ = 0.0f;
+        stage_.setReverbLevel(scene_.reverbWetDb <= -79.0f ? 0.0f : levelToUnit(reverbEnv_));
+    }
     std::vector<float> spkView(spk.begin(), spk.begin() + juce::jmax(0, scene_.headphones ? 0 : nOut));
     stage_.setSpeakerLevels(spkView);
     if (reverbPanel_.isVisible()) {
@@ -1792,6 +1933,11 @@ void MainComponent::timerCallback() {
         for (int c = 0; c < juce::jmin(nOut, rk::kMaxSpeakers); ++c) outPeak = std::max(outPeak, spk[(size_t)c]);
         outputStrip_.setLevel(outPeak);
         outputStrip_.setGainDb(scene_.masterGainDb);
+        // Limiter gain reduction: the largest over all outputs.
+        float gr = 0.0f;
+        for (int c = 0; c < juce::jmin(scene_.headphones ? 2 : nOut, rk::kMaxSpeakers); ++c) gr = std::max(gr, host_.engine.takeLimiterReduction(c));
+        outputStrip_.setReductionDb(scene_.limiter ? gr : 0.0f);
+        if (limiterMeter_ != nullptr) limiterMeter_->setReductionDb(gr);
     }
     // Level bars only where the rows are speakers or sources; room types have no level.
     if (step_ == StepSpeakers || step_ == StepOutput) sidebar_.setLevels(spkView);
@@ -1957,7 +2103,9 @@ void MainComponent::updateCoach() {
     const rk::LayoutInfo info = rk::analyze(scene_.layout);
     const bool layoutOk = info.numActive > 0 && std::find(info.hints.begin(), info.hints.end(), "single_speaker") == info.hints.end();
     if (calibrating_) {
-        if (phoneMode_) {
+        if (phoneMode_ && !proposal_) {
+            stage_.setCoach("i", tr("Mit dem iPhone einmessen"), tr("Die fertige Messung auf das Fenster ziehen."));
+        } else if (phoneMode_) {
             stage_.setCoach({}, tr("iPhone-Messung prüfen"), tr("Gestrichelt: bisher. Rechts die Zuordnung wählen und übernehmen."));
         } else if (proposal_) {
             stage_.setCoach({}, tr("Ergebnis prüfen"), tr("Gestrichelt: bisher. Rechts übernehmen oder verwerfen."), true);
@@ -1998,8 +2146,16 @@ void MainComponent::updateCoach() {
     }
 }
 
-bool MainComponent::keyPressed(const juce::KeyPress&) {
-    return false; // shortcuts are commands, see getCommandInfo()
+bool MainComponent::keyPressed(const juce::KeyPress& k) {
+    // Delete / backspace removes the selected source (undo brings it back). Text fields
+    // take these keys themselves, so this only fires with the focus on the window.
+    if ((k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) && step_ == StepSources && !calibrating_ &&
+        selSource_ >= 0 && selSource_ < (int)scene_.sources.size() &&
+        dynamic_cast<juce::TextEditor*>(juce::Component::getCurrentlyFocusedComponent()) == nullptr) {
+        removeSource(selSource_);
+        return true;
+    }
+    return false; // other shortcuts are commands, see getCommandInfo()
 }
 
 // ---------------------------------------------------------------------------
@@ -2103,7 +2259,7 @@ juce::String MainComponent::calibrationSubtitle(int m) const {
         if (q.measured && q.hasGain) t << dot << rkui::num(q.gainDb, 1) << " dB";
         return t;
     }
-    if (calib_ == nullptr) return {};
+    if (calib_ == nullptr) return tr("Ausgang") + " " + juce::String(m + 1);
     if (calib_->playingSpeaker() == m) return tr("Misst") + u8("\xe2\x80\xa6");
     int heard = 0, tried = 0;
     for (int j = 0; j < (int)calib_->points().size(); ++j) {
@@ -2120,9 +2276,11 @@ void MainComponent::buildCalibrationPage() {
     inspector_.clear();
     if (calib_ == nullptr) return;
     const juce::String dot = ", ";
-    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Einmessen mit Mikrofon"),
-        tr("Ein Messmikrofon (oder ein gutes Kugelmikrofon) nach oben zeigend auf ein Stativ, auf Ohrhöhe. Jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. "
-           "Aus der Laufzeit folgt der Abstand, aus mehreren Messpunkten die genaue Position. Laufzeit und Pegel werden am Messpunkt 1 ausgeglichen.")), 26);
+    auto* back = inspector_.add(std::make_unique<rkui::BackButton>(tr("Lautsprecher")), 30);
+    back->onClick = [this] {
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
+    };
+    inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Einmessen mit Mikrofon")), 26);
 
     if (proposal_) {
         const auto& v = calib_->verdict();
@@ -2162,6 +2320,16 @@ void MainComponent::buildCalibrationPage() {
                                  "Die Ausrichtung bleibt, wie sie war (zur Mitte, nach außen oder nach innen). Für die genaue Richtung jedes Lautsprechers die iPhone-Messung verwenden."));
         return;
     }
+
+    // The procedure, always visible (no info bubble to open first).
+    addSteps(calibSettings_.positions
+                ? tr("1. Ein Messmikrofon mit Kugelcharakteristik nach oben zeigend auf ein Stativ stellen, auf Ohrhöhe, genau auf den angezeigten Messpunkt. Auf 10 cm genau reicht.\n"
+                     "2. „Messen“ drücken und still sein. Jeder Lautsprecher spielt nacheinander einen kurzen Sweep, zusammen etwa 2,5 Sekunden pro Lautsprecher.\n"
+                     "3. Mikrofon auf den nächsten Messpunkt stellen und wieder messen. M1 ist der Hörplatz, die anderen liegen rundherum, einer davon höher.\n"
+                     "4. „Ergebnis zeigen“, prüfen und übernehmen. Aus den Laufzeiten folgen Abstand und Position, Laufzeit und Pegel werden am Hörplatz ausgeglichen.")
+                : tr("1. Ein Messmikrofon mit Kugelcharakteristik nach oben zeigend auf ein Stativ stellen, auf Ohrhöhe, genau am Hörplatz.\n"
+                     "2. „Messen“ drücken und still sein. Jeder Lautsprecher spielt nacheinander einen kurzen Sweep, zusammen etwa 2,5 Sekunden pro Lautsprecher.\n"
+                     "3. „Ergebnis zeigen“, prüfen und übernehmen. Laufzeit und Pegel werden am Hörplatz ausgeglichen. Positionen misst der Modus „Mit Positionen“."));
 
     const bool locked = calib_->measuredPoints() > 0 || calib_->phase() == Calibration::Phase::Measuring;
     const juce::StringArray inputs = host_.inputNames();
@@ -2235,10 +2403,6 @@ void MainComponent::buildCalibrationPage() {
             if (calib_->measuredPoints() < needed) eval->setTooltip(tr("Für Positionen mindestens 4 Messpunkte. Mit weniger nur Laufzeit und Pegel."));
             eval->onClick = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->evaluateCalibration(); }); };
         }
-        auto* leave = inspector_.add(rkui::makeButton(tr("Beenden"), false, true), 32);
-        leave->onClick = [this] {
-            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
-        };
     }
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Genauer"), tr("Mit einem gemessenen Abstand (Zollstock oder Laser) von Messpunkt 1 zu Lautsprecher 1 wird die Messung auch mit wenigen Punkten genau. "
@@ -2254,16 +2418,31 @@ void MainComponent::buildCalibrationPage() {
     temp->setTooltip(tr("Die Schallgeschwindigkeit steigt um etwa 0,6 m/s pro °C. 5 °C Abweichung ergeben auf 5 m etwa 4 cm Fehler."));
     temp->onChange = [this](double v) { calibSettings_.temperature = (float)v; };
     temp->onCommit = [this] { if (calib_ != nullptr && calib_->measuredPoints() == 0) restartCalibration(); };
-    inspector_.addDetails(tr("Ablauf: Mikrofon auf den angezeigten Messpunkt stellen, „Messen“ drücken und still sein. Jeder Lautsprecher spielt etwa 2,5 Sekunden. Dann zum nächsten Punkt.\n\n"
-                             "Messpunkt 1 ist der Hörplatz. Die anderen liegen rundherum, einer davon höher, damit auch die Höhe der Lautsprecher bestimmt werden kann. "
-                             "Auf 10 cm genau aufstellen reicht, den Rest rechnet Raumklang heraus.\n\n"
-                             "Beim Donut liegen die Punkte im Ring zwischen innen und außen. Dass die Säule manche Lautsprecher verdeckt, ist eingeplant.\n\n"
-                             "Während der Messung schweigen alle Quellen und die DAW-Spuren."));
+    addNote(tr("Beim Donut liegen die Messpunkte im Ring zwischen innen und außen. Dass die Säule manche Lautsprecher verdeckt, ist eingeplant. Während der Messung schweigen alle Quellen und die DAW-Spuren."));
 }
 
 void MainComponent::buildPhonePage() {
     inspector_.clear();
     const juce::String dot = ", ";
+    auto* back = inspector_.add(std::make_unique<rkui::BackButton>(tr("Lautsprecher")), 30);
+    back->onClick = [this] {
+        juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->endCalibration(); sp->refreshAll(); } });
+    };
+    if (!proposal_) { // nothing loaded yet: explain how it works
+        inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Mit dem iPhone einmessen")), 26);
+        addNote(tr("Die App „Raumklang Messen“ misst mit dem LiDAR-Sensor, wo jeder Lautsprecher hängt und wohin er zeigt. Laufzeit und Pegel misst sie nicht, dafür danach „Mit Mikrofon einmessen“ im Modus „Schnell“."));
+        inspector_.add(std::make_unique<rkui::SectionHeader>(tr("So geht es")), 26);
+        addSteps(tr("1. Hörplatz: in der App auf den Boden unter dem Hörplatz zielen und „Setzen“ tippen. Die Ohrhöhe lässt sich einstellen, Standard ist 1,20 m.\n"
+                   "2. Vorne: auf die Richtung zielen, die in Raumklang vorne ist, und „Setzen“ tippen.\n"
+                   "3. Lautsprecher: auf die Front jedes Lautsprechers zielen und „Setzen“ tippen, in der Reihenfolge der Ausgänge 1, 2, 3 und so weiter. Die Ausrichtung folgt aus der Fläche der Front.\n"
+                   "4. „Fertig“ tippen und die Datei per AirDrop, Mail oder iCloud an diesen Rechner schicken.\n"
+                   "5. Die Datei auf das Raumklang-Fenster ziehen oder hier laden. Danach zeigt Raumklang, wie sich die Lautsprecher verschieben, und übernimmt die Positionen erst nach Bestätigung."));
+        auto* load = inspector_.add(rkui::makeButton(tr("Messung laden …"), true), 32);
+        load->onClick = [this] { chooseSurveyFile(); };
+        inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Voraussetzungen")), 26);
+        addNote(tr("Ein iPhone oder iPad mit LiDAR-Sensor: iPhone 12 Pro oder neuer aus der Pro-Reihe, iPad Pro ab 2020. Die App steht noch nicht im App Store und wird mit Xcode aus dem Ordner ios im Projekt auf das Gerät gespielt."));
+        return;
+    }
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("iPhone-Messung"), tr("Positionen und Ausrichtung aus der App „Raumklang Messen“. Laufzeit und Pegel bleiben, wie sie sind. Danach lohnt sich „Mit Mikrofon einmessen“ im Modus „Schnell“.")), 26);
     auto card = std::make_unique<rkui::StatusCard>();
     const int nm = (int)survey_.speakers.size(), ns = (int)scene_.layout.speakers.size();
@@ -2293,6 +2472,38 @@ void MainComponent::buildPhonePage() {
     };
     inspector_.addDetails(tr("Die App misst mit LiDAR, wo jeder Lautsprecher hängt und wohin er zeigt. Der Hörplatz und die Richtung „vorne“ werden in der App festgelegt.\n\n"
                              "Die Datei kommt per AirDrop, Mail oder Cloud auf den Rechner und lässt sich einfach auf das Raumklang-Fenster ziehen."));
+}
+
+void MainComponent::addNote(const juce::String& text) {
+    auto note = std::make_unique<rkui::NoteRow>(text);
+    const int h = note->heightFor(juce::jmax(200, inspector_.getWidth() - 24));
+    inspector_.add(std::move(note), h);
+}
+
+void MainComponent::addSteps(const juce::String& text) {
+    // "1. …\n2. …": one step per line, the numbers are drawn by the list.
+    juce::StringArray steps;
+    for (auto line : juce::StringArray::fromLines(text)) {
+        line = line.trim();
+        if (line.isEmpty()) continue;
+        const int dot = line.indexOf(". ");
+        if (dot > 0 && dot < 3 && line.substring(0, dot).containsOnly("0123456789")) line = line.substring(dot + 2);
+        steps.add(line);
+    }
+    auto list = std::make_unique<rkui::StepList>(steps);
+    const int h = list->heightFor(juce::jmax(200, inspector_.getWidth() - 24));
+    inspector_.add(std::move(list), h);
+}
+
+void MainComponent::startPhoneIntro() {
+    if (step_ != StepSpeakers) setStep(StepSpeakers);
+    endCalibration();
+    speakerTestRunning_ = false;
+    host_.engine.speakerTest = -1;
+    survey_ = {};
+    calibrating_ = true;
+    phoneMode_ = true;
+    refreshAll();
 }
 
 void MainComponent::chooseSurveyFile() {

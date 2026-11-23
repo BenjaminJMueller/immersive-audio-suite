@@ -26,6 +26,13 @@ public:
         sourceLevels_ = l;
         repaint();
     }
+    /// Same meaning as StageView::setReverbLevel.
+    void setReverbLevel(float unit) {
+        unit = std::isfinite(unit) ? juce::jlimit(0.0f, 1.0f, unit) : 0.0f;
+        if (std::abs(unit - reverbLevel_) < 0.005f) return;
+        reverbLevel_ = unit;
+        repaint();
+    }
     /// Same meaning as StageView::setSourceStyle.
     void setSourceStyle(std::vector<juce::Colour> colours, int dimFrom, bool names);
     void resetView();
@@ -57,6 +64,7 @@ private:
         else stopTimer();
     }
     std::vector<float> speakerLevels_, sourceLevels_;
+    float reverbLevel_ = 0.0f;
     std::vector<juce::Colour> sourceColours_;
     int dimFrom_ = 1 << 30;
     bool names_ = false;

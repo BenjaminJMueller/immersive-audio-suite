@@ -161,7 +161,11 @@ jobs:
           for b in dist/*.component dist/*.vst3; do
             codesign --force --deep --sign - --timestamp=none "$b"
           done
-          codesign --force --deep --sign - --timestamp=none --options runtime \
+          # The plugins travel inside the app (Contents/PlugIns, each signed on its own);
+          # Raumklang installs them itself, so no script and no second Gatekeeper prompt.
+          mkdir -p dist/Raumklang.app/Contents/PlugIns
+          cp -R dist/*.component dist/*.vst3 dist/Raumklang.app/Contents/PlugIns/
+          codesign --force --sign - --timestamp=none --options runtime \
             --entitlements packaging/signing/Raumklang.entitlements dist/Raumklang.app
           codesign --verify --deep --strict --verbose=2 dist/Raumklang.app
           codesign -d --entitlements - --xml dist/Raumklang.app | grep -q audio-input
@@ -169,22 +173,22 @@ jobs:
         if: runner.os != 'Linux'
         shell: bash
         run: |
-          mkdir -p pkg/Raumklang/Plugins out
+          VERSION="0.1.${{ github.run_number }}"
+          mkdir -p pkg/Raumklang out
           if [ "$RUNNER_OS" = "macOS" ]; then
             cp -R dist/Raumklang.app pkg/Raumklang/
-            cp -R dist/*.component dist/*.vst3 pkg/Raumklang/Plugins/
             cp packaging/mac/* pkg/Raumklang/
-            chmod +x "pkg/Raumklang/Plugins installieren.command"
             ln -s /Applications pkg/Raumklang/Programme
             # The zip (without the Applications link) is what the app's updater installs.
-            ditto -c -k --sequesterRsrc --keepParent pkg/Raumklang out/Raumklang-mac.zip
-            zip -d out/Raumklang-mac.zip "Raumklang/Programme" > /dev/null || true
-            hdiutil create -volname Raumklang -srcfolder pkg/Raumklang -ov -format UDZO out/Raumklang-mac.dmg
+            ditto -c -k --sequesterRsrc --keepParent pkg/Raumklang "out/Raumklang-$VERSION-mac.zip"
+            zip -d "out/Raumklang-$VERSION-mac.zip" "Raumklang/Programme" > /dev/null || true
+            hdiutil create -volname "Raumklang $VERSION" -srcfolder pkg/Raumklang -ov -format UDZO "out/Raumklang-$VERSION-mac.dmg"
           else
+            mkdir -p pkg/Raumklang/Plugins
             cp dist/Raumklang.exe pkg/Raumklang/
             cp -R dist/*.vst3 pkg/Raumklang/Plugins/
             cp packaging/windows/* pkg/Raumklang/
-            (cd pkg && 7z a -tzip ../out/Raumklang-Windows.zip Raumklang > /dev/null)
+            (cd pkg && 7z a -tzip "../out/Raumklang-$VERSION-Windows.zip" Raumklang > /dev/null)
           fi
           ls -la out
       - uses: actions/upload-artifact@v4
@@ -207,6 +211,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -222,24 +227,45 @@ jobs:
             TAG="latest"; TITLE="Raumklang (neueste Version, Build ${{ github.run_number }})"
             gh release delete latest --yes --cleanup-tag || true
           fi
-          SUBJECT="$(git log -1 --format='%s')"
+          VERSION="0.1.${{ github.run_number }}"
+          MAC="Raumklang-$VERSION-mac"; WIN="Raumklang-$VERSION-Windows"
+          # What changed, in words: the bullet titles under "Was sich ändert" in the merged
+          # pull request. Without a pull request (direct push) the commit subject.
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0].body // ""' > pr-body.txt || true
+          python3 - <<'PY' > notes.txt
+          import re, subprocess
+          body = open("pr-body.txt", encoding="utf-8").read()
+          points, inside = [], False
+          for line in body.splitlines():
+              if line.startswith("#"):
+                  inside = "ändert" in line.lower() or "changes" in line.lower()
+                  continue
+              m = re.match(r"\s*[-*] \*\*(.+?)\*\*", line)
+              if inside and m:
+                  points.append("- " + m.group(1).strip().rstrip(".:"))
+          if not points:
+              points = ["- " + subprocess.check_output(["git", "log", "-1", "--format=%s"], text=True).strip()]
+          print("\n".join(points[:8]))
+          PY
+          cat notes.txt
           # Update information for the app (app/Updater.cpp).
-          python3 - "$SUBJECT" <<'PY'
+          python3 - "$MAC.zip" "$WIN.zip" <<'PY'
           import hashlib, json, os, sys
           def f(n):
               p = os.path.join("out", n)
               return {"name": n, "sha256": hashlib.sha256(open(p, "rb").read()).hexdigest(), "size": os.path.getsize(p)}
           build = int(os.environ["GITHUB_RUN_NUMBER"])
-          json.dump({"version": "0.1.%d" % build, "build": build, "notes": sys.argv[1],
-                     "files": {"mac": f("Raumklang-mac.zip"), "win": f("Raumklang-Windows.zip")}},
-                    open("out/latest.json", "w"), indent=2)
+          notes = open("notes.txt", encoding="utf-8").read().strip()
+          json.dump({"version": "0.1.%d" % build, "build": build, "notes": notes,
+                     "files": {"mac": f(sys.argv[1]), "win": f(sys.argv[2])}},
+                    open("out/latest.json", "w"), indent=2, ensure_ascii=False)
           PY
           cat out/latest.json
-          NOTES="${SUBJECT}
+          NOTES="$(cat notes.txt)
 
-          **macOS**: Raumklang-mac.dmg öffnen, Raumklang.app in Programme ziehen und *Plugins installieren.command* doppelklicken. Die App ist noch nicht beglaubigt: beim ersten Start Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen.
-          **Windows**: Raumklang-Windows.zip entpacken, Raumklang.exe starten und *Plugins installieren.bat* doppelklicken."
-          gh release create "$TAG" out/Raumklang-mac.dmg out/Raumklang-mac.zip out/Raumklang-Windows.zip out/latest.json --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES" --latest
+          **macOS**: $MAC.dmg öffnen und Raumklang.app in Programme ziehen. Die App installiert die Plugins beim ersten Start selbst. Sie ist noch nicht beglaubigt: beim ersten Start Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen.
+          **Windows**: $WIN.zip entpacken, Raumklang.exe starten und *Plugins installieren.bat* doppelklicken."
+          gh release create "$TAG" "out/$MAC.dmg" "out/$MAC.zip" "out/$WIN.zip" out/latest.json --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES" --latest
 
   # "Raumklang Messen" for iPhone: geometry tests and a simulator build (no signing needed).
   ios:

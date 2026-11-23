@@ -80,6 +80,7 @@ std::unique_ptr<Engine::Runtime> Engine::buildRuntime(const EngineConfig& cfg) c
 
 Engine::Engine() {
     for (auto& p : outPeak_) p.store(0.0f);
+    for (auto& g : limiterGr_) g.store(0.0f);
     for (auto& p : srcPeak_) p.store(0.0f);
     const ReverbParams def;
     reverbParams_[0].store(def.decaySec);
@@ -188,6 +189,12 @@ void Engine::collectGarbage() {
 float Engine::takeOutputPeak(int c) noexcept {
     if (c < 0 || c >= kMaxSpeakers) return 0.0f;
     return outPeak_[static_cast<size_t>(c)].exchange(0.0f, std::memory_order_relaxed);
+}
+
+float Engine::takeLimiterReduction(int c) noexcept {
+    if (c < 0 || c >= kMaxSpeakers) return 0.0f;
+    const float gr = limiterGr_[static_cast<size_t>(c)].exchange(0.0f, std::memory_order_relaxed);
+    return gr <= 1.0e-6f ? 0.0f : -20.0f * std::log10(std::max(1.0e-5f, 1.0f - gr));
 }
 
 float Engine::takeSourcePeak(int s) noexcept {
@@ -511,8 +518,14 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
         const float wetTarget = dbToGain(safeClamp(reverbWetDb.load(std::memory_order_relaxed), -80.0f, 6.0f, -6.0f));
         const float step = (wetTarget - wetCur_) * invN;
         float w = wetCur_;
-        for (int i = 0; i < n; ++i) { w += step; reverbBus_[static_cast<size_t>(i)] *= w; }
+        double energy = 0.0;
+        for (int i = 0; i < n; ++i) {
+            w += step;
+            reverbBus_[static_cast<size_t>(i)] *= w;
+            energy += static_cast<double>(reverbBus_[static_cast<size_t>(i)]) * reverbBus_[static_cast<size_t>(i)];
+        }
         wetCur_ = wetTarget;
+        if (!rt->mains.empty()) storeMax(reverbIn_, static_cast<float>(std::sqrt(energy / n)));
         float* mainPtr[kMaxSpeakers];
         int numMain = 0;
         for (int m : rt->mains) mainPtr[numMain++] = mixPtr_[static_cast<size_t>(m)];
@@ -592,13 +605,19 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
     }
 
     const bool limit = limiterEnabled.load(std::memory_order_relaxed);
+    const float ceilingDb = limiterCeilingDb.load(std::memory_order_relaxed);
+    const float releaseMs = limiterReleaseMs.load(std::memory_order_relaxed);
     bool limited = false;
     for (int c = 0; c < numFinal; ++c) {
         float* buf = finalPtr[c];
         for (int i = 0; i < n; ++i) buf[i] *= curve[i];
         float peak = 0.0f;
-        limited |= limiter_[static_cast<size_t>(c)].process(buf, n, limit, peak);
+        auto& lim = limiter_[static_cast<size_t>(c)];
+        lim.setCeilingDb(ceilingDb);
+        lim.setRelease(releaseMs);
+        limited |= lim.process(buf, n, limit, peak);
         storeMax(outPeak_[static_cast<size_t>(c)], peak);
+        storeMax(limiterGr_[static_cast<size_t>(c)], 1.0f - lim.minGain());
     }
     if (limited) limiterEvents_.fetch_add(1, std::memory_order_relaxed);
 

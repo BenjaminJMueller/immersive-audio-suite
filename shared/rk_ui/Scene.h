@@ -72,6 +72,8 @@ struct Scene {
     float reverbWetDb = -6.0f;
     float masterGainDb = 0.0f;
     bool limiter = true;
+    float limiterCeilingDb = -0.1f; // dBFS
+    float limiterReleaseMs = 80.0f;
     bool headphones = false;
     /// With headphones: true renders the sources binaurally around the head, independent of
     /// the speaker setup; false lets you listen to the speaker setup itself.

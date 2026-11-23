@@ -79,12 +79,17 @@ private:
     void selectRoomPreset(int i);
     /// Moves DAW track `j` (index into dawTracks_): sent to its plugin, shown here at once.
     void moveDawTrack(int j, float azimuthDeg, float elevationDeg, float distance);
+    /// Level (0), spread (1) or reverb send (2) of DAW track `j`, changed in the app.
+    void changeDawMix(int j, int index, float value);
     struct DawMove { rk::Vec3 position; double until = 0.0; };
     std::array<DawMove, rk::bridge::kSlots> dawMoves_{}; // shown until the plugin has caught up
+    std::array<double, rk::bridge::kSlots> dawMixUntil_{}; // mix sliders held until the plugin has caught up
     void selectSpeaker(int i);
     void addSource();
     void addSpeaker();
     void speakerMenu(int i, juce::Rectangle<int> area);
+    void sourceMenu(int i, juce::Rectangle<int> area);
+    void removeSource(int i);
     void startDemo();
     void startEmpty();
     void openProject();
@@ -108,6 +113,16 @@ private:
     void endCalibration();
     void buildCalibrationPage();
     void buildPhonePage();
+    /// "Mit dem iPhone einmessen": explains the measurement before a file is loaded.
+    void startPhoneIntro();
+    /// macOS: installs the plugins that ship inside the app (see PluginInstaller.h).
+    void installPlugins(bool manual);
+    bool installingPlugins_ = false;
+    juce::ScopedMessageBox pluginBox_;
+    /// A wrapped paragraph in the inspector, always visible.
+    void addNote(const juce::String& text);
+    /// Numbered steps ("1. …" per line), always visible.
+    void addSteps(const juce::String& text);
     void evaluateCalibration();
     void acceptProposal();
     void chooseSurveyFile();
@@ -141,6 +156,9 @@ private:
     rkui::RoomView stage_;
     rkui::ReverbPanel reverbPanel_; // replaces the room view in step 3
     rkui::SnapshotBar snapBar_;      // under the room view
+    float reverbEnv_ = 0.0f;       // reverb level for the views, rings out with RT60
+    double reverbEnvTime_ = 0.0;
+    rkui::ReductionMeter* limiterMeter_ = nullptr; // on the output page while it is shown
     rkui::OutputStrip outputStrip_;  // pinned at the bottom of the sidebar
 
     // Snapshots: storing, recalling with a fade, and the menu of one snapshot.

@@ -47,9 +47,7 @@ SourceProcessor::SourceProcessor()
 
 SourceProcessor::~SourceProcessor() {
     stopTimer();
-    if (appGesture_) // a drag from the app was still open: close it for the host
-        for (const char* id : {"azimuth", "elevation", "distance"})
-            if (auto* prm = params.getParameter(id)) prm->endChangeGesture();
+    endAppGestures(0.0, true); // a change from the app was still open: close it for the host
     sender_.release();
 }
 
@@ -164,26 +162,45 @@ void SourceProcessor::setSourcePosition(rk::Vec3 p) {
     set("distance", pol.distance);
 }
 
-void SourceProcessor::timerCallback() {
-    // Fast part: the user drags this track in the app. Applied as a normal parameter change
-    // inside a gesture, so the DAW records it as automation (touch/latch/write).
-    float az = 0.0f, el = 0.0f, dist = 0.0f;
-    const double now = juce::Time::getMillisecondCounterHiRes();
-    if (sender_.takeMove(az, el, dist)) {
-        const char* ids[3] = {"azimuth", "elevation", "distance"};
-        const float vals[3] = {az, el, dist};
-        for (int k = 0; k < 3; ++k)
-            if (auto* prm = params.getParameter(ids[k])) {
-                if (!appGesture_) prm->beginChangeGesture();
-                prm->setValueNotifyingHost(prm->convertTo0to1(vals[k]));
-            }
-        appGesture_ = true;
-        lastAppMoveMs_ = now;
-    } else if (appGesture_ && now - lastAppMoveMs_ > 300.0) {
-        for (const char* id : {"azimuth", "elevation", "distance"})
+void SourceProcessor::applyFromApp(const char* id, float value, double now) {
+    // Applied as a normal parameter change inside a gesture, so the DAW records it as
+    // automation (touch/latch/write). The gesture ends 300 ms after the last change.
+    auto* prm = params.getParameter(id);
+    if (prm == nullptr) return;
+    auto& g = appGestures_[id];
+    if (!g.open) prm->beginChangeGesture();
+    prm->setValueNotifyingHost(prm->convertTo0to1(value));
+    g.open = true;
+    g.lastMs = now;
+}
+
+void SourceProcessor::endAppGestures(double now, bool all) {
+    for (auto& [id, g] : appGestures_)
+        if (g.open && (all || now - g.lastMs > 300.0)) {
             if (auto* prm = params.getParameter(id)) prm->endChangeGesture();
-        appGesture_ = false;
+            g.open = false;
+        }
+}
+
+void SourceProcessor::timerCallback() {
+    // Fast part: the user drags this track or changes its mix in the app.
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    float az = 0.0f, el = 0.0f, dist = 0.0f;
+    if (sender_.takeMove(az, el, dist)) {
+        applyFromApp("azimuth", az, now);
+        applyFromApp("elevation", el, now);
+        applyFromApp("distance", dist, now);
     }
+    rk::bridge::MixChange mix;
+    if (sender_.takeMix(mix)) {
+        using M = rk::bridge::MixChange;
+        if (mix.mask & M::Gain) applyFromApp("gain", mix.gainDb, now);
+        if (mix.mask & M::Spread) applyFromApp("spread", mix.spread * 100.0f, now);
+        if (mix.mask & M::ReverbSend) applyFromApp("reverbSend", mix.reverbSendDb, now);
+        if (mix.mask & M::StereoWidth) applyFromApp("stereoWidth", mix.stereoWidthDeg, now);
+        if (mix.mask & M::DistanceAmount) applyFromApp("distanceAmount", mix.distanceAmount * 100.0f, now);
+    }
+    endAppGestures(now, false);
     if (++tick_ % 12 == 0) housekeeping(); // about twice a second
 }
 
@@ -223,6 +240,7 @@ void SourceProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     const auto route = static_cast<Route>(juce::jlimit(0, 2, (int)std::lround(route_->load())));
     const bool toApp = route == Route::App || (route == Route::Automatic && appUsable_.load(std::memory_order_relaxed));
     if (toApp && sender_.slot() >= 0) {
+        declickTransportStop(buffer, numIn, n);
         rk::bridge::TrackParams tp;
         tp.azimuthDeg = az_->load();
         tp.elevationDeg = el_->load();
@@ -255,6 +273,29 @@ void SourceProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     tp.distanceAmount = distAmt_->load() * 0.01f;
     rk::bridge::applyTrack(engine, 0, 0, juce::jmax(1, numIn), tp, numIn > 0);
     engine.process(buffer.getArrayOfReadPointers(), numIn, buffer.getArrayOfWritePointers(), numOut, n);
+}
+
+void SourceProcessor::declickTransportStop(juce::AudioBuffer<float>& buffer, int numIn, int n) noexcept {
+    // When the DAW stops, the track's audio ends from one sample to the next. Played in the
+    // room that is a click, so the last value before the stop decays over about 3 ms instead.
+    bool playing = true;
+    if (auto* ph = getPlayHead())
+        if (auto pos = ph->getPosition()) playing = pos->getIsPlaying();
+    if (wasPlaying_ && !playing && n > 0) {
+        const float k = std::exp(-1.0f / (0.003f * (float)juce::jmax(8000.0, getSampleRate())));
+        for (int ch = 0; ch < numIn; ++ch) {
+            float* x = buffer.getWritePointer(ch);
+            const float last = lastIn_[(size_t)ch];
+            if (std::abs(x[0]) >= 0.25f * std::abs(last)) continue; // the DAW faded out itself
+            float g = last;
+            for (int i = 0; i < n && std::abs(g) > 1.0e-6f; ++i, g *= k) x[i] += g;
+        }
+    }
+    wasPlaying_ = playing;
+    for (int ch = 0; ch < numIn; ++ch) {
+        const float v = buffer.getSample(ch, n - 1);
+        lastIn_[(size_t)ch] = std::isfinite(v) ? v : 0.0f;
+    }
 }
 
 void SourceProcessor::getStateInformation(juce::MemoryBlock& dest) {

@@ -84,6 +84,8 @@ public:
     std::atomic<float> masterGainDb{0.0f};
     std::atomic<float> reverbWetDb{-6.0f};
     std::atomic<bool> limiterEnabled{true};
+    std::atomic<float> limiterCeilingDb{-0.1f};  // dBFS
+    std::atomic<float> limiterReleaseMs{80.0f};
     std::atomic<float> subLevelDb{-6.0f};
     /// Plays pink noise on one speaker (index into the layout) for setup checks. -1 = off.
     std::atomic<int> speakerTest{-1};
@@ -94,6 +96,11 @@ public:
 
     // ---- metering (read by the UI, reset on read) --------------------------
     float takeOutputPeak(int channel) noexcept;
+    /// RMS of what goes into the reverb (all sends, after the wet level) since the last call.
+    /// The UI lets it ring out with the room's reverb time to show the tail.
+    float takeReverbInput() noexcept { return reverbIn_.exchange(0.0f, std::memory_order_relaxed); }
+    /// Largest limiter gain reduction on output `channel` since the last call, in dB (>= 0).
+    float takeLimiterReduction(int channel) noexcept;
     float takeSourcePeak(int source) noexcept;
     /// Number of times the protective limiter had to act since the last call.
     uint32_t takeLimiterEvents() noexcept { return limiterEvents_.exchange(0); }
@@ -181,6 +188,8 @@ private:
     float subLp_[2][2] = {};
 
     std::array<std::atomic<float>, kMaxSpeakers> outPeak_;
+    std::array<std::atomic<float>, kMaxSpeakers> limiterGr_; // 1 - smallest gain since last take
+    std::atomic<float> reverbIn_{0.0f};
     std::array<std::atomic<float>, kMaxSources> srcPeak_;
     std::atomic<uint32_t> limiterEvents_{0};
     std::atomic<uint32_t> invalidInputs_{0};

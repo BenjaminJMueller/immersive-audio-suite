@@ -36,6 +36,8 @@ juce::Font uiFont(float height, bool bold = false);
 enum class Icon { Undo, Redo, Open, Save, Help, Info, Fit, Plus, Speaker, Source, Room, Output, Headphones, Daw };
 juce::Path iconPath(Icon icon, juce::Rectangle<float> r);
 void drawIcon(juce::Graphics& g, Icon icon, juce::Rectangle<float> r, juce::Colour c, float stroke = 1.5f);
+/// Colour of the reverb in the views (the light blue of the reverb diagram).
+inline juce::Colour reverbColour() { return juce::Colour(0xff64d2ff); }
 
 /// Draws a numbered circle like in Projection Studio's lists and stage.
 void drawNumberBadge(juce::Graphics& g, juce::Rectangle<float> r, int number, juce::Colour c, bool selected = false);
@@ -61,6 +63,13 @@ public:
     /// Every default-font text (text editors, alerts, tooltips) uses the embedded interface font.
     juce::Typeface::Ptr getTypefaceForFont(const juce::Font&) override;
     void drawPopupMenuBackground(juce::Graphics&, int width, int height) override;
+    void drawPopupMenuItem(juce::Graphics&, const juce::Rectangle<int>& area, bool isSeparator, bool isActive, bool isHighlighted,
+                           bool isTicked, bool hasSubMenu, const juce::String& text, const juce::String& shortcutKeyText,
+                           const juce::Drawable* icon, const juce::Colour* textColour) override;
+    void drawPopupMenuSectionHeader(juce::Graphics&, const juce::Rectangle<int>& area, const juce::String& sectionName) override;
+    void getIdealPopupMenuItemSize(const juce::String& text, bool isSeparator, int standardMenuItemHeight, int& idealWidth,
+                                   int& idealHeight) override;
+    int getPopupMenuBorderSize() override { return 5; }
     void drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics&, const juce::Path&, juce::Image&) override;
     int getCallOutBoxBorderSize(const juce::CallOutBox&) override { return 16; }
     void drawLinearSlider(juce::Graphics&, int x, int y, int w, int h, float pos, float minPos, float maxPos,

@@ -238,7 +238,7 @@ public:
 
 private:
     struct Item { int row; juce::Rectangle<int> bounds; };
-    static juce::Rectangle<float> toggleRect(juce::Rectangle<float> row, int which);
+    static juce::Rectangle<float> toggleRect(juce::Rectangle<float> row, int which, bool withMenu = false);
     static juce::Rectangle<float> menuRect(juce::Rectangle<float> row);
     int hover_ = -1;
     std::vector<Item> layoutItems() const;
@@ -253,6 +253,8 @@ public:
     OutputStrip();
     void setGainDb(float db);
     void setLevel(float unit); // 0..1
+    /// Limiter gain reduction in dB (>= 0): shown next to "Master" while the limiter works.
+    void setReductionDb(float db);
     std::function<void(float)> onChange;
     std::function<void()> onCommit;
     static constexpr float kMinDb = -60.0f, kMaxDb = 12.0f;
@@ -267,7 +269,8 @@ private:
     juce::Rectangle<float> track() const;
     float unitForDb(float db) const;
     float dbForX(float x) const;
-    float gainDb_ = 0.0f, level_ = 0.0f;
+    float gainDb_ = 0.0f, level_ = 0.0f, reduction_ = 0.0f;
+    int reductionHold_ = 0;
     bool dragging_ = false;
 };
 
@@ -304,6 +307,42 @@ private:
     Content content_;
     int buttonRowY_ = -1, buttonRowRight_ = 0;
     juce::Viewport viewport_;
+};
+
+/// Numbered steps of a procedure, always visible: a small numbered circle per step and the
+/// wrapped text beside it.
+class StepList : public juce::Component {
+public:
+    explicit StepList(juce::StringArray steps) : steps_(std::move(steps)) {}
+    int heightFor(int width) const;
+    void paint(juce::Graphics& g) override;
+
+private:
+    juce::TextLayout layoutFor(int i, float width) const;
+    juce::StringArray steps_;
+};
+
+/// Label | gain reduction bar | value, for a limiter or compressor. The bar grows from the
+/// right, like on a mixing console; it holds peaks briefly and falls back slowly.
+class ReductionMeter : public juce::Component, public juce::SettableTooltipClient {
+public:
+    explicit ReductionMeter(juce::String label) : label_(std::move(label)) {}
+    /// Gain reduction in dB (>= 0), about 30 times a second.
+    void setReductionDb(float db);
+    void paint(juce::Graphics& g) override;
+    static constexpr float kRangeDb = 12.0f;
+
+private:
+    juce::String label_;
+    float shown_ = 0.0f, hold_ = 0.0f;
+    int holdTicks_ = 0;
+};
+
+/// "‹ Lautsprecher": leaves a sub-page of the inspector (calibration, iPhone measurement), top left like macOS.
+class BackButton : public juce::Button {
+public:
+    explicit BackButton(const juce::String& label) : juce::Button(label) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
+    void paintButton(juce::Graphics& g, bool highlighted, bool down) override;
 };
 
 /// Small helper for buttons in the toolbar style.

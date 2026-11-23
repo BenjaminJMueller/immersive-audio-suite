@@ -415,3 +415,43 @@ TEST_CASE("engine: more Doppler sources than delay lines stay safe") {
     for (int c = 0; c < 8; ++c)
         for (int i = 0; i < 512; ++i) CHECK(std::isfinite(r.out[static_cast<size_t>(c)][static_cast<size_t>(i)]));
 }
+
+TEST_CASE("limiter: adjustable ceiling and release, gain reduction is reported") {
+    rk::PeakLimiter lim;
+    lim.prepare(48000.0);
+    lim.setCeilingDb(-6.0f);
+    std::vector<float> x(480, 1.0f);
+    float peak = 0.0f;
+    CHECK(lim.process(x.data(), (int)x.size(), true, peak));
+    const float ceiling = std::pow(10.0f, -6.0f / 20.0f);
+    CHECK(peak <= ceiling + 1.0e-6f);
+    CHECK(peak == doctest::Approx(ceiling).epsilon(0.001));
+    CHECK(lim.minGain() == doctest::Approx(ceiling).epsilon(0.001));
+
+    // Faster release: the gain recovers sooner after the peak.
+    auto recovered = [](float releaseMs) {
+        rk::PeakLimiter l;
+        l.prepare(48000.0);
+        l.setRelease(releaseMs);
+        std::vector<float> a(64, 2.0f), b(4800, 0.1f);
+        float pk = 0.0f;
+        l.process(a.data(), (int)a.size(), true, pk);
+        l.process(b.data(), (int)b.size(), true, pk);
+        return b.back() / 0.1f;
+    };
+    CHECK(recovered(10.0f) > recovered(500.0f));
+    CHECK(recovered(10.0f) > 0.99f);
+
+    // Off: no gain reduction, values only sanitised.
+    std::vector<float> y(64, 0.5f);
+    lim.setCeilingDb(-20.0f);
+    CHECK_FALSE(lim.process(y.data(), (int)y.size(), false, peak));
+    CHECK(y[10] == 0.5f);
+    CHECK(lim.minGain() == 1.0f);
+    // Garbage settings fall back to sane values.
+    lim.setCeilingDb(NAN);
+    lim.setRelease(INFINITY);
+    std::vector<float> z(64, 4.0f);
+    lim.process(z.data(), (int)z.size(), true, peak);
+    CHECK(peak <= rk::PeakLimiter::kCeiling);
+}

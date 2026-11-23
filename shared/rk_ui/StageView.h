@@ -31,6 +31,8 @@ public:
     }
     /// 0..1 per source, drawn as a ring around the source.
     void setSourceLevels(const std::vector<float>& l);
+    /// How strongly the reverb sounds right now (0..1, already ringing out with the room).
+    void setReverbLevel(float unit);
     /// 0..1: how much reverb fills the room right now (a soft glow over the stage).
     void setAmbience(float a) { ambience_ = a; }
     /// Coach bar at the bottom centre: the next step in plain words (Projection Studio style).
@@ -116,6 +118,7 @@ private:
     float zoom_ = 1.0f;
     juce::Point<float> centre_;
     std::vector<float> speakerLevels_, sourceLevels_;
+    float reverbLevel_ = 0.0f;
     float ambience_ = 0.0f;
     std::vector<juce::Colour> sourceColours_;
     int dimFrom_ = 1 << 30;

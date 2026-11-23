@@ -158,6 +158,45 @@ void ParamSlider::paint(juce::Graphics& g) {
 }
 
 // ---------------------------------------------------------------------------
+void ReductionMeter::setReductionDb(float db) {
+    db = std::isfinite(db) ? juce::jlimit(0.0f, 60.0f, db) : 0.0f;
+    const float before = shown_, holdBefore = hold_;
+    shown_ = db > shown_ ? db : shown_ + (db - shown_) * 0.25f; // instant up, smooth down
+    if (shown_ < 0.01f) shown_ = 0.0f;
+    if (db >= hold_) { hold_ = db; holdTicks_ = 45; }
+    else if (--holdTicks_ < 0) hold_ = juce::jmax(shown_, hold_ - 0.3f);
+    if (std::abs(before - shown_) > 0.005f || std::abs(holdBefore - hold_) > 0.005f) repaint();
+}
+
+void ReductionMeter::paint(juce::Graphics& g) {
+    const Palette& p = palette();
+    const int lw = sliderLabelWidth(label_, getWidth());
+    g.setColour(p.text);
+    g.setFont(uiFont(13.5f));
+    g.drawText(label_, getLocalBounds().withWidth(lw), juce::Justification::centredLeft, true);
+    auto r = getLocalBounds().withTrimmedLeft(lw);
+    const auto valueArea = r.removeFromRight(60);
+    const auto bar = r.toFloat().reduced(6.0f, 0.0f).withSizeKeepingCentre(r.getWidth() - 12.0f, 6.0f);
+    g.setColour(p.track);
+    g.fillRoundedRectangle(bar, 3.0f);
+    auto unit = [](float db) { return juce::jlimit(0.0f, 1.0f, db / kRangeDb); };
+    if (shown_ > 0.0f) {
+        const float w = bar.getWidth() * unit(shown_);
+        g.setColour(p.warn);
+        g.fillRoundedRectangle(bar.withLeft(bar.getRight() - juce::jmax(3.0f, w)), 3.0f);
+    }
+    if (hold_ > 0.05f) {
+        const float x = bar.getRight() - bar.getWidth() * unit(hold_);
+        g.setColour(p.warn.withAlpha(0.8f));
+        g.fillRect(x - 1.0f, bar.getY() - 2.0f, 2.0f, bar.getHeight() + 4.0f);
+    }
+    g.setColour(shown_ > 0.05f ? p.text : p.text3);
+    g.setFont(uiFont(12.5f));
+    g.drawText(shown_ > 0.05f ? juce::String::fromUTF8("\xe2\x88\x92") + num(hold_, 1) + " dB" : juce::String("0 dB"), valueArea,
+               juce::Justification::centredRight, false);
+}
+
+// ---------------------------------------------------------------------------
 ChoiceRow::ChoiceRow(juce::String label, const juce::StringArray& items) : label_(std::move(label)) {
     box_.addItemList(items, 1);
     box_.onChange = [this] {
@@ -532,7 +571,8 @@ void SidebarList::paint(juce::Graphics& g) {
         }
         auto badge = juce::Rectangle<float>(r.getX() + 10, r.getCentreY() - 10, 20, 20);
         drawNumberBadge(g, badge, row.number, row.dim ? row.colour.withSaturation(0.0f).withAlpha(0.6f) : row.colour);
-        const float rightPad = row.toggles ? (row.trailing.isNotEmpty() ? 74.0f : 58.0f) : (row.trailing.isNotEmpty() || row.check || row.menu ? 64.0f : 8.0f);
+        const float rightPad = row.toggles ? (row.trailing.isNotEmpty() ? 74.0f : 58.0f) + (row.menu ? 28.0f : 0.0f)
+                                           : (row.trailing.isNotEmpty() || row.check || row.menu ? 64.0f : 8.0f);
         auto text = r.withTrimmedLeft(42).withTrimmedRight(rightPad);
         g.setColour(row.dim ? p.text3 : p.text);
         g.setFont(uiFont(13.5f));
@@ -543,7 +583,7 @@ void SidebarList::paint(juce::Graphics& g) {
         if (row.toggles) {
             for (int w = 0; w < 2; ++w) {
                 const bool on = w == 0 ? row.mute : row.solo;
-                const auto b = toggleRect(r, w);
+                const auto b = toggleRect(r, w, row.menu);
                 const juce::Colour c = w == 0 ? p.warn : p.accent;
                 g.setColour(on ? c : p.field);
                 g.fillRoundedRectangle(b, 4.0f);
@@ -558,7 +598,14 @@ void SidebarList::paint(juce::Graphics& g) {
             if (row.trailing.isNotEmpty()) {
                 g.setColour(p.text2);
                 g.setFont(uiFont(12.0f));
-                g.drawText(row.trailing, juce::Rectangle<float>(toggleRect(r, 0).getX() - 18, r.getY(), 16, r.getHeight()), juce::Justification::centred, false);
+                g.drawText(row.trailing, juce::Rectangle<float>(toggleRect(r, 0, row.menu).getX() - 18, r.getY(), 16, r.getHeight()), juce::Justification::centred, false);
+            }
+            if (row.menu && (it.row == hover_ || it.row == selected_)) {
+                const auto m = menuRect(r);
+                g.setColour(p.field);
+                g.fillRoundedRectangle(m, 5.0f);
+                g.setColour(p.text2);
+                for (int k = -1; k <= 1; ++k) g.fillEllipse(m.getCentreX() + (float)k * 5.0f - 1.5f, m.getCentreY() - 1.5f, 3.0f, 3.0f);
             }
         } else if (row.trailing.isNotEmpty()) {
             g.setColour(p.text2);
@@ -593,8 +640,9 @@ juce::Rectangle<float> SidebarList::menuRect(juce::Rectangle<float> row) {
     return {row.getRight() - 34.0f, row.getCentreY() - 11.0f, 26.0f, 22.0f};
 }
 
-juce::Rectangle<float> SidebarList::toggleRect(juce::Rectangle<float> row, int which) {
-    return {row.getRight() - 52.0f + (float)which * 24.0f, row.getCentreY() - 10.0f, 20.0f, 20.0f};
+juce::Rectangle<float> SidebarList::toggleRect(juce::Rectangle<float> row, int which, bool withMenu) {
+    // With a "…" menu the M and S buttons move left to make room for it.
+    return {row.getRight() - 52.0f - (withMenu ? 28.0f : 0.0f) + (float)which * 24.0f, row.getCentreY() - 10.0f, 20.0f, 20.0f};
 }
 
 void SidebarList::mouseUp(const juce::MouseEvent& e) {
@@ -610,7 +658,7 @@ void SidebarList::mouseUp(const juce::MouseEvent& e) {
             }
             if (row.toggles)
                 for (int w = 0; w < 2; ++w)
-                    if (toggleRect(it.bounds.toFloat(), w).expanded(2.0f).contains(e.position)) {
+                    if (toggleRect(it.bounds.toFloat(), w, row.menu).expanded(2.0f).contains(e.position)) {
                         if (onToggle) onToggle(it.row, w);
                         return;
                     }
@@ -648,6 +696,15 @@ void OutputStrip::setLevel(float unit) {
     repaint();
 }
 
+void OutputStrip::setReductionDb(float db) {
+    db = std::isfinite(db) ? juce::jlimit(0.0f, 60.0f, db) : 0.0f;
+    const float before = reduction_;
+    if (db >= reduction_) { reduction_ = db; reductionHold_ = 30; } // hold about a second
+    else if (--reductionHold_ < 0) reduction_ = db < 0.05f ? juce::jmax(0.0f, reduction_ - 0.5f) : db;
+    if (reduction_ < 0.05f) reduction_ = 0.0f;
+    if (std::abs(before - reduction_) > 0.01f) repaint();
+}
+
 juce::Rectangle<float> OutputStrip::track() const {
     return getLocalBounds().toFloat().reduced(16.0f, 0.0f).withTop(30.0f).withHeight(16.0f);
 }
@@ -667,6 +724,13 @@ void OutputStrip::paint(juce::Graphics& g) {
     g.setColour(p.text);
     g.setFont(uiFont(13.0f, true));
     g.drawText(tr("Master"), 16, 8, getWidth() / 2, 18, juce::Justification::centredLeft, false);
+    if (reduction_ > 0.0f) { // the limiter works right now
+        const int mw = juce::roundToInt(juce::GlyphArrangement::getStringWidth(uiFont(13.0f, true), tr("Master")));
+        g.setColour(p.warn);
+        g.setFont(uiFont(11.5f, true));
+        g.drawText(tr("Limiter") + " " + juce::String::fromUTF8("\xe2\x88\x92") + num(reduction_, 1) + " dB", 16 + mw + 8, 8, getWidth() / 2, 18,
+                   juce::Justification::centredLeft, false);
+    }
     g.setColour(p.text2);
     g.setFont(uiFont(12.0f));
     const juce::String v = gainDb_ <= kMinDb + 0.01f ? juce::String::fromUTF8("\xe2\x88\x92\xe2\x88\x9e") : num(gainDb_, 1) + " dB";
@@ -767,7 +831,8 @@ void FormPage::setRowHeight(juce::Component* c, int height) {
 namespace {
 bool isSettingRow(juce::Component* c) {
     return dynamic_cast<ParamSlider*>(c) != nullptr || dynamic_cast<ChoiceRow*>(c) != nullptr ||
-           dynamic_cast<TextRow*>(c) != nullptr || dynamic_cast<juce::ToggleButton*>(c) != nullptr;
+           dynamic_cast<TextRow*>(c) != nullptr || dynamic_cast<juce::ToggleButton*>(c) != nullptr ||
+           dynamic_cast<ReductionMeter*>(c) != nullptr;
 }
 } // namespace
 
@@ -836,6 +901,27 @@ void FormPage::relayout() {
 void FormPage::resized() {
     viewport_.setBounds(getLocalBounds());
     relayout();
+}
+
+void BackButton::paintButton(juce::Graphics& g, bool highlighted, bool down) {
+    const Palette& p = palette();
+    const auto f = uiFont(13.5f);
+    const float tw = juce::GlyphArrangement::getStringWidth(f, getButtonText());
+    auto r = getLocalBounds().toFloat().withWidth(juce::jmin((float)getWidth(), tw + 34.0f)).reduced(0.0f, 3.0f);
+    if (highlighted || down) {
+        g.setColour(down ? p.select : p.hover);
+        g.fillRoundedRectangle(r, 6.0f);
+    }
+    const juce::Colour c = p.accent.withMultipliedAlpha(down ? 0.8f : 1.0f);
+    juce::Path chevron;
+    const float cx = r.getX() + 12.0f, cy = r.getCentreY();
+    chevron.startNewSubPath(cx + 3.0f, cy - 6.0f);
+    chevron.lineTo(cx - 3.0f, cy);
+    chevron.lineTo(cx + 3.0f, cy + 6.0f);
+    g.setColour(c);
+    g.strokePath(chevron, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setFont(f);
+    g.drawText(getButtonText(), r.withTrimmedLeft(24.0f), juce::Justification::centredLeft, false);
 }
 
 std::unique_ptr<juce::TextButton> makeButton(const juce::String& text, bool primary, bool flat) {
@@ -914,6 +1000,37 @@ void NoteRow::paint(juce::Graphics& g) {
     juce::TextLayout t;
     t.createLayout(a, (float)juce::jmax(60, getWidth() - 8));
     t.draw(g, getLocalBounds().toFloat().withTrimmedLeft(4).withTrimmedRight(4));
+}
+
+juce::TextLayout StepList::layoutFor(int i, float width) const {
+    juce::AttributedString a;
+    a.setLineSpacing(2.0f);
+    a.append(steps_[i], uiFont(12.5f), palette().text2);
+    juce::TextLayout t;
+    t.createLayout(a, juce::jmax(60.0f, width - 30.0f));
+    return t;
+}
+
+int StepList::heightFor(int width) const {
+    float h = 2.0f;
+    for (int i = 0; i < steps_.size(); ++i) h += juce::jmax(18.0f, layoutFor(i, (float)width).getHeight()) + 8.0f;
+    return juce::roundToInt(h);
+}
+
+void StepList::paint(juce::Graphics& g) {
+    const Palette& p = palette();
+    float y = 2.0f;
+    for (int i = 0; i < steps_.size(); ++i) {
+        const auto t = layoutFor(i, (float)getWidth());
+        const juce::Rectangle<float> dot(4.0f, y, 18.0f, 18.0f);
+        g.setColour(p.accent.withAlpha(0.18f));
+        g.fillEllipse(dot);
+        g.setColour(p.accent);
+        g.setFont(uiFont(11.0f, true));
+        g.drawText(juce::String(i + 1), dot, juce::Justification::centred, false);
+        t.draw(g, juce::Rectangle<float>(30.0f, y + 1.0f, (float)getWidth() - 30.0f, t.getHeight()));
+        y += juce::jmax(18.0f, t.getHeight()) + 8.0f;
+    }
 }
 
 void drawCoachBar(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& coachBadge_, const juce::String& coachTitle_,

@@ -60,43 +60,68 @@ private:
     int delay_ = 0;
 };
 
-/// Protective peak limiter: instant attack, smooth release, hard ceiling.
+/// Peak limiter: instant attack, smooth release, hard ceiling.
 /// It guarantees |output| <= ceiling and turns NaN/Inf into silence.
 class PeakLimiter {
 public:
-    static constexpr float kCeiling = 0.989f; // -0.1 dBFS
+    static constexpr float kCeiling = 0.989f; // -0.1 dBFS, the default
 
     void prepare(double sampleRate) noexcept {
-        release_ = 1.0f - std::exp(-1.0f / static_cast<float>(0.08 * sampleRate));
+        sampleRate_ = sampleRate;
+        releaseMs_ = -1.0f;
+        setRelease(80.0f);
         gain_ = 1.0f;
     }
     void reset() noexcept { gain_ = 1.0f; }
+    /// Ceiling in dBFS (-20..0). Cheap, may be called every block.
+    void setCeilingDb(float db) noexcept {
+        const float d = std::clamp(std::isfinite(db) ? db : -0.1f, -20.0f, 0.0f);
+        ceiling_ = std::min(kCeiling, std::pow(10.0f, d / 20.0f));
+    }
+    /// Release time constant in ms (1..2000). Cheap when unchanged.
+    void setRelease(float ms) noexcept {
+        ms = std::clamp(std::isfinite(ms) ? ms : 80.0f, 1.0f, 2000.0f);
+        if (ms == releaseMs_) return;
+        releaseMs_ = ms;
+        release_ = 1.0f - std::exp(-1.0f / static_cast<float>(0.001 * ms * sampleRate_));
+    }
+    /// Smallest gain applied in the last block (1 = no gain reduction).
+    float minGain() const noexcept { return minGain_; }
     /// Returns true if the limiter reduced the gain in this block.
     bool process(float* io, int n, bool enabled, float& peakOut) noexcept {
         bool acted = false;
         float peak = 0.0f;
+        float lowest = 1.0f;
+        const float ceiling = ceiling_;
         for (int i = 0; i < n; ++i) {
             float v = sanitizeSample(io[i]);
             if (enabled) {
                 const float a = std::fabs(v);
-                if (a * gain_ > kCeiling) {
-                    gain_ = kCeiling / a;
+                if (a * gain_ > ceiling) {
+                    gain_ = ceiling / a;
                     acted = true;
                 } else {
                     gain_ += (1.0f - gain_) * release_;
                 }
-                v = std::clamp(v * gain_, -kCeiling, kCeiling);
+                lowest = std::min(lowest, gain_);
+                v = std::clamp(v * gain_, -ceiling, ceiling);
             }
             io[i] = v;
             peak = std::max(peak, std::fabs(v));
         }
+        if (!enabled) gain_ = 1.0f;
+        minGain_ = lowest;
         peakOut = peak;
         return acted;
     }
 
 private:
+    double sampleRate_ = 48000.0;
     float gain_ = 1.0f;
     float release_ = 0.001f;
+    float releaseMs_ = -1.0f;
+    float ceiling_ = kCeiling;
+    float minGain_ = 1.0f;
 };
 
 } // namespace rk

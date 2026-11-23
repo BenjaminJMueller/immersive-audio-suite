@@ -130,16 +130,19 @@ void FdnReverb::reset() noexcept {
     cluster_.pos = 0;
     lpState_.fill(0.0f);
     lowState_.fill(0.0f);
+    pre_.cur = -1.0f;
+    for (auto& l : lines_) l.cur = -1.0f;
+    snapTaps_ = true;
 }
 
 void FdnReverb::setParams(const ReverbParams& raw) noexcept {
     params_ = sanitize(raw);
     if (!prepared_) return;
     const double sr = sampleRate_;
-    pre_.length = std::clamp(static_cast<int>(params_.preDelayMs * 0.001 * sr), 0, static_cast<int>(pre_.buf.size()) - 1);
+    pre_.length = std::clamp(static_cast<int>(params_.preDelayMs * 0.001 * sr), 0, static_cast<int>(pre_.buf.size()) - 2);
     for (int j = 0; j < kLines; ++j) {
         auto& l = lines_[static_cast<size_t>(j)];
-        l.length = std::clamp(static_cast<int>(kLineMs[j] * params_.size * 0.001 * sr), 1, static_cast<int>(l.buf.size()) - 1);
+        l.length = std::clamp(static_cast<int>(kLineMs[j] * params_.size * 0.001 * sr), 1, static_cast<int>(l.buf.size()) - 2);
         feedback_[static_cast<size_t>(j)] = static_cast<float>(std::pow(10.0, -3.0 * l.length / (params_.decaySec * sr)));
         lowFeedback_[static_cast<size_t>(j)] =
             static_cast<float>(std::pow(10.0, -3.0 * l.length / (params_.decaySec * params_.lowRatio * sr)));
@@ -164,11 +167,40 @@ void FdnReverb::setParams(const ReverbParams& raw) noexcept {
 void FdnReverb::process(const float* input, float* const* out, int numOut, int n, float gain) noexcept {
     if (!prepared_ || n <= 0) return;
     numOut = std::clamp(numOut, 0, 256);
+    // Size and pre-delay glide: at most 3 % faster or slower reading, so a change (e.g.
+    // while a scene fades) bends the pitch a little instead of clicking.
+    constexpr float kGlide = 0.03f;
+    // Tap positions glide per sample from where the last block ended (start) by `step` per sample.
+    std::array<float, kEarlyTaps> eStart{}, eStep{};
+    std::array<float, kClusterTaps> cStart{}, cStep{};
+    std::array<float, kClusterTaps> cgStart{}, cgStep{}; // cluster tap gains, ramped over the block
+    {
+        const float maxMove = kGlide * static_cast<float>(n);
+        auto glide = [&](float& cur, int target, float& start, float& step) {
+            if (snapTaps_) cur = static_cast<float>(target);
+            start = cur;
+            cur += std::clamp(static_cast<float>(target) - cur, -maxMove, maxMove);
+            step = (cur - start) / static_cast<float>(n);
+        };
+        for (int k = 0; k < kEarlyTaps; ++k)
+            glide(earlyCur_[static_cast<size_t>(k)], earlyLen_[static_cast<size_t>(k)], eStart[static_cast<size_t>(k)], eStep[static_cast<size_t>(k)]);
+        for (int k = 0; k < kClusterTaps; ++k)
+            glide(clusterCur_[static_cast<size_t>(k)], clusterLen_[static_cast<size_t>(k)], cStart[static_cast<size_t>(k)], cStep[static_cast<size_t>(k)]);
+        for (int k = 0; k < kClusterTaps; ++k) {
+            float& g = clusterGainCur_[static_cast<size_t>(k)];
+            const float target = clusterGain_[static_cast<size_t>(k)];
+            if (snapTaps_) g = target;
+            cgStart[static_cast<size_t>(k)] = g;
+            cgStep[static_cast<size_t>(k)] = (target - g) / static_cast<float>(n);
+            g = target;
+        }
+        snapTaps_ = false;
+    }
     int idx[256][4];
     float sgn[256][4];
     // Each output hears its own four early taps and four cluster taps, so reflections
     // arrive from different directions, like walls at different distances.
-    int eTap[256][4], cTap[256][4];
+    int eTap[256][4], cTap[256][4]; // which tap
     float eG[256][4], cG[256][4];
     for (int c = 0; c < numOut; ++c) {
         const int row = (c / 4) % 4;
@@ -176,44 +208,58 @@ void FdnReverb::process(const float* input, float* const* out, int numOut, int n
             idx[c][k] = (c * 3 + k * 4 + c / 16) % kLines;
             sgn[c][k] = kH4[row][k] * 0.5f * gain * tailLevel_;
             const int e = (c * 5 + k * 2 + (k > 1 ? 1 : 0)) % kEarlyTaps;
-            eTap[c][k] = earlyLen_[static_cast<size_t>(e)];
+            eTap[c][k] = e;
             eG[c][k] = kH4[(row + c) % 4][k] * kEarlyGain[e] * 0.5f * gain * earlyLevel_;
             const int q = (c * 7 + k * 4 + c / 4) % kClusterTaps;
-            cTap[c][k] = clusterLen_[static_cast<size_t>(q)];
-            cG[c][k] = kH4[(row + 1) % 4][k] * clusterGain_[static_cast<size_t>(q)] * gain * clusterLevel_;
+            cTap[c][k] = q;
+            cG[c][k] = kH4[(row + 1) % 4][k] * gain * clusterLevel_; // the tap's own gain glides below
         }
     }
     const bool doEarly = earlyLevel_ > 0.0f && gain != 0.0f;
     const bool doCluster = clusterLevel_ > 0.0f && gain != 0.0f;
-    auto tap = [](const Delay& dl, int len) noexcept {
+    auto tap = [](const Delay& dl, float len) noexcept { // interpolated, len >= 1
         const int sz = static_cast<int>(dl.buf.size());
-        return dl.buf[static_cast<size_t>((dl.pos - len + sz) % sz)];
+        const float c = std::clamp(len, 1.0f, static_cast<float>(sz - 2));
+        const int i0 = static_cast<int>(c);
+        const float f = c - static_cast<float>(i0);
+        const float a = dl.buf[static_cast<size_t>((dl.pos - i0 + sz) % sz)];
+        const float b = dl.buf[static_cast<size_t>((dl.pos - i0 - 1 + 2 * sz) % sz)];
+        return a + (b - a) * f;
     };
+    float eVal[kEarlyTaps];
+    float cVal[kClusterTaps];
     float y[kLines];
     float d[kLines];
     for (int i = 0; i < n; ++i) {
         const float in = sanitizeSample(input[i]);
         float x;
-        if (pre_.length > 0) {
-            x = pre_.read();
+        if (pre_.length > 0 || pre_.cur > 1.0f) {
+            x = pre_.readGliding(kGlide);
             pre_.write(in);
         } else {
+            pre_.cur = 0.0f;
             x = in;
+            pre_.write(in);
         }
         early_.write(x);
-        if (doEarly)
+        if (doEarly) {
+            for (int k = 0; k < kEarlyTaps; ++k)
+                eVal[k] = tap(early_, eStart[static_cast<size_t>(k)] + eStep[static_cast<size_t>(k)] * static_cast<float>(i + 1));
             for (int c = 0; c < numOut; ++c)
-                out[c][i] += eG[c][0] * tap(early_, eTap[c][0]) + eG[c][1] * tap(early_, eTap[c][1]) +
-                             eG[c][2] * tap(early_, eTap[c][2]) + eG[c][3] * tap(early_, eTap[c][3]);
+                out[c][i] += eG[c][0] * eVal[eTap[c][0]] + eG[c][1] * eVal[eTap[c][1]] + eG[c][2] * eVal[eTap[c][2]] + eG[c][3] * eVal[eTap[c][3]];
+        }
         for (auto& ap : diffusers_) x = ap.process(x);
         cluster_.write(x);
-        if (doCluster)
+        if (doCluster) {
+            for (int k = 0; k < kClusterTaps; ++k)
+                cVal[k] = tap(cluster_, cStart[static_cast<size_t>(k)] + cStep[static_cast<size_t>(k)] * static_cast<float>(i + 1)) *
+                          (cgStart[static_cast<size_t>(k)] + cgStep[static_cast<size_t>(k)] * static_cast<float>(i + 1));
             for (int c = 0; c < numOut; ++c)
-                out[c][i] += cG[c][0] * tap(cluster_, cTap[c][0]) + cG[c][1] * tap(cluster_, cTap[c][1]) +
-                             cG[c][2] * tap(cluster_, cTap[c][2]) + cG[c][3] * tap(cluster_, cTap[c][3]);
+                out[c][i] += cG[c][0] * cVal[cTap[c][0]] + cG[c][1] * cVal[cTap[c][1]] + cG[c][2] * cVal[cTap[c][2]] + cG[c][3] * cVal[cTap[c][3]];
+        }
 
         for (int j = 0; j < kLines; ++j) {
-            y[j] = lines_[static_cast<size_t>(j)].read();
+            y[j] = lines_[static_cast<size_t>(j)].readGliding(kGlide);
             float& lp = lpState_[static_cast<size_t>(j)];
             lp += lpCoef_ * (y[j] - lp);
             lp = sanitizeSample(lp);
