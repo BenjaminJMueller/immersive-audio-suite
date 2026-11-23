@@ -3,7 +3,9 @@
 #include "../common/ParamBinding.h"
 #include "ReturnProcessor.h"
 
+#include <rk/bridge.hpp>
 #include <rk/math.hpp>
+#include <rk_ui/RoomView.h>
 #include <rk_ui/Strings.h>
 #include <rk_ui/Theme.h>
 #include <rk_ui/Widgets.h>
@@ -31,13 +33,19 @@ public:
 private:
     void timerCallback() override;
     void refreshStatus();
+    void refreshRoom();
 
     ReturnProcessor& proc_;
     rkui::LookAndFeel lnf_;
+    rkui::RoomView room_;
     ReturnMeters meters_;
     rkui::FormPage page_;
-    rkui::StatusCard* card_ = nullptr; // owned by page_
-    juce::String cardKey_;
+    rkui::IconButton help_{rkui::Icon::Help, {}};
+    bool noticeWarn_ = false;
+    juce::String notice_, rangeText_;
+    rkui::Scene scene_;
+    rk::bridge::Receiver tracks_; // to show where the tracks are (read only)
+    int roomCountdown_ = 0;
     std::vector<std::unique_ptr<ParamBinding>> bindings_;
     juce::TooltipWindow tooltips_{this, 600};
     std::vector<float> levels_;

@@ -1,5 +1,5 @@
-# Three plugins: "Raumklang Quelle" (one per track), "Raumklang Raum" (master bus) and
-# "Raumklang Return" (brings the app's speaker signals back into the DAW).
+# Two plugins: "Raumklang Quelle" (one per track) and "Raumklang Return" (brings the
+# app's speaker signals back into the DAW). The room and its reverb live in the app.
 set(RK_PLUGIN_FORMATS VST3 Standalone)
 if(APPLE)
     list(APPEND RK_PLUGIN_FORMATS AU)
@@ -32,20 +32,26 @@ endfunction()
 rk_add_plugin(RaumklangQuelle "Raumklang Quelle" Rkq1 "Places a track in the room (spatial panner)")
 target_sources(RaumklangQuelle PRIVATE source/SourceProcessor.cpp source/SourceEditor.cpp)
 
-rk_add_plugin(RaumklangRaum "Raumklang Raum" Rkr1 "Speaker setup, calibration and headphone preview")
-target_sources(RaumklangRaum PRIVATE room/RoomProcessor.cpp room/RoomEditor.cpp)
-
 rk_add_plugin(RaumklangRueckweg "Raumklang Return" Rkb1 "Brings the Raumklang app's speaker signals back into the DAW")
 target_sources(RaumklangRueckweg PRIVATE return/ReturnProcessor.cpp return/ReturnEditor.cpp)
 
 if(RK_BUILD_TESTS)
     juce_add_console_app(rk_plugin_tests PRODUCT_NAME "Raumklang Plugin Tests")
     target_sources(rk_plugin_tests PRIVATE tests/PluginStressTest.cpp
-        source/SourceProcessor.cpp source/SourceEditor.cpp room/RoomProcessor.cpp room/RoomEditor.cpp
+        source/SourceProcessor.cpp source/SourceEditor.cpp
         return/ReturnProcessor.cpp return/ReturnEditor.cpp)
     target_compile_definitions(rk_plugin_tests PRIVATE RK_NO_PLUGIN_ENTRY=1 JucePlugin_Name="Raumklang Test"
         JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_link_libraries(rk_plugin_tests PRIVATE rk_shared
         juce::juce_audio_utils juce::juce_audio_processors juce::juce_recommended_config_flags)
     add_test(NAME rk_plugin_tests COMMAND rk_plugin_tests)
+
+    # Renders the plugin windows to PNG (README screenshots, design review). Not a test.
+    juce_add_console_app(rk_plugin_shots PRODUCT_NAME "Raumklang Plugin Shots")
+    target_sources(rk_plugin_shots PRIVATE tests/Screenshots.cpp
+        source/SourceProcessor.cpp source/SourceEditor.cpp return/ReturnProcessor.cpp return/ReturnEditor.cpp)
+    target_compile_definitions(rk_plugin_shots PRIVATE RK_NO_PLUGIN_ENTRY=1 JucePlugin_Name="Raumklang Shots" JUCE_MODAL_LOOPS_PERMITTED=1
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(rk_plugin_shots PRIVATE rk_shared
+        juce::juce_audio_utils juce::juce_audio_processors juce::juce_recommended_config_flags)
 endif()

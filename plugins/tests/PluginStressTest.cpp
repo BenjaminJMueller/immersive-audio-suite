@@ -2,7 +2,6 @@
 // sizes, NaN input, automation from another thread, state round trips, editors.
 // pluginval runs in CI as well; this test also runs under the sanitizers.
 #include "../return/ReturnProcessor.h"
-#include "../room/RoomProcessor.h"
 #include "../source/SourceProcessor.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -219,12 +218,6 @@ int main() {
                 for (int out : {1, 2, 8, 12, 24, 64}) hammer(src, in, out, rng);
             stateRoundTrip(src, src2);
             editors(src);
-        }
-        {
-            rkplug::RoomProcessor room, room2;
-            for (int ch : {1, 2, 6, 8, 12, 32, 64}) hammer(room, ch, ch, rng);
-            stateRoundTrip(room, room2);
-            editors(room);
         }
         {
             rkplug::ReturnProcessor ret, ret2;

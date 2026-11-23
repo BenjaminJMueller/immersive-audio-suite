@@ -141,9 +141,17 @@ namespace {
 int labelWidth(int w) { return juce::jlimit(72, 120, w * 31 / 100); }
 } // namespace
 
+namespace {
+/// Room for the label: the usual column, wider for a long label so it never runs into the slider.
+int sliderLabelWidth(const juce::String& label, int w) {
+    const int text = juce::roundToInt(juce::GlyphArrangement::getStringWidth(uiFont(13.5f), label)) + 12;
+    return juce::jmax(labelWidth(w), juce::jmin(text, w * 45 / 100));
+}
+} // namespace
+
 void ParamSlider::resized() {
     auto r = getLocalBounds();
-    r.removeFromLeft(labelWidth(getWidth()));
+    r.removeFromLeft(sliderLabelWidth(label_, getWidth()));
     value_.setBounds(r.removeFromRight(60));
     slider_.setBounds(r);
 }
@@ -151,7 +159,7 @@ void ParamSlider::resized() {
 void ParamSlider::paint(juce::Graphics& g) {
     g.setColour(slider_.isEnabled() ? palette().text : palette().text3);
     g.setFont(uiFont(13.5f));
-    g.drawText(label_, getLocalBounds().withWidth(labelWidth(getWidth())), juce::Justification::centredLeft, true);
+    g.drawText(label_, getLocalBounds().withWidth(sliderLabelWidth(label_, getWidth())), juce::Justification::centredLeft, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +181,7 @@ void ChoiceRow::paint(juce::Graphics& g) {
     if (label_.isEmpty()) return;
     g.setColour(palette().text);
     g.setFont(uiFont(13.5f));
-    g.drawText(label_, getLocalBounds().withWidth(labelWidth(getWidth())), juce::Justification::centredLeft, true);
+    g.drawText(label_, getLocalBounds().withWidth(sliderLabelWidth(label_, getWidth())), juce::Justification::centredLeft, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +202,7 @@ void TextRow::resized() {
 void TextRow::paint(juce::Graphics& g) {
     g.setColour(palette().text);
     g.setFont(uiFont(13.5f));
-    g.drawText(label_, getLocalBounds().withWidth(labelWidth(getWidth())), juce::Justification::centredLeft, true);
+    g.drawText(label_, getLocalBounds().withWidth(sliderLabelWidth(label_, getWidth())), juce::Justification::centredLeft, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -566,6 +574,7 @@ void FormPage::relayout() {
         }
         if (buttonRowY_ >= 0) { y = buttonRowY_ + 36; buttonRowY_ = -1; }
         if (auto* d = dynamic_cast<Disclosure*>(c)) e.height = d->heightFor(w - 2 * pad);
+        if (auto* n = dynamic_cast<NoteRow*>(c)) e.height = n->heightFor(w - 2 * pad);
         c->setBounds(pad, y, w - 2 * pad, e.height);
         y += e.height + (dynamic_cast<SectionHeader*>(c) != nullptr ? 2 : 8);
     }
@@ -585,6 +594,114 @@ std::unique_ptr<juce::TextButton> makeButton(const juce::String& text, bool prim
     b->getProperties().set("primary", primary);
     b->getProperties().set("flat", flat);
     return b;
+}
+
+void drawNoticePill(juce::Graphics& g, float leftLimit, float rightX, float centreY, bool warn, const juce::String& text) {
+    const Palette& p = palette();
+    const auto f = uiFont(12.5f);
+    const float tw = std::min(rightX - leftLimit - 40.0f, juce::GlyphArrangement::getStringWidth(f, text));
+    if (tw < 60.0f || text.isEmpty()) return;
+    const auto r = juce::Rectangle<float>(rightX - tw - 40.0f, centreY - 14.0f, tw + 40.0f, 28.0f);
+    g.setColour(warn ? p.warn.withAlpha(0.14f) : p.group);
+    g.fillRoundedRectangle(r, 7.0f);
+    g.setColour(warn ? p.warn.withAlpha(0.45f) : p.line);
+    g.drawRoundedRectangle(r.reduced(0.5f), 7.0f, 1.0f);
+    const auto dot = juce::Rectangle<float>(r.getX() + 9.0f, r.getCentreY() - 7.0f, 14.0f, 14.0f);
+    g.setColour(warn ? p.warn : p.text3);
+    g.fillEllipse(dot);
+    g.setColour(p.side);
+    g.setFont(uiFont(10.5f, true));
+    g.drawText(warn ? "!" : "i", dot, juce::Justification::centred);
+    g.setColour(warn ? p.text : p.text2);
+    g.setFont(f);
+    g.drawText(text, r.withTrimmedLeft(30.0f).withTrimmedRight(8.0f), juce::Justification::centredLeft, true);
+}
+
+
+ExpandRow::ExpandRow(juce::String title, bool open, std::function<void()> toggle)
+    : title_(std::move(title)), open_(open), toggle_(std::move(toggle)) {
+    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+}
+
+void ExpandRow::paint(juce::Graphics& g) {
+    const auto& p = palette();
+    const auto c = isMouseOver() ? p.text : p.text2;
+    juce::Path chev;
+    const float cx = 14.0f, cy = getHeight() * 0.5f;
+    if (open_) {
+        chev.startNewSubPath(cx - 4, cy - 2);
+        chev.lineTo(cx, cy + 2);
+        chev.lineTo(cx + 4, cy - 2);
+    } else {
+        chev.startNewSubPath(cx - 2, cy - 4);
+        chev.lineTo(cx + 2, cy);
+        chev.lineTo(cx - 2, cy + 4);
+    }
+    g.setColour(c);
+    g.strokePath(chev, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setFont(uiFont(13.0f));
+    g.drawText(title_, getLocalBounds().withTrimmedLeft(26), juce::Justification::centredLeft);
+}
+
+void ExpandRow::mouseUp(const juce::MouseEvent& e) {
+    if (!e.mouseWasClicked()) return;
+    juce::MessageManager::callAsync([t = toggle_] { t(); });
+}
+
+
+int NoteRow::heightFor(int width) const {
+    juce::AttributedString a;
+    a.setLineSpacing(2.0f);
+    a.append(text_, uiFont(12.5f));
+    juce::TextLayout t;
+    t.createLayout(a, (float)juce::jmax(60, width - 8));
+    return juce::roundToInt(t.getHeight()) + 4;
+}
+
+void NoteRow::paint(juce::Graphics& g) {
+    juce::AttributedString a;
+    a.setLineSpacing(2.0f);
+    a.append(text_, uiFont(12.5f), palette().text2);
+    juce::TextLayout t;
+    t.createLayout(a, (float)juce::jmax(60, getWidth() - 8));
+    t.draw(g, getLocalBounds().toFloat().withTrimmedLeft(4).withTrimmedRight(4));
+}
+
+void drawCoachBar(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& coachBadge_, const juce::String& coachTitle_,
+                  const juce::String& coachText_, bool coachOk_) {
+    if (coachTitle_.isEmpty()) return;
+    const Palette& p = palette();
+    const juce::Font tf = uiFont(13.5f, true), sf = uiFont(12.0f);
+    const float textW = std::max(juce::GlyphArrangement::getStringWidth(tf, coachTitle_), juce::GlyphArrangement::getStringWidth(sf, coachText_));
+    const float w = std::min((float)area.getWidth() - 32.0f, 10.0f + 28.0f + 12.0f + textW + 18.0f);
+    auto r = juce::Rectangle<float>(w, 50.0f).withCentre({area.getCentreX() * 1.0f, (float)area.getBottom() - 20.0f - 25.0f});
+    g.setColour(juce::Colours::black.withAlpha(0.25f));
+    g.fillRoundedRectangle(r.translated(0, 4).expanded(2), 15.0f);
+    g.setColour(juce::Colour(0xff1c1c1e).withAlpha(0.88f));
+    g.fillRoundedRectangle(r, 14.0f);
+    g.setColour(juce::Colours::white.withAlpha(0.12f));
+    g.drawRoundedRectangle(r.reduced(0.25f), 14.0f, 0.75f);
+    auto badge = juce::Rectangle<float>(r.getX() + 10.0f, r.getCentreY() - 14.0f, 28.0f, 28.0f);
+    g.setColour(coachOk_ ? p.ok : juce::Colour(0xff0a84ff));
+    g.fillEllipse(badge);
+    g.setColour(juce::Colours::white);
+    if (coachOk_ && coachBadge_.isEmpty()) {
+        juce::Path t;
+        t.startNewSubPath(badge.getX() + 8.5f, badge.getCentreY());
+        t.lineTo(badge.getX() + 12.5f, badge.getY() + 18.0f);
+        t.lineTo(badge.getX() + 20.0f, badge.getY() + 10.0f);
+        g.strokePath(t, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    } else {
+        g.setFont(uiFont(13.5f, true));
+        g.drawText(coachBadge_, badge, juce::Justification::centred, false);
+    }
+    auto text = r.withTrimmedLeft(50.0f).withTrimmedRight(16.0f);
+    g.setColour(juce::Colour(0xfff2f2f4));
+    g.setFont(tf);
+    g.drawText(coachTitle_, text.withTrimmedTop(8.0f).withHeight(18.0f), juce::Justification::centredLeft, true);
+    g.setColour(juce::Colour(0xffebebf5).withAlpha(0.68f));
+    g.setFont(sf);
+    g.drawText(coachText_, text.withTrimmedTop(26.0f).withHeight(16.0f), juce::Justification::centredLeft, true);
 }
 
 } // namespace rkui

@@ -1,5 +1,4 @@
-// Raumklang UI: sound visualisation. A live spectrum of what the speakers play as a
-// waterfall receding into depth, and the reverb time over frequency as a fine curve.
+// Raumklang UI: a live spectrum of what the speakers play (shown inside the reverb curve).
 #pragma once
 
 #include "Theme.h"
@@ -26,23 +25,6 @@ public:
 private:
     std::array<float, kBands> bands_{};
     bool init_ = false;
-};
-
-class ReverbView : public juce::Component, public juce::SettableTooltipClient {
-public:
-    ReverbView();
-    void setParams(const rk::ReverbParams& p, float wetDb);
-    void setBands(const std::array<float, SpectrumAnalyzer::kBands>& db);
-    void paint(juce::Graphics& g) override;
-
-private:
-    juce::Colour hueAt(float x01) const;
-    rk::ReverbParams params_;
-    float wetDb_ = -6.0f;
-    std::array<float, SpectrumAnalyzer::kBands> bands_{};
-    bool hasBands_ = false;
-    static constexpr int kHistory = 28; // waterfall depth
-    std::vector<std::array<float, SpectrumAnalyzer::kBands>> history_; // newest first
 };
 
 } // namespace rkui

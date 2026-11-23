@@ -16,6 +16,7 @@ juce::String rateText(double hz) {
 }
 
 const juce::String kDegree = juce::String::fromUTF8("\xc2\xb0");
+constexpr int kBarHeight = 46;
 
 } // namespace
 
@@ -25,9 +26,14 @@ SourceEditor::SourceEditor(SourceProcessor& p) : AudioProcessorEditor(p), proc_(
     rkui::setDarkMode(true);
     lnf_.refreshColours();
     setLookAndFeel(&lnf_);
-    stage_.setEditTarget(rkui::StageView::EditTarget::Sources);
-    stage_.setSelectedSource(0);
-    stage_.onSourceMoved = [this](int, rk::Vec3 pos) {
+
+    room_.setSelectedSource(0);
+    room_.setFirstLockedSource(1);
+    room_.setMode(static_cast<rkui::RoomView::Mode>(
+        juce::jlimit(0, 3, (int)proc_.params.state.getProperty("view", (int)rkui::RoomView::Mode::Split))));
+    room_.onModeChanged = [this](rkui::RoomView::Mode m) { proc_.params.state.setProperty("view", (int)m, nullptr); };
+    room_.onSourceMoved = [this](int i, rk::Vec3 pos) {
+        if (i != 0) return;
         if (!dragGesture_) {
             for (auto* id : {"azimuth", "elevation", "distance"})
                 if (auto* prm = proc_.params.getParameter(id)) prm->beginChangeGesture();
@@ -35,23 +41,47 @@ SourceEditor::SourceEditor(SourceProcessor& p) : AudioProcessorEditor(p), proc_(
         }
         proc_.setSourcePosition(pos);
     };
-    stage_.onDragEnd = [this] {
+    room_.onDragEnd = [this] {
         if (!dragGesture_) return;
         for (auto* id : {"azimuth", "elevation", "distance"})
             if (auto* prm = proc_.params.getParameter(id)) prm->endChangeGesture();
         dragGesture_ = false;
     };
-    stage_.setCoach("1", L("Quelle platzieren", "Place the source"),
-                    L("Den Punkt in der Ansicht ziehen oder rechts die Regler nutzen.", "Drag the dot or use the controls on the right."));
-    addAndMakeVisible(stage_);
+    addAndMakeVisible(room_);
     addAndMakeVisible(page_);
-    buildPage();
 
+    // The name: follows the DAW track; a click renames it, an empty name follows the DAW again.
+    name_.setFont(rkui::uiFont(15.0f, true));
+    name_.setColour(juce::Label::textColourId, rkui::palette().text);
+    name_.setEditable(true, false, false);
+    name_.setTooltip(L("Klicken zum Umbenennen. Leer lassen, um den Namen der DAW-Spur zu verwenden.",
+                       "Click to rename. Leave empty to use the name of the DAW track."));
+    name_.onEditorShow = [this] {
+        if (auto* ed = name_.getCurrentTextEditor()) {
+            ed->setText(proc_.customName().isNotEmpty() ? proc_.customName() : proc_.dawTrackName(), false);
+            ed->selectAll();
+        }
+    };
+    name_.onTextChange = [this] {
+        const auto t = name_.getText().trim();
+        proc_.setCustomName(t == proc_.dawTrackName() ? juce::String() : t);
+        name_.setText(proc_.displayName(), juce::dontSendNotification);
+    };
+    addAndMakeVisible(name_);
+
+    help_.setTooltip(L("Ziehe die Quelle in der Ansicht oder nutze die Regler. Alles l\xc3\xa4sst sich in der DAW automatisieren. "
+                       "L\xc3\xa4uft die Raumklang-App, spielt sie diese Spur, ganz ohne Routing.",
+                       "Drag the source in the view or use the controls. Everything can be automated in the DAW. "
+                       "When the Raumklang app runs, it plays this track without any routing."));
+    addAndMakeVisible(help_);
+
+    buildPage();
     setResizable(true, true);
-    setResizeLimits(720, 480, 2000, 1400);
-    setSize(980, 620);
+    setResizeLimits(820, 520, 2400, 1600);
+    setSize(1100, 680);
+    others_.open();
     refreshStage();
-    refreshStatus();
+    refreshNotice();
     startTimerHz(30);
 }
 
@@ -64,145 +94,132 @@ SourceEditor::~SourceEditor() {
 void SourceEditor::buildPage() {
     bindings_.clear();
     page_.clear();
-    card_ = page_.add(std::make_unique<rkui::StatusCard>(), 72);
-
-    // Name in the app: follows the DAW track unless one is typed here.
-    nameRow_ = page_.add(std::make_unique<rkui::TextRow>(tr("Name")), 34);
-    nameRow_->editor().setText(proc_.customName(), false);
-    nameRow_->onCommit = [this](const juce::String& t) { proc_.setCustomName(t); };
-    shownDawName_ = "\x01"; // forces the placeholder update in the timer
+    routeRow_ = nullptr;
 
     page_.add(std::make_unique<rkui::SectionHeader>(
-                  tr("Ausgabe"),
-                  L("Automatisch: L\xc3\xa4uft die Raumklang-App, spielt sie diese Spur, ganz ohne Routing. Sonst klingt die Spur in der DAW, "
-                    "mit einem Kanal pro Lautsprecher.",
-                    "Automatic: when the Raumklang app runs, it plays this track without any routing. Otherwise the track plays in the DAW, "
-                    "with one channel per speaker.")),
+                  tr("Position"), L("Azimut 0\xc2\xb0 ist vorne, 90\xc2\xb0 links. Elevation hebt die Quelle \xc3\xbc" "ber die Ohrh\xc3\xb6he.",
+                                    "Azimuth 0\xc2\xb0 is front, 90\xc2\xb0 left. Elevation lifts the source above ear height.")),
               26);
-    routeRow_ = page_.add(std::make_unique<rkui::ChoiceRow>(L("Ziel", "Destination"),
-                                                            juce::StringArray{L("Automatisch", "Automatic"), L("An die App", "To the app"),
-                                                                              L("In der DAW", "In the DAW")}),
-                          26);
-    auto* routePrm = proc_.params.getParameter("route");
-    routeRow_->box().setSelectedItemIndex(juce::roundToInt(routePrm->convertFrom0to1(routePrm->getValue())), juce::dontSendNotification);
-    routeRow_->onChange = [this, routePrm](int i) {
-        routePrm->beginChangeGesture();
-        routePrm->setValueNotifyingHost(routePrm->convertTo0to1((float)i));
-        routePrm->endChangeGesture();
-        refreshStatus();
-    };
-
-    page_.add(std::make_unique<rkui::SectionHeader>(
-                  tr("Position"), L("Azimut 0\xc2\xb0 ist vorne, 90\xc2\xb0 links. Alle Werte lassen sich in der DAW automatisieren.",
-                                    "Azimuth 0\xc2\xb0 is front, 90\xc2\xb0 left. Every value can be automated in the DAW.")),
-              26);
-    addSlider("azimuth", tr("Azimut"), kDegree, 1, 0, L("Richtung um den H\xc3\xb6rplatz", "Direction around the listening spot"));
-    addSlider("elevation", tr("Elevation"), kDegree, 1, 0, L("H\xc3\xb6he \xc3\xbc" "ber oder unter der Ebene", "Height above or below the plane"));
-    addSlider("distance", tr("Abstand"), "m", 2, 0, L("Abstand zur Mitte", "Distance from the centre"));
+    addSlider("azimuth", tr("Azimut"), kDegree, 1, 0, {});
+    addSlider("elevation", tr("Elevation"), kDegree, 1, 0, {});
+    addSlider("distance", tr("Abstand"), "m", 2, 0, {});
 
     page_.add(std::make_unique<rkui::SectionHeader>(tr("Klang")), 26);
     addSlider("gain", tr("Pegel"), "dB", 1, 0, {});
     addSlider("spread", tr("Breite"), "%", 0, 0, L("Verteilt die Quelle auf mehr Lautsprecher", "Spreads the source over more speakers"));
-    addSlider("stereoWidth", L("Stereobreite", "Stereo width"), kDegree, 0, 0,
-              L("Winkel zwischen links und rechts einer Stereospur", "Angle between left and right of a stereo track"));
-    addSlider("reverbSend", tr("Hallanteil"), "dB", 1, -80, {});
-    addSlider("distanceAmount", tr("Entfernung"), "%", 0, 0,
+
+    page_.add(std::make_unique<rkui::SectionHeader>(
+                  tr("Raum"), L("Wie viel von dieser Spur in den Hall geht. Den Hall selbst stellst du in der Raumklang-App unter \xe2\x80\x9e" "3 Raum\xe2\x80\x9c ein.",
+                                "How much of this track goes into the reverb. The reverb itself is set in the Raumklang app under \"3 Room\".")),
+              26);
+    addSlider("reverbSend", L("Raumanteil", "Room amount"), "dB", 1, -80, {});
+    addSlider("distanceAmount", L("Entfernungseffekt", "Distance effect"), "%", 0, 0,
               L("Wie stark Abstand leiser und dumpfer macht", "How much distance makes the source quieter and duller"));
 
-    page_.addDetails(L("Ein Plugin pro Spur. L\xc3\xa4uft die Raumklang-App, erscheint die Spur dort in der Liste \xe2\x80\x9e" "Aus der DAW\xe2\x80\x9c. "
-                       "Die App spielt sie \xc3\xbc" "ber ihr eigenes Audioger\xc3\xa4t, die Spur in der DAW bleibt still. Dazu muss nichts geroutet werden.\n\n"
-                       "Ohne App gibt die Spur einen Kanal pro Lautsprecher aus. Stelle die Spur dann auf so viele Kan\xc3\xa4le, wie der Aufbau Lautsprecher hat, "
-                       "und lege \xe2\x80\x9eRaumklang Raum\xe2\x80\x9c auf den Master.\n\n"
-                       "DAW und App m\xc3\xbcssen mit derselben Abtastrate laufen.",
-                       "One plugin per track. When the Raumklang app runs, the track appears there under \"From the DAW\". "
-                       "The app plays it through its own audio device and the DAW track stays silent. Nothing needs to be routed.\n\n"
-                       "Without the app the track outputs one channel per speaker. Set the track to as many channels as the setup has speakers "
-                       "and put \"Raumklang Raum\" on the master.\n\n"
-                       "The DAW and the app must run at the same sample rate."));
+    page_.addSpace(6);
+    page_.add(std::make_unique<rkui::ExpandRow>(L("Erweitert", "Advanced"), advancedOpen_, [safe = juce::Component::SafePointer<SourceEditor>(this)] {
+                  if (safe == nullptr) return;
+                  safe->advancedOpen_ = !safe->advancedOpen_;
+                  safe->buildPage();
+              }),
+              30);
+    if (advancedOpen_) {
+        routeRow_ = page_.add(std::make_unique<rkui::ChoiceRow>(L("Ziel", "Destination"),
+                                                                juce::StringArray{L("Automatisch", "Automatic"), L("An die App", "To the app"),
+                                                                                  L("In der DAW", "In the DAW")}),
+                              32);
+        routeRow_->setTooltip(L("Automatisch: L\xc3\xa4uft die Raumklang-App, spielt sie die Spur. Sonst klingt die Spur in der DAW, "
+                                "mit einem Kanal pro Lautsprecher.",
+                                "Automatic: when the Raumklang app runs, it plays the track. Otherwise the track plays in the DAW, "
+                                "with one channel per speaker."));
+        auto* routePrm = proc_.params.getParameter("route");
+        routeRow_->box().setSelectedItemIndex(juce::roundToInt(routePrm->convertFrom0to1(routePrm->getValue())), juce::dontSendNotification);
+        routeRow_->onChange = [this, routePrm](int i) {
+            routePrm->beginChangeGesture();
+            routePrm->setValueNotifyingHost(routePrm->convertTo0to1((float)i));
+            routePrm->endChangeGesture();
+            refreshNotice();
+        };
+        addSlider("stereoWidth", L("Stereobreite", "Stereo width"), kDegree, 0, 0,
+                  L("Winkel zwischen links und rechts einer Stereospur", "Angle between left and right of a stereo track"));
+    }
+    page_.relayout();
 }
 
 rkui::ParamSlider& SourceEditor::addSlider(const char* id, const juce::String& label, const juce::String& unit, int decimals,
                                            double origin, const juce::String& tip) {
     auto* prm = proc_.params.getParameter(id);
     const auto range = prm->getNormalisableRange();
-    auto* s = page_.add(std::make_unique<rkui::ParamSlider>(label, range.start, range.end, range.interval, unit, decimals, origin), 32);
+    auto* s = page_.add(std::make_unique<rkui::ParamSlider>(label, range.start, range.end, range.interval, unit, decimals, origin), 34);
     if (std::string(id) == "distance") s->setSkewForCentre(5.0);
     if (tip.isNotEmpty()) s->setTooltip(tip);
     bindings_.push_back(std::make_unique<ParamBinding>(*s, *prm));
     return *s;
 }
 
-void SourceEditor::refreshStatus() {
-    if (card_ == nullptr) return;
+void SourceEditor::refreshNotice() {
+    // Only what needs attention. When the app plays the track, nothing is shown.
     const auto st = proc_.linkStatus();
     const int need = (int)shown_.layout.speakers.size();
     const int have = proc_.outputChannels();
-    using K = rkui::StatusCard::Kind;
-    K kind = K::Info;
-    juce::String title, detail;
-    int filled = 0, total = 0;
-
-    auto dawText = [&](const juce::String& lead) {
+    NoticeKind kind = NoticeKind::None;
+    juce::String text;
+    const juce::String channels = L("Spur auf ", "Set the track to ") + juce::String(need) +
+                                  L(" Kan\xc3\xa4le stellen, sonst bleiben Lautsprecher stumm.", " channels, otherwise speakers stay silent.");
+    auto inDaw = [&](const juce::String& lead) {
         if (have < need) {
-            kind = K::Warn;
-            detail = lead + L("Stelle die Spur auf ", "Set the track to ") + juce::String(need) +
-                     L(" Kan\xc3\xa4le, sonst bleiben Lautsprecher stumm.", " channels, otherwise speakers stay silent.");
+            kind = NoticeKind::Warn;
+            text = lead + channels;
         } else {
-            detail = lead + juce::String(need) + " " + tr("Lautsprecher") + u8(" \xc2\xb7 ") +
-                     juce::String(rk::pannerId(shown_.effectivePanner())).toUpperCase() + ".";
+            kind = lead.isEmpty() ? NoticeKind::None : NoticeKind::Info;
+            text = lead + L("Die Spur klingt in der DAW.", "The track plays in the DAW.");
         }
-        filled = juce::jmin(have, need);
-        total = need;
     };
 
     if (st.route == SourceProcessor::Route::Daw) {
-        kind = K::Ok;
-        title = L("Klingt in der DAW", "Plays in the DAW");
-        dawText({});
+        inDaw({});
     } else if (st.sending) {
-        kind = K::Ok;
-        title = L("Verbunden mit Raumklang", "Connected to Raumklang");
-        detail = L("Die App spielt diese Spur. Routing ist nicht n\xc3\xb6tig.", "The app plays this track. No routing needed.");
+        kind = NoticeKind::None;
     } else if (!st.bridgeAvailable) {
-        kind = K::Warn;
-        title = L("Keine Verbindung m\xc3\xb6glich", "Cannot connect");
-        detail = st.route == SourceProcessor::Route::App
-                     ? L("Dieser Host erlaubt keine Verbindung zur App. W\xc3\xa4hle als Ziel \xe2\x80\x9eIn der DAW\xe2\x80\x9c.",
-                         "This host does not allow a connection to the app. Choose \"In the DAW\" as destination.")
-                     : L("Dieser Host erlaubt keine Verbindung zur App. Die Spur klingt in der DAW.",
-                         "This host does not allow a connection to the app. The track plays in the DAW.");
+        kind = NoticeKind::Warn;
+        text = st.route == SourceProcessor::Route::App
+                   ? L("Dieser Host erlaubt keine Verbindung zur App. Unter Erweitert \xe2\x80\x9eIn der DAW\xe2\x80\x9c w\xc3\xa4hlen.",
+                       "This host does not allow a connection to the app. Choose \"In the DAW\" under Advanced.")
+                   : L("Dieser Host erlaubt keine Verbindung zur App. Die Spur klingt in der DAW.",
+                       "This host does not allow a connection to the app. The track plays in the DAW.");
     } else if (st.appRunning && st.rateMismatch) {
-        kind = K::Warn;
-        title = L("Abtastrate passt nicht", "Sample rate differs");
-        detail = L("Die App l\xc3\xa4uft mit ", "The app runs at ") + rateText(st.appSampleRate) + L(", die DAW mit ", ", the DAW at ") +
-                 rateText(st.sampleRate) + L(". Stelle beide gleich ein.", ". Set both to the same rate.");
-        if (st.route == SourceProcessor::Route::Automatic)
-            detail << L(" Bis dahin klingt die Spur in der DAW.", " Until then the track plays in the DAW.");
+        kind = NoticeKind::Warn;
+        text = L("Abtastrate passt nicht: App ", "Sample rate differs: app ") + rateText(st.appSampleRate) + L(", DAW ", ", DAW ") +
+               rateText(st.sampleRate) + L(". Beide gleich einstellen.", ". Set both to the same rate.");
     } else if (st.appRunning && st.slot < 0) {
-        kind = K::Warn;
-        title = L("Alle Pl\xc3\xa4tze belegt", "All places taken");
-        detail = L("Die App nimmt bis zu 32 Spuren an. Stelle andere Spuren auf \xe2\x80\x9eIn der DAW\xe2\x80\x9c.",
-                   "The app accepts up to 32 tracks. Set other tracks to \"In the DAW\".");
+        kind = NoticeKind::Warn;
+        text = L("Alle 32 Pl\xc3\xa4tze in der App belegt. Andere Spuren unter Erweitert auf \xe2\x80\x9eIn der DAW\xe2\x80\x9c stellen.",
+                 "All 32 places in the app are taken. Set other tracks to \"In the DAW\" under Advanced.");
     } else if (st.appRunning) {
-        kind = K::Info;
-        title = L("Verbinde \xe2\x80\xa6", "Connecting \xe2\x80\xa6");
-        detail = L("Sobald die DAW abspielt, kommt die Spur in der App an.", "As soon as the DAW plays, the track arrives in the app.");
+        kind = NoticeKind::None; // connected, waiting for the DAW to play
     } else if (st.route == SourceProcessor::Route::App) {
-        kind = K::Warn;
-        title = L("App nicht gefunden", "App not found");
-        detail = L("Die Spur bleibt still, bis die Raumklang-App l\xc3\xa4uft.", "The track stays silent until the Raumklang app runs.");
+        kind = NoticeKind::Warn;
+        text = L("Raumklang-App nicht ge\xc3\xb6" "ffnet. Die Spur bleibt still.", "Raumklang app not open. The track stays silent.");
     } else {
-        kind = K::Info;
-        title = L("Klingt in der DAW", "Plays in the DAW");
-        dawText(L("Starte die Raumklang-App, dann verbindet sich die Spur selbst. ", "Start the Raumklang app and the track connects by itself. "));
+        inDaw(L("Raumklang-App nicht ge\xc3\xb6" "ffnet. ", "Raumklang app not open. "));
     }
+    if (kind != noticeKind_ || text != notice_) {
+        noticeKind_ = kind;
+        notice_ = text;
+        repaint(0, 0, getWidth(), kBarHeight);
+    }
+}
 
-    const juce::String key = juce::String((int)kind) + title + detail + juce::String(filled) + "/" + juce::String(total);
-    if (key == cardKey_) return;
-    cardKey_ = key;
-    card_->set(kind, title, detail);
-    card_->setProgress(filled, total);
-    page_.setRowHeight(card_, card_->idealHeight(juce::jmax(200, page_.getWidth() - 24)));
+juce::Colour SourceEditor::ownColour() const {
+    const auto c = proc_.dawTrackColour();
+    return c.isTransparent() ? rkui::itemColour(0) : c.withAlpha(1.0f);
+}
+
+void SourceEditor::scanOtherTracks() {
+    otherTracks_.clear();
+    const int own = proc_.linkStatus().slot;
+    for (auto& t : others_.scan())
+        if (t.slot != own) otherTracks_.push_back(std::move(t));
 }
 
 void SourceEditor::refreshStage() {
@@ -211,13 +228,26 @@ void SourceEditor::refreshStage() {
     if (json != shownSetupJson_) {
         shownSetupJson_ = json;
         shown_ = setup;
-        cardKey_.clear();
+        rk::DbapPanner::Params d{shown_.dbapRolloffDb, shown_.dbapBlur, shown_.dbapDirectivity};
+        panner_.prepare(shown_.layout, shown_.effectivePanner(), d, 3);
     }
-    shown_.sources.resize(1);
-    shown_.sources[0].name = "Quelle";
-    shown_.sources[0].position = proc_.sourcePosition();
-    shown_.sources[0].spread = proc_.params.getRawParameterValue("spread")->load() * 0.01f;
-    stage_.setScene(shown_);
+    shown_.sources.resize(1 + otherTracks_.size());
+    auto& own = shown_.sources[0];
+    own = {};
+    own.name = proc_.displayName();
+    own.position = proc_.sourcePosition();
+    own.spread = proc_.params.getRawParameterValue("spread")->load() * 0.01f;
+    std::vector<juce::Colour> colours{ownColour()};
+    for (size_t i = 0; i < otherTracks_.size(); ++i) {
+        auto& s = shown_.sources[i + 1];
+        const auto& t = otherTracks_[i].params;
+        s = {};
+        s.name = juce::String::fromUTF8(otherTracks_[i].name.c_str());
+        s.position = rk::toCartesian({t.azimuthDeg, t.elevationDeg, t.distance});
+        colours.push_back(juce::Colours::transparentBlack);
+    }
+    room_.setSourceStyle(colours, 1, true);
+    room_.setScene(shown_);
 }
 
 void SourceEditor::timerCallback() {
@@ -227,60 +257,65 @@ void SourceEditor::timerCallback() {
         const int i = juce::roundToInt(prm->convertFrom0to1(prm->getValue()));
         if (routeRow_->box().getSelectedItemIndex() != i) routeRow_->box().setSelectedItemIndex(i, juce::dontSendNotification);
     }
+    if (--scanCountdown_ <= 0) {
+        scanCountdown_ = 15; // twice a second is plenty for where the other tracks are
+        scanOtherTracks();
+        refreshNotice();
+    }
+    if (!name_.isBeingEdited() && name_.getText() != proc_.displayName()) name_.setText(proc_.displayName(), juce::dontSendNotification);
     refreshStage();
-    refreshStatus();
-    if (nameRow_ != nullptr) {
-        const juce::String daw = proc_.dawTrackName();
-        if (daw != shownDawName_) {
-            shownDawName_ = daw;
-            nameRow_->editor().setTextToShowWhenEmpty(daw.isNotEmpty() ? daw : juce::String("Raumklang Quelle"), rkui::palette().text3);
-            nameRow_->editor().repaint();
-        }
-    }
-    const bool inDaw = !proc_.linkStatus().sending;
-    levels_.resize(shown_.layout.speakers.size());
-    for (size_t c = 0; c < levels_.size(); ++c) {
-        const float db = inDaw ? rk::gainToDb(proc_.takeOutputPeak((int)c)) : -100.0f;
-        levels_[c] = std::max(juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f), levels_[c] * 0.85f);
-    }
-    stage_.setSpeakerLevels(levels_);
+
+    // What this track plays where: its input level spread over the speakers it pans to.
     const float in = juce::jlimit(0.0f, 1.0f, (rk::gainToDb(proc_.takeInputPeak()) + 60.0f) / 60.0f);
-    const float next = std::max(in, inputLevel_ * 0.85f);
-    if (std::abs(next - inputLevel_) > 0.005f) {
-        inputLevel_ = next;
-        repaint(0, 0, getWidth(), 52);
+    inputLevel_ = std::max(in, inputLevel_ * 0.85f);
+    const size_t n = shown_.layout.speakers.size();
+    levels_.assign(n, 0.0f);
+    if (n > 0 && inputLevel_ > 0.001f) {
+        std::array<float, rk::kMaxSpeakers> gains{};
+        panner_.compute({shown_.sources[0].position, shown_.sources[0].spread}, gains.data());
+        for (size_t m = 0; m < n; ++m) levels_[m] = inputLevel_ * juce::jlimit(0.0f, 1.0f, gains[m]);
     }
+    room_.setSpeakerLevels(levels_);
+    room_.setSourceLevels({inputLevel_});
 }
 
 void SourceEditor::paint(juce::Graphics& g) {
     const auto& p = rkui::palette();
     g.fillAll(p.side);
     g.setColour(p.bar);
-    g.fillRect(0, 0, getWidth(), 52);
+    g.fillRect(0, 0, getWidth(), kBarHeight);
     g.setColour(p.line);
-    g.fillRect(0, 51, getWidth(), 1);
-    g.setColour(p.text);
-    g.setFont(rkui::uiFont(15.0f, true));
-    g.drawText("Raumklang Quelle", 16, 0, 220, 52, juce::Justification::centredLeft);
+    g.fillRect(0, kBarHeight - 1, getWidth(), 1);
 
-    // Input meter at the right of the bar: shows that audio arrives from the track.
-    auto meter = juce::Rectangle<float>((float)getWidth() - 16.0f - 120.0f, 23.0f, 120.0f, 6.0f);
+    // Track colour dot before the name, the plugin's name after it.
+    g.setColour(ownColour());
+    g.fillEllipse(16.0f, kBarHeight * 0.5f - 6.0f, 12.0f, 12.0f);
+    const float nameW = juce::GlyphArrangement::getStringWidth(name_.getFont(), name_.getText()) + 12.0f;
+    juce::Path pen; // pencil: the name can be edited
+    const float px = (float)name_.getX() + std::min(nameW, (float)name_.getWidth()) + 2.0f, py = kBarHeight * 0.5f;
+    pen.startNewSubPath(px, py + 5);
+    pen.lineTo(px + 1, py + 1.5f);
+    pen.lineTo(px + 7, py - 4.5f);
+    pen.lineTo(px + 9.5f, py - 2);
+    pen.lineTo(px + 3.5f, py + 4);
+    pen.closeSubPath();
     g.setColour(p.text3);
-    g.setFont(rkui::uiFont(12.0f));
-    g.drawText(L("Eingang", "Input"), meter.withX(meter.getX() - 70.0f).withWidth(62.0f).withY(14.0f).withHeight(24.0f).toNearestInt(),
-               juce::Justification::centredRight);
-    g.setColour(p.group);
-    g.fillRoundedRectangle(meter, 3.0f);
-    g.setColour(inputLevel_ > 0.97f ? p.warn : p.ok);
-    g.fillRoundedRectangle(meter.withWidth(meter.getWidth() * inputLevel_), 3.0f);
+    g.strokePath(pen, juce::PathStrokeType(1.2f));
+    g.setFont(rkui::uiFont(12.5f));
+    g.drawText("Raumklang Quelle", juce::Rectangle<float>(px + 20.0f, 0.0f, 160.0f, (float)kBarHeight), juce::Justification::centredLeft);
+
+    if (noticeKind_ != NoticeKind::None)
+        rkui::drawNoticePill(g, px + 200.0f, (float)help_.getX() - 10.0f, kBarHeight * 0.5f, noticeKind_ == NoticeKind::Warn, notice_);
 }
 
 void SourceEditor::resized() {
     auto r = getLocalBounds();
-    r.removeFromTop(52);
-    page_.setBounds(r.removeFromRight(juce::jmax(330, getWidth() / 3)).reduced(0, 8));
-    stage_.setBounds(r);
-    cardKey_.clear();
+    auto bar = r.removeFromTop(kBarHeight);
+    help_.setBounds(bar.removeFromRight(46).withSizeKeepingCentre(30, 28));
+    name_.setBounds(36, 0, 260, kBarHeight);
+    name_.setBorderSize(juce::BorderSize<int>(0, 0, 0, 0));
+    page_.setBounds(r.removeFromRight(juce::jlimit(300, 380, getWidth() / 3)).reduced(0, 8));
+    room_.setBounds(r);
 }
 
 } // namespace rkplug

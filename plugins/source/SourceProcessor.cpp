@@ -53,6 +53,12 @@ SourceProcessor::~SourceProcessor() {
 void SourceProcessor::updateTrackProperties(const TrackProperties& properties) {
     const juce::ScopedLock sl(nameLock_);
     trackName_ = properties.name.value_or(juce::String());
+    trackColour_ = properties.colourARGB.has_value() ? juce::Colour((juce::uint32)*properties.colourARGB) : juce::Colours::transparentBlack;
+}
+
+juce::Colour SourceProcessor::dawTrackColour() const {
+    const juce::ScopedLock sl(nameLock_);
+    return trackColour_;
 }
 
 juce::String SourceProcessor::customName() const {
@@ -125,11 +131,9 @@ void SourceProcessor::reloadSetup(bool force) {
 void SourceProcessor::applyEngineConfig() {
     rkui::Scene s = setupSnapshot();
     rk::EngineConfig c = s.engineConfig();
-    // Calibration (delay, level), headphones and the final limiter belong to "Raum" on the master.
-    for (auto& sp : c.layout.speakers) {
-        sp.gainDb = 0.0f;
-        sp.delayMs = 0.0f;
-    }
+    // Without the app every track renders itself, including delay and level per speaker
+    // (both linear, so per track is the same as on the bus). The limiter needs the sum,
+    // so it stays off here; the app has one for the speakers.
     c.outputMode = rk::OutputMode::Speakers;
     engine.setConfig(c);
     engine.setReverb(s.reverb);

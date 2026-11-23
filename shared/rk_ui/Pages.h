@@ -19,8 +19,6 @@ struct PageContext {
     std::function<void()> commit;
     /// The page must be rebuilt (e.g. different controls are needed now).
     std::function<void()> rebuild;
-    /// Optional: receives the reverb visualisation of the room page (to feed it a live spectrum).
-    std::function<void(class ReverbView*)> reverbView;
     /// Optional (app only): measure the speakers with a microphone / load a phone measurement.
     std::function<void()> calibrate;
     std::function<void()> importSurvey;
@@ -32,6 +30,7 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int selectedSpeaker,
 /// Reverb ("Raum").
 void buildRoomPage(FormPage& page, PageContext ctx);
 /// Fills a status card from the layout analysis in plain language.
-void describeLayout(const Scene& s, StatusCard& card);
+/// Fills the card and returns true when the layout needs attention; false means all is fine.
+bool describeLayout(const Scene& s, StatusCard& card);
 
 } // namespace rkui

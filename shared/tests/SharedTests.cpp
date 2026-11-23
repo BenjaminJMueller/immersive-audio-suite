@@ -5,6 +5,7 @@
 #include <rk_ui/StageView.h>
 #include <rk_ui/Strings.h>
 #include <rk_ui/Survey.h>
+#include <rk_ui/ReverbPanel.h>
 #include <rk_ui/Visuals.h>
 
 #include <random>
@@ -232,9 +233,10 @@ void visuals() {
         juce::FileOutputStream os(out);
         juce::PNGImageFormat().writeImageToStream(img, os);
     }
-    rkui::ReverbView rv;
-    rv.setBounds(0, 0, 326, 170);
-    rv.setParams({2.2f, 6000.0f, 20.0f, 1.2f}, -6.0f);
+    rkui::ReverbPanel rv;
+    rv.setBounds(0, 0, 900, 760);
+    rv.setParams(rkui::roomPresets()[2].params, rkui::roomPresets()[2].wetDb);
+    rv.setCoach("3", "Raum einstellen", juce::String::fromUTF8("Raumtyp wählen, dann die Punkte im Bild ziehen."));
     rkui::SpectrumAnalyzer an2;
     for (int frame = 0; frame < 40; ++frame) { // a little melody so the waterfall moves
         const double f1 = 110.0 * std::pow(2.0, (double)((frame / 6) % 4) * 3.0 / 12.0);
@@ -248,7 +250,7 @@ void visuals() {
         an2.process(x.data(), 48000.0);
         rv.setBands(an2.bandsDb());
     }
-    juce::Image img(juce::Image::ARGB, 326 * 2, 170 * 2, true);
+    juce::Image img(juce::Image::ARGB, 900 * 2, 760 * 2, true);
     juce::Graphics g(img);
     g.fillAll(rkui::palette().side);
     g.addTransform(juce::AffineTransform::scale(2.0f));

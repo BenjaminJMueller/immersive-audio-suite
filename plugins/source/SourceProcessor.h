@@ -1,7 +1,7 @@
 // "Raumklang Quelle": put one on every track. It places the track's audio in the
 // room and outputs one channel per speaker (set the track to as many channels as
-// the speaker setup has). The speaker setup is shared with the Raumklang app and the
-// "Raumklang Raum" plugin through a file, so every instance always uses the same room.
+// the speaker setup has), or sends it to the Raumklang app. The speaker setup comes from
+// the app through a file, so every instance always uses the same room.
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -55,6 +55,8 @@ public:
     juce::String displayName() const;
     juce::String customName() const;
     juce::String dawTrackName() const;
+    /// Colour of the DAW track, transparent if the host does not tell.
+    juce::Colour dawTrackColour() const;
     /// Message thread. Empty: follow the DAW track's name again.
     void setCustomName(const juce::String& name);
 
@@ -98,6 +100,7 @@ private:
     std::atomic<double> appSampleRate_{0.0};
     juce::CriticalSection nameLock_;
     juce::String trackName_;
+    juce::Colour trackColour_;
     juce::String customName_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SourceProcessor)

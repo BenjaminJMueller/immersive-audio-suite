@@ -11,7 +11,28 @@ struct ReverbParams {
     float dampingHz = 6000.0f; // high frequencies above this decay faster, 1k..20k
     float preDelayMs = 15.0f;  // 0..250 ms
     float size = 1.0f;         // scales the delay lengths, 0.3..2
+    float lowRatio = 1.0f;     // decay below ~250 Hz relative to decaySec, 0.3..3
+    float earlyDb = -6.0f;     // early reflections, -80 (off)..+6 dB
+    float clusterDb = -9.0f;   // dense reflection cluster, -80..+6 dB
+    float tailDb = 0.0f;       // late diffuse tail, -80..+6 dB
 };
+
+/// Reverb time (RT60, seconds) the tail has at `hz`, as the network computes it.
+/// Used by the UI to draw the decay curve from the real parameters.
+float rt60At(const ReverbParams& p, float hz, double sampleRate = 48000.0) noexcept;
+
+/// The damping frequency that gives the tail `rtSec` at `hz` (other parameters fixed).
+/// Clamped into the dampingHz range when the target cannot be reached.
+float dampingForRt(const ReverbParams& p, float hz, float rtSec, double sampleRate = 48000.0) noexcept;
+
+/// Fixed reflection patterns at size 1, in ms after the pre-delay (scaled by size).
+inline constexpr int kEarlyTaps = 8;
+inline constexpr float kEarlyMs[kEarlyTaps] = {7.1f, 11.3f, 17.9f, 23.3f, 31.7f, 41.9f, 53.3f, 67.1f};
+inline constexpr float kEarlyGain[kEarlyTaps] = {0.80f, 0.72f, 0.66f, 0.58f, 0.50f, 0.42f, 0.35f, 0.28f};
+inline constexpr int kClusterTaps = 16;
+inline constexpr float kClusterMs[kClusterTaps] = {21.3f, 27.9f, 33.1f, 39.7f, 46.3f, 52.9f, 59.1f, 66.7f,
+                                                   73.3f, 81.1f, 89.9f, 97.3f, 106.1f, 115.7f, 127.3f, 139.9f};
+inline constexpr float kLowCrossoverHz = 250.0f;
 
 /// Clamps all values into the documented ranges (and replaces NaNs).
 ReverbParams sanitize(ReverbParams p);
@@ -54,7 +75,16 @@ private:
     std::array<Delay, kLines> lines_;
     std::array<float, kLines> feedback_{};
     std::array<float, kLines> lpState_{};
+    std::array<float, kLines> lowState_{};
+    std::array<float, kLines> lowFeedback_{};
     float lpCoef_ = 0.0f;
+    float lowCoef_ = 0.0f;
+    Delay early_;   // pre-delayed dry signal, read at the early reflection taps
+    Delay cluster_; // diffused signal, read at the cluster taps
+    std::array<int, kEarlyTaps> earlyLen_{};
+    std::array<int, kClusterTaps> clusterLen_{};
+    std::array<float, kClusterTaps> clusterGain_{};
+    float earlyLevel_ = 0.0f, clusterLevel_ = 0.0f, tailLevel_ = 1.0f;
     bool prepared_ = false;
 };
 

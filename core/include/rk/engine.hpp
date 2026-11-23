@@ -121,7 +121,7 @@ private:
 
     // Reverb parameters are a small POD guarded by a seqlock-like version counter.
     std::atomic<uint32_t> reverbVersion_{0};
-    std::array<std::atomic<float>, 4> reverbParams_;
+    std::array<std::atomic<float>, 8> reverbParams_;
     uint32_t reverbSeen_ = 0;
     FdnReverb reverb_;
 

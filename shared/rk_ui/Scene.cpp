@@ -140,6 +140,10 @@ juce::var sceneToVar(const Scene& s) {
     r->setProperty("dampingHz", s.reverb.dampingHz);
     r->setProperty("preDelayMs", s.reverb.preDelayMs);
     r->setProperty("size", s.reverb.size);
+    r->setProperty("lowRatio", s.reverb.lowRatio);
+    r->setProperty("earlyDb", s.reverb.earlyDb);
+    r->setProperty("clusterDb", s.reverb.clusterDb);
+    r->setProperty("tailDb", s.reverb.tailDb);
     r->setProperty("wetDb", s.reverbWetDb);
     o->setProperty("reverb", juce::var(r));
     o->setProperty("masterGainDb", s.masterGainDb);
@@ -192,6 +196,10 @@ Scene sceneFromVar(const juce::var& v) {
     s.reverb.dampingHz = getF(r, "dampingHz", 6000.0f, 1000.0f, 20000.0f);
     s.reverb.preDelayMs = getF(r, "preDelayMs", 15.0f, 0.0f, 250.0f);
     s.reverb.size = getF(r, "size", 1.0f, 0.3f, 2.0f);
+    s.reverb.lowRatio = getF(r, "lowRatio", 1.0f, 0.3f, 3.0f);
+    s.reverb.earlyDb = getF(r, "earlyDb", -6.0f, -80.0f, 6.0f);
+    s.reverb.clusterDb = getF(r, "clusterDb", -9.0f, -80.0f, 6.0f);
+    s.reverb.tailDb = getF(r, "tailDb", 0.0f, -80.0f, 6.0f);
     s.reverbWetDb = getF(r, "wetDb", -6.0f, -80.0f, 6.0f);
     s.masterGainDb = getF(v, "masterGainDb", 0.0f, -80.0f, 12.0f);
     s.limiter = getB(v, "limiter", true);

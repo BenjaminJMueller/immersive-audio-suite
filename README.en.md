@@ -61,8 +61,8 @@ Projects are saved automatically, every step can be undone (⌘Z / Ctrl+Z). On f
 
 Two plugins (VST3, on the Mac also AU):
 
-- **Raumklang Quelle** (source) goes on every track. It places the track in space and outputs one channel per speaker. Position, width, level and reverb send can be automated. The track needs as many channels as the layout has speakers (e.g. in Reaper, Nuendo/Cubase or Pro Tools Ultimate).
-- **Raumklang Raum** (room) goes on the master or speaker bus. Here the layout is edited, plus delay and level per speaker, headphone preview, speaker test and protection limiter.
+- **Raumklang Quelle** (source) goes on every track. It places the track in space and outputs one channel per speaker. Position, width, level and room amount can be automated. The track needs as many channels as the layout has speakers (e.g. in Reaper, Nuendo/Cubase or Pro Tools Ultimate).
+- **Raumklang Return** brings the app's speaker signals back into the DAW, for recording and real-time bounces.
 
 App and plugins share the speaker setup through a file in the user folder (`Raumklang/Lautsprecher-Setup.json`). A layout set up in the app is immediately available in the DAW, and all source plugins of a session always use the same room. The DAW project stores the layout too.
 
@@ -140,7 +140,7 @@ Layout:
 | `core/` | Engine without dependencies: layouts, panning, reverb, headphone preview, output stage |
 | `shared/` | UI and project file, shared by app and plugins |
 | `app/` | Standalone app |
-| `plugins/` | *Raumklang Quelle* and *Raumklang Raum* |
+| `plugins/` | *Raumklang Quelle* and *Raumklang Return* |
 | `tests/` | Unit, stress and fuzz tests of the engine |
 
 ## License

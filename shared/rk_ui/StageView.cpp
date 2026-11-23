@@ -22,16 +22,24 @@ void StageView::resized() {
 }
 
 void StageView::setSourceLevels(const std::vector<float>& l) {
-    const double now = juce::Time::getMillisecondCounterHiRes();
-    prevSourceLevels_.resize(l.size(), 0.0f);
-    for (size_t s = 0; s < l.size(); ++s) {
-        // An onset (level jumps up) sends a ring outwards, like a drop in water.
-        if (l[s] > 0.35f && l[s] - prevSourceLevels_[s] > 0.12f && ripples_.size() < 48) ripples_.push_back({(int)s, now});
-        prevSourceLevels_[s] = l[s];
-    }
-    ripples_.erase(std::remove_if(ripples_.begin(), ripples_.end(), [now](const Ripple& r) { return now - r.start > 1400.0; }), ripples_.end());
     sourceLevels_ = l;
     repaint();
+}
+
+void StageView::setSourceStyle(std::vector<juce::Colour> colours, int dimFrom, bool names) {
+    sourceColours_ = std::move(colours);
+    dimFrom_ = dimFrom;
+    sourceNames_ = names;
+    repaint();
+}
+
+void StageView::setShowViewSwitch(bool on) {
+    views_.setVisible(on);
+}
+
+juce::Colour StageView::sourceColour(int s) const {
+    if (s >= 0 && s < (int)sourceColours_.size() && !sourceColours_[(size_t)s].isTransparent()) return sourceColours_[(size_t)s];
+    return itemColour(s);
 }
 
 void StageView::setProjection(Projection p) {
@@ -169,71 +177,44 @@ void StageView::paintLegend(juce::Graphics& g) {
         g.drawText(b, juce::Rectangle<float>(x, r.getY(), tw(b) + 2, r.getHeight()), juce::Justification::centredLeft);
         return;
     }
-    const juce::String a = tr("Lautsprecher"), b = tr("Quelle"), c = tr("Anteil");
+    // What the markers mean: speakers, the source(s), other tracks, the lines.
+    struct Item { int kind; juce::Colour c; juce::String t; }; // 0 box, 1 dot, 2 line
+    std::vector<Item> items;
+    items.push_back({0, itemColour(3), tr("Lautsprecher")});
+    const bool named = sourceNames_ && !scene_.sources.empty();
+    if (!sourceNames_ || named) {
+        const bool tracks = named && dimFrom_ >= (int)scene_.sources.size() && scene_.sources.size() > 1;
+        items.push_back({1, sourceColour(0), tracks ? tr("Spuren") : (named ? scene_.sources[0].name : tr("Quelle"))});
+        if (named && (int)scene_.sources.size() > dimFrom_) items.push_back({1, p.text3, tr("andere Spuren")});
+        items.push_back({2, sourceColour(0), named ? tr("spielt auf") : tr("Anteil")});
+    }
     const juce::Font f = uiFont(11.5f);
     auto tw = [&f](const juce::String& t) { return juce::GlyphArrangement::getStringWidth(f, t); };
-    const float w = 14 + 16 + 6 + tw(a) + 14 + 14 + 6 + tw(b) + 14 + 18 + 6 + tw(c) + 14;
-    auto r = juce::Rectangle<float>(10.0f, 10.0f, w, 26.0f);
+    float w = 14.0f;
+    for (const auto& it : items) w += (it.kind == 2 ? 22.0f : 20.0f) + tw(it.t) + 14.0f;
+    auto r = juce::Rectangle<float>(10.0f, legendBottom_ ? (float)getHeight() - 36.0f : 10.0f, w, 26.0f);
     g.setColour(p.bar.withAlpha(0.85f));
     g.fillRoundedRectangle(r, 8.0f);
     g.setColour(p.line);
     g.drawRoundedRectangle(r.reduced(0.25f), 8.0f, 0.75f);
     float x = r.getX() + 14.0f;
     const float cy = r.getCentreY();
-    g.setColour(itemColour(3));
-    g.fillRoundedRectangle(x, cy - 5.0f, 14.0f, 10.0f, 3.0f);
-    x += 20.0f;
-    g.setColour(p.text2);
     g.setFont(f);
-    g.drawText(a, juce::Rectangle<float>(x, r.getY(), tw(a) + 2, r.getHeight()), juce::Justification::centredLeft);
-    x += tw(a) + 14.0f;
-    g.setColour(itemColour(0));
-    g.fillEllipse(x, cy - 6.0f, 12.0f, 12.0f);
-    x += 18.0f;
-    g.setColour(p.text2);
-    g.drawText(b, juce::Rectangle<float>(x, r.getY(), tw(b) + 2, r.getHeight()), juce::Justification::centredLeft);
-    x += tw(b) + 14.0f;
-    g.setColour(itemColour(0).withAlpha(0.6f));
-    g.drawLine(x, cy, x + 16.0f, cy, 1.6f);
-    x += 22.0f;
-    g.setColour(p.text2);
-    g.drawText(c, juce::Rectangle<float>(x, r.getY(), tw(c) + 2, r.getHeight()), juce::Justification::centredLeft);
+    for (const auto& it : items) {
+        g.setColour(it.c);
+        if (it.kind == 0) g.fillRoundedRectangle(x, cy - 5.0f, 14.0f, 10.0f, 3.0f);
+        else if (it.kind == 1) g.fillEllipse(x + 1.0f, cy - 6.0f, 12.0f, 12.0f);
+        else g.drawLine(x, cy, x + 16.0f, cy, 1.4f);
+        x += it.kind == 2 ? 22.0f : 20.0f;
+        g.setColour(p.text2);
+        g.drawText(it.t, juce::Rectangle<float>(x, r.getY(), tw(it.t) + 2, r.getHeight()), juce::Justification::centredLeft);
+        x += tw(it.t) + 14.0f;
+    }
 }
 
 void StageView::paintCoach(juce::Graphics& g) {
     if (coachTitle_.isEmpty()) return;
-    const Palette& p = palette();
-    const juce::Font tf = uiFont(13.5f, true), sf = uiFont(12.0f);
-    const float textW = std::max(juce::GlyphArrangement::getStringWidth(tf, coachTitle_), juce::GlyphArrangement::getStringWidth(sf, coachText_));
-    const float w = std::min((float)getWidth() - 32.0f, 10.0f + 28.0f + 12.0f + textW + 18.0f);
-    auto r = juce::Rectangle<float>(w, 50.0f).withCentre({getWidth() * 0.5f, (float)getHeight() - 20.0f - 25.0f});
-    g.setColour(juce::Colours::black.withAlpha(0.25f));
-    g.fillRoundedRectangle(r.translated(0, 4).expanded(2), 15.0f);
-    g.setColour(juce::Colour(0xff1c1c1e).withAlpha(0.88f));
-    g.fillRoundedRectangle(r, 14.0f);
-    g.setColour(juce::Colours::white.withAlpha(0.12f));
-    g.drawRoundedRectangle(r.reduced(0.25f), 14.0f, 0.75f);
-    auto badge = juce::Rectangle<float>(r.getX() + 10.0f, r.getCentreY() - 14.0f, 28.0f, 28.0f);
-    g.setColour(coachOk_ ? p.ok : juce::Colour(0xff0a84ff));
-    g.fillEllipse(badge);
-    g.setColour(juce::Colours::white);
-    if (coachOk_ && coachBadge_.isEmpty()) {
-        juce::Path t;
-        t.startNewSubPath(badge.getX() + 8.5f, badge.getCentreY());
-        t.lineTo(badge.getX() + 12.5f, badge.getY() + 18.0f);
-        t.lineTo(badge.getX() + 20.0f, badge.getY() + 10.0f);
-        g.strokePath(t, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    } else {
-        g.setFont(uiFont(13.5f, true));
-        g.drawText(coachBadge_, badge, juce::Justification::centred, false);
-    }
-    auto text = r.withTrimmedLeft(50.0f).withTrimmedRight(16.0f);
-    g.setColour(juce::Colour(0xfff2f2f4));
-    g.setFont(tf);
-    g.drawText(coachTitle_, text.withTrimmedTop(8.0f).withHeight(18.0f), juce::Justification::centredLeft, true);
-    g.setColour(juce::Colour(0xffebebf5).withAlpha(0.68f));
-    g.setFont(sf);
-    g.drawText(coachText_, text.withTrimmedTop(26.0f).withHeight(16.0f), juce::Justification::centredLeft, true);
+    drawCoachBar(g, getLocalBounds(), coachBadge_, coachTitle_, coachText_, coachOk_);
 }
 
 void StageView::mouseMove(const juce::MouseEvent& e) {
@@ -365,52 +346,27 @@ void StageView::paint(juce::Graphics& g) {
         else if (proj_ == Projection::Top) g.fillPath(nose);
     }
 
-    // ---- Sound field ------------------------------------------------------------------
-    // What every speaker radiates right now, as a smooth field in the colours of the sources
-    // it carries, with crisp contour lines on top (like a topographic map of the sound).
-    const int nSpk = (int)scene_.layout.speakers.size();
-    std::vector<float> mixR((size_t)nSpk, 0.0f), mixG((size_t)nSpk, 0.0f), mixB((size_t)nSpk, 0.0f), mixE((size_t)nSpk, 0.0f);
-    std::vector<std::array<float, rk::kMaxSpeakers>> srcGains(scene_.sources.size());
-    for (int s = 0; s < (int)scene_.sources.size(); ++s) {
-        const auto& src = scene_.sources[(size_t)s];
-        const float lvl = s < (int)sourceLevels_.size() ? sourceLevels_[(size_t)s] : 0.0f;
-        const bool sel = target_ != EditTarget::Speakers && s == selSource_;
-        if (src.mute || (lvl < 0.02f && !sel)) { srcGains[(size_t)s][0] = -1.0f; continue; }
-        panner_.compute({src.position, src.spread}, srcGains[(size_t)s].data());
-        const juce::Colour col = itemColour(s);
-        for (int m = 0; m < nSpk; ++m) {
-            const float e = srcGains[(size_t)s][(size_t)m] * srcGains[(size_t)s][(size_t)m] * lvl;
-            mixR[(size_t)m] += col.getFloatRed() * e;
-            mixG[(size_t)m] += col.getFloatGreen() * e;
-            mixB[(size_t)m] += col.getFloatBlue() * e;
-            mixE[(size_t)m] += e;
-        }
-    }
-    auto speakerColour = [&](int m) {
-        if (mixE[(size_t)m] > 1e-5f)
-            return juce::Colour::fromFloatRGBA(mixR[(size_t)m] / mixE[(size_t)m], mixG[(size_t)m] / mixE[(size_t)m], mixB[(size_t)m] / mixE[(size_t)m], 1.0f);
-        return juce::Colour(0xff8fd3ff); // reverb or test signals only
-    };
-    paintField(g, speakerColour);
-
     // ---- Signal paths --------------------------------------------------------------------
-    // Fine lines from each sounding source to its speakers, fading towards the speaker.
-    for (int s = 0; s < (int)scene_.sources.size(); ++s) {
-        if (srcGains[(size_t)s][0] < 0.0f) continue;
+    // Fine lines from each sounding source to the speakers it plays on, fading towards the speaker.
+    const int nSpk = (int)scene_.layout.speakers.size();
+    std::array<float, rk::kMaxSpeakers> gains{};
+    for (int s = 0; s < (int)scene_.sources.size() && s < dimFrom_; ++s) {
         const auto& src = scene_.sources[(size_t)s];
         const float lvl = s < (int)sourceLevels_.size() ? sourceLevels_[(size_t)s] : 0.0f;
         const bool sel = target_ != EditTarget::Speakers && s == selSource_;
+        if (src.mute || (lvl < 0.02f && !sel)) continue;
+        panner_.compute({src.position, src.spread}, gains.data());
         const auto a = toScreen(src.position);
-        const juce::Colour col = itemColour(s);
+        const juce::Colour col = sourceColour(s);
         for (int m = 0; m < nSpk; ++m) {
-            const float gm = srcGains[(size_t)s][(size_t)m];
+            const float gm = gains[(size_t)m];
             if (gm < 0.06f) continue;
             const auto b = toScreen(scene_.layout.speakers[(size_t)m].position);
-            const float alpha = juce::jlimit(0.0f, 0.85f, std::max(sel ? 0.55f * gm * gm + 0.08f : 0.0f, 0.9f * gm * std::sqrt(lvl)));
+            const float alpha = juce::jlimit(0.0f, 0.85f, std::max(sel ? 0.55f * gm * gm + 0.12f : 0.0f, 0.9f * gm * std::sqrt(lvl)));
             if (alpha < 0.02f) continue;
-            juce::ColourGradient grad(col.withAlpha(alpha), a.x, a.y, col.withAlpha(alpha * 0.18f), b.x, b.y, false);
+            juce::ColourGradient grad(col.withAlpha(alpha), a.x, a.y, col.withAlpha(alpha * 0.25f), b.x, b.y, false);
             g.setGradientFill(grad);
-            g.drawLine(juce::Line<float>(a, b), sel ? 1.25f : 1.0f);
+            g.drawLine(juce::Line<float>(a, b), 1.0f);
         }
     }
 
@@ -438,27 +394,23 @@ void StageView::paint(juce::Graphics& g) {
             juce::Path cone;
             cone.addTriangle(-7.0f, -8.0f, 7.0f, -8.0f, 0.0f, -15.0f);
             const auto tf = juce::AffineTransform::rotation(ang).translated(c.x, c.y);
-            g.setColour(col.withAlpha(0.35f));
+            g.setColour(col.withAlpha(0.45f));
             if (showCone) g.fillPath(cone, tf);
-            g.setColour(col);
+            // The body fills from below with what the speaker plays right now.
+            g.setColour(col.withAlpha(0.30f));
             g.fillPath(body, tf);
-            g.setColour(juce::Colours::black.withAlpha(0.35f));
-            g.strokePath(body, juce::PathStrokeType(1.0f), tf);
+            if (lvl > 0.01f) {
+                juce::Graphics::ScopedSaveState clip(g);
+                const float h = 26.0f * juce::jlimit(0.0f, 1.0f, lvl);
+                g.reduceClipRegion(juce::Rectangle<float>(c.x - 14.0f, c.y + 13.0f - h, 28.0f, h).getSmallestIntegerContainer());
+                g.setColour(lvl > 0.97f ? p.bad : col);
+                g.fillPath(body, tf);
+            }
+            g.setColour(col);
+            g.strokePath(body, juce::PathStrokeType(1.2f), tf);
             g.setColour(juce::Colours::white);
             g.setFont(uiFont(10.5f, true));
             g.drawText(juce::String(m + 1), juce::Rectangle<float>(c.x - 10, c.y - 8, 20, 16), juce::Justification::centred);
-        }
-        // Segment meter under the speaker, lit in the colours of what it plays.
-        {
-            constexpr int kSeg = 8;
-            const float segW = 2.5f, gap = 1.0f, w = kSeg * segW + (kSeg - 1) * gap;
-            const float x0 = c.x - w * 0.5f, y0 = c.y + 13.0f;
-            const int lit = juce::roundToInt(lvl * kSeg);
-            const juce::Colour on = lvl > 0.97f ? p.bad : speakerColour(m);
-            for (int k = 0; k < kSeg; ++k) {
-                g.setColour(k < lit ? on.withAlpha(0.55f + 0.45f * (float)k / kSeg) : juce::Colours::white.withAlpha(0.07f));
-                g.fillRoundedRectangle(x0 + k * (segW + gap), y0, segW, 3.0f, 0.8f);
-            }
         }
         if (sel) {
             g.setColour(p.text);
@@ -467,11 +419,25 @@ void StageView::paint(juce::Graphics& g) {
     }
 
     // ---- Sources -------------------------------------------------------------------------
-    for (int s = 0; s < (int)scene_.sources.size(); ++s) {
+    // Dimmed ones (other tracks) first, so the own source stays on top.
+    std::vector<int> order;
+    for (int s = (int)scene_.sources.size() - 1; s >= 0; --s) if (s >= dimFrom_) order.push_back(s);
+    for (int s = 0; s < (int)scene_.sources.size() && s < dimFrom_; ++s) order.push_back(s);
+    for (int s : order) {
         const auto& src = scene_.sources[(size_t)s];
         const auto c = toScreen(src.position);
         const float lvl = s < (int)sourceLevels_.size() ? sourceLevels_[(size_t)s] : 0.0f;
-        const juce::Colour col = src.mute ? p.text3 : itemColour(s);
+        const juce::Colour col = src.mute ? p.text3 : sourceColour(s);
+        if (s >= dimFrom_) {
+            g.setColour(col.withAlpha(0.45f));
+            g.fillEllipse(c.x - 7.0f, c.y - 7.0f, 14.0f, 14.0f);
+            if (sourceNames_) {
+                g.setColour(p.text2.withAlpha(0.7f));
+                g.setFont(uiFont(11.5f));
+                g.drawText(src.name, juce::Rectangle<float>(c.x + 12, c.y - 8, 140, 16), juce::Justification::centredLeft, true);
+            }
+            continue;
+        }
         // Width: an arc segment around the listener at the source's distance (top view).
         if (src.spread > 0.01f && proj_ == Projection::Top) {
             const float r = std::hypot(c.x - centre_.x, c.y - centre_.y);
@@ -504,12 +470,22 @@ void StageView::paint(juce::Graphics& g) {
             }
         }
         const bool sel = target_ != EditTarget::Speakers && s == selSource_;
-        drawNumberBadge(g, {c.x - 11, c.y - 11, 22, 22}, s + 1, col, false);
-        if (sel) {
+        if (sourceNames_) {
+            g.setColour(col);
+            g.fillEllipse(c.x - 10.0f, c.y - 10.0f, 20.0f, 20.0f);
+            g.setColour(juce::Colours::white);
+            g.drawEllipse(c.x - 10.0f, c.y - 10.0f, 20.0f, 20.0f, 2.0f);
             g.setColour(p.text);
-            g.drawEllipse(c.x - 21.5f, c.y - 21.5f, 43.0f, 43.0f, 1.2f);
+            g.setFont(uiFont(12.5f, true));
+            g.drawText(src.name, juce::Rectangle<float>(c.x + 21, c.y - 9, 180, 18), juce::Justification::centredLeft, true);
+        } else {
+            drawNumberBadge(g, {c.x - 11, c.y - 11, 22, 22}, s + 1, col, false);
+            if (sel) {
+                g.setColour(p.text);
+                g.drawEllipse(c.x - 21.5f, c.y - 21.5f, 43.0f, 43.0f, 1.2f);
+            }
         }
-        if (s >= firstLocked_) { // from the DAW: small marker
+        if (s >= firstLocked_ && !sourceNames_) { // from the DAW: small marker
             g.setColour(p.text3);
             g.setFont(uiFont(9.5f, true));
             g.drawText("DAW", juce::Rectangle<float>(c.x - 20, c.y - 34, 40, 12), juce::Justification::centred);
@@ -523,111 +499,18 @@ void StageView::paint(juce::Graphics& g) {
     }
 
     paintCalibrationAbove(g);
-    paintLegend(g);
+    if (showLegend_) paintLegend(g);
+    if (caption_.isNotEmpty()) {
+        g.setColour(p.text3);
+        g.setFont(uiFont(11.0f, true));
+        g.drawText(caption_.toUpperCase(), juce::Rectangle<float>(14.0f, showLegend_ && !legendBottom_ ? 44.0f : 12.0f, 120.0f, 16.0f),
+                   juce::Justification::centredLeft);
+    }
     paintCoach(g);
 }
 
-void StageView::paintField(juce::Graphics& g, const std::function<juce::Colour(int)>& speakerColour) {
-    const int nSpk = (int)scene_.layout.speakers.size();
-    float total = 0.0f;
-    for (int m = 0; m < nSpk && m < (int)speakerLevels_.size(); ++m) total += speakerLevels_[(size_t)m];
-    if (total < 0.01f || nSpk == 0) return;
-
-    float maxR = 1.0f;
-    for (const auto& sp : scene_.layout.speakers) maxR = std::max(maxR, rk::length(sp.position));
-    const float sigma = std::max(0.7f, 0.32f * maxR) * scale_; // spread of each speaker's sound, pixels
-    const float inv2s2 = 1.0f / (2.0f * sigma * sigma);
-
-    constexpr int kCell = 6;
-    const int gw = getWidth() / kCell + 2, gh = getHeight() / kCell + 2;
-    std::vector<float> v((size_t)(gw * gh), 0.0f), cr(v.size(), 0.0f), cg(v.size(), 0.0f), cb(v.size(), 0.0f);
-    struct Emitter { float x, y, l; juce::Colour c; };
-    std::vector<Emitter> em;
-    for (int m = 0; m < nSpk && m < (int)speakerLevels_.size(); ++m) {
-        const float l = speakerLevels_[(size_t)m];
-        if (l < 0.01f) continue;
-        const auto c = toScreen(scene_.layout.speakers[(size_t)m].position);
-        em.push_back({c.x, c.y, l, speakerColour(m)});
-    }
-    float peak = 1e-6f;
-    for (int y = 0; y < gh; ++y)
-        for (int x = 0; x < gw; ++x) {
-            const float px = (float)(x * kCell), py = (float)(y * kCell);
-            float sum = 0.0f, r = 0.0f, gg = 0.0f, b = 0.0f;
-            for (const auto& e : em) {
-                const float dx = px - e.x, dy = py - e.y;
-                const float w = e.l * std::exp(-(dx * dx + dy * dy) * inv2s2);
-                sum += w;
-                r += w * e.c.getFloatRed();
-                gg += w * e.c.getFloatGreen();
-                b += w * e.c.getFloatBlue();
-            }
-            const size_t i = (size_t)(y * gw + x);
-            v[i] = sum;
-            if (sum > 1e-6f) { cr[i] = r / sum; cg[i] = gg / sum; cb[i] = b / sum; }
-            peak = std::max(peak, sum);
-        }
-    const float norm = 1.0f / std::max(1.0f, peak);
-
-    // Colour layer, upscaled smoothly (no blur filter: the field itself is smooth).
-    juce::Image img(juce::Image::ARGB, gw, gh, true);
-    {
-        juce::Image::BitmapData bd(img, juce::Image::BitmapData::writeOnly);
-        for (int y = 0; y < gh; ++y)
-            for (int x = 0; x < gw; ++x) {
-                const size_t i = (size_t)(y * gw + x);
-                const float t = juce::jlimit(0.0f, 1.0f, v[i] * norm);
-                const float a = 0.30f * t * t * (3.0f - 2.0f * t);
-                bd.setPixelColour(x, y, juce::Colour::fromFloatRGBA(cr[i], cg[i], cb[i], a));
-            }
-    }
-    juce::Graphics::ScopedSaveState clipState(g);
-    if (proj_ != Projection::Top) {
-        // Front and side: sound lives above the floor (ear height and up, unless speakers sit lower).
-        float minZ = 0.0f;
-        for (const auto& sp : scene_.layout.speakers) minZ = std::min(minZ, sp.position.z);
-        g.reduceClipRegion(0, 0, getWidth(), juce::roundToInt(centre_.y - minZ * scale_));
-    }
-    g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-    g.drawImageTransformed(img, juce::AffineTransform::scale((float)kCell), false);
-
-    // Contour lines (marching squares) at even steps: crisp, thin and quiet.
-    for (int k = 2; k <= 6; ++k) {
-        const float iso = (float)k / 7.0f / norm;
-        juce::Path path;
-        for (int y = 0; y + 1 < gh; ++y)
-            for (int x = 0; x + 1 < gw; ++x) {
-                const float a = v[(size_t)(y * gw + x)], b = v[(size_t)(y * gw + x + 1)];
-                const float c = v[(size_t)((y + 1) * gw + x + 1)], d = v[(size_t)((y + 1) * gw + x)];
-                const int code = (a > iso ? 1 : 0) | (b > iso ? 2 : 0) | (c > iso ? 4 : 0) | (d > iso ? 8 : 0);
-                if (code == 0 || code == 15) continue;
-                const float X = (float)(x * kCell), Y = (float)(y * kCell), S = (float)kCell;
-                auto lerp = [iso](float p0, float p1) { return juce::jlimit(0.0f, 1.0f, (iso - p0) / (p1 - p0 + 1e-9f)); };
-                const juce::Point<float> top{X + S * lerp(a, b), Y}, right{X + S, Y + S * lerp(b, c)},
-                    bottom{X + S * lerp(d, c), Y + S}, left{X, Y + S * lerp(a, d)};
-                auto seg = [&path](juce::Point<float> p0, juce::Point<float> p1) {
-                    path.startNewSubPath(p0);
-                    path.lineTo(p1);
-                };
-                switch (code) {
-                case 1: case 14: seg(left, top); break;
-                case 2: case 13: seg(top, right); break;
-                case 3: case 12: seg(left, right); break;
-                case 4: case 11: seg(right, bottom); break;
-                case 6: case 9: seg(top, bottom); break;
-                case 7: case 8: seg(left, bottom); break;
-                case 5: seg(left, top); seg(right, bottom); break;
-                case 10: seg(top, right); seg(left, bottom); break;
-                default: break;
-                }
-            }
-        g.setColour(juce::Colours::white.withAlpha(0.04f + 0.04f * (float)k));
-        g.strokePath(path, juce::PathStrokeType(k == 6 ? 1.0f : 0.7f));
-    }
-}
-
 int StageView::hitSource(juce::Point<float> pt) const {
-    for (int s = (int)scene_.sources.size() - 1; s >= 0; --s)
+    for (int s = std::min((int)scene_.sources.size(), dimFrom_) - 1; s >= 0; --s)
         if (toScreen(scene_.sources[(size_t)s].position).getDistanceFrom(pt) < 14.0f) return s;
     return -1;
 }

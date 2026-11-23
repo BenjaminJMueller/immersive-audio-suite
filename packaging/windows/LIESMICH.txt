@@ -3,6 +3,6 @@ Raumklang für Windows
 1. Den Ordner an einen festen Ort legen, z. B. Dokumente, und Raumklang.exe starten.
    Meldet Windows „Der Computer wurde durch Windows geschützt“: Weitere Informationen -> Trotzdem ausführen.
 2. Doppelklick auf „Plugins installieren.bat“ (fragt nach Administratorrechten).
-3. DAW neu starten. Die Plugins heißen Raumklang Quelle, Raumklang Return und Raumklang Raum.
+3. DAW neu starten. Die Plugins heißen Raumklang Quelle und Raumklang Return.
 
 DAW und App müssen mit derselben Abtastrate laufen. Für ASIO-Interfaces den ASIO-Treiber des Herstellers verwenden.
