@@ -41,6 +41,7 @@ public:
     /// Screen position and depth (distance along the view direction) of a world point.
     struct Projected { juce::Point<float> p; float depth; };
     Projected project(rk::Vec3 w) const;
+    rk::Vec3 cameraPosition() const;
 
 private:
     juce::Colour sourceColour(int s) const;
