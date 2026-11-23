@@ -219,6 +219,7 @@ const std::map<std::string, const char*>& english() {
         {"Gleicht Laufzeit und Pegel aus, als stünden alle Lautsprecher so weit weg wie der fernste.", "Compensates delay and level as if all speakers were as far away as the farthest one."},
         {"Hall", "Reverb"},
         {"Ceiling", "Ceiling"},
+        {"Entfernt, weil es sie nicht mehr gibt:", "Removed because they no longer exist:"},
         {"Routing", "Routing"},
         {"Welcher Lautsprecher auf welchem Ausgang des Audio-Interfaces spielt. Ohne Änderung liegt Lautsprecher 1 auf Ausgang 1 und so weiter.\n\nMehrere Lautsprecher auf einem Ausgang werden addiert. Kein Ausgang: Der Lautsprecher wird weiter berechnet und geht an das Return-Plugin, aber nicht an das Interface.", "Which speaker plays on which output of the audio interface. Unchanged, speaker 1 is on output 1 and so on.\n\nSeveral speakers on one output are summed. No output: the speaker is still rendered and goes to the Return plugin, but not to the interface."},
         {"fehlt", "missing"},

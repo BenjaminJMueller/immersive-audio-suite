@@ -7,6 +7,9 @@ if %errorlevel% neq 0 (
 )
 set "DEST=%CommonProgramFiles%\VST3"
 if not exist "%DEST%" mkdir "%DEST%"
+rem Plugins frueherer Versionen, die es nicht mehr gibt oder die umbenannt wurden.
+if exist "%DEST%\Raumklang Raum.vst3" rmdir /s /q "%DEST%\Raumklang Raum.vst3"
+for /d %%P in ("%DEST%\Raumklang R*ckweg.vst3") do rmdir /s /q "%%P"
 for /d %%P in ("%~dp0Plugins\*.vst3") do (
   if exist "%DEST%\%%~nxP" rmdir /s /q "%DEST%\%%~nxP"
   xcopy "%%P" "%DEST%\%%~nxP\" /e /i /q /y >nul

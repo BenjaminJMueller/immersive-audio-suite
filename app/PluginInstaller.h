@@ -13,6 +13,7 @@ struct PluginInstallResult {
     bool attempted = false; // false: nothing bundled (local build, Windows, Linux)
     bool ok = false;
     juce::StringArray installed; // bundle names
+    juce::StringArray removed;   // plugins of earlier versions that were deleted
     juce::String error;
 };
 
@@ -20,7 +21,7 @@ struct PluginInstallResult {
 bool hasBundledPlugins();
 /// True if the bundled plugins should be (re)installed now: a new build, or one is missing.
 bool pluginInstallDue(juce::PropertySet& settings, int build);
-/// Copies the bundled plugins (blocking, a few hundred milliseconds). Any thread.
+/// Copies the bundled plugins and removes obsolete ones of earlier versions (blocking, a few hundred milliseconds). Any thread.
 PluginInstallResult installBundledPlugins();
 /// Remembers that this build's plugins are installed.
 void markPluginsInstalled(juce::PropertySet& settings, int build);

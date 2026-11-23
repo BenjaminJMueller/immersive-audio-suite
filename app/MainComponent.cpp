@@ -1736,6 +1736,7 @@ void MainComponent::installPlugins(bool manual) {
             juce::String text;
             if (r.ok)
                 text = tr("Die Plugins „Raumklang Quelle“ und „Raumklang Return“ sind als AU und VST3 in ~/Library/Audio/Plug-Ins installiert.") +
+                       (r.removed.isEmpty() ? juce::String() : "\n\n" + tr("Entfernt, weil es sie nicht mehr gibt:") + " " + r.removed.joinIntoString(", ")) +
                        "\n\n" + tr("Eine DAW, die gerade läuft, sieht die neue Version erst nach einem Neustart.");
             else
                 text = tr("Die Plugins konnten nicht installiert werden.") + "\n\n" + r.error;
