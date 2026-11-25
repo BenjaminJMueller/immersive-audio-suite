@@ -64,12 +64,12 @@ private:
         /// Reads at a length that glides towards `length` by at most `maxStep` samples per
         /// sample, with interpolation. A size change then bends the pitch briefly instead of
         /// jumping in the buffer, which would click.
-        float readGliding(float maxStep) noexcept {
+        float readGliding(float maxStep, float offset = 0.0f) noexcept {
             const float target = static_cast<float>(length);
             if (cur < 0.0f) cur = target;
             else if (cur != target) cur += std::clamp(target - cur, -maxStep, maxStep);
             const int sz = static_cast<int>(buf.size());
-            const float c = std::clamp(cur, 1.0f, static_cast<float>(sz - 2));
+            const float c = std::clamp(cur + offset, 1.0f, static_cast<float>(sz - 2));
             const int i0 = static_cast<int>(c);
             const float f = c - static_cast<float>(i0);
             const float a = buf[static_cast<size_t>((pos - i0 + sz) % sz)];
@@ -90,6 +90,13 @@ private:
     Delay pre_;
     std::array<Allpass, 4> diffusers_;
     std::array<Delay, kLines> lines_;
+    /// One allpass inside each feedback loop: every pass through the loop multiplies the
+    /// echoes, so the tail gets dense early and stays smooth on quiet, sparse material.
+    std::array<Allpass, kLines> lineDiffusers_;
+    /// Slow modulation of each line's length (sine oscillators as rotating phasors): the
+    /// resonances of the loops wander a little, so the tail does not flutter or beat.
+    std::array<float, kLines> modRe_{}, modIm_{}, modCos_{}, modSin_{};
+    float modDepth_ = 0.0f; // samples
     std::array<float, kLines> feedback_{};
     std::array<float, kLines> lpState_{};
     std::array<float, kLines> lowState_{};

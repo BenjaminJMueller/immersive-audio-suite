@@ -40,6 +40,9 @@ struct Engine::Runtime {
     float maxRadius = 2.0f;
     bool headphones = false;
     BinauralFold fold;
+    /// Same key = same speakers, outputs, delays and panner kind: only positions or levels
+    /// differ, so the switch needs no fade (the source gains ramp to the new pan instead).
+    uint64_t structureKey = 0;
 };
 
 std::unique_ptr<Engine::Runtime> Engine::buildRuntime(const EngineConfig& cfg) const {
@@ -71,6 +74,20 @@ std::unique_ptr<Engine::Runtime> Engine::buildRuntime(const EngineConfig& cfg) c
     rt->maxRadius = std::max(rt->maxRadius, 0.5f);
     rt->headphones = cfg.outputMode == OutputMode::Headphones;
     if (rt->headphones) rt->fold.prepare(cfg.layout, sampleRate_);
+    // FNV-1a over what makes a switch audible. Headphones always fade (the binaural fold
+    // depends on every speaker position), as does a change of the panner kind.
+    uint64_t h = 1469598103934665603ull;
+    auto mixIn = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+    mixIn(static_cast<uint64_t>(rt->numSpeakers));
+    mixIn(static_cast<uint64_t>(cfg.panner));
+    mixIn(static_cast<uint64_t>(cfg.ambiOrder));
+    for (int m = 0; m < rt->numSpeakers; ++m) {
+        const Speaker& s = cfg.layout.speakers[static_cast<size_t>(m)];
+        mixIn((s.enabled ? 1u : 0u) | (s.isSubwoofer ? 2u : 0u));
+        mixIn(static_cast<uint64_t>(rt->delays[static_cast<size_t>(m)].delay()));
+    }
+    if (rt->headphones) mixIn(++keySerial_);
+    rt->structureKey = h == 0 ? 1 : h;
     return rt;
 }
 
@@ -128,6 +145,7 @@ void Engine::prepare(double sampleRate, int maxBlockSize) {
     fadeGain_ = 0.0f;
     auto rt = buildRuntime(config_);
     numOutputChannels_.store(rt->headphones ? 2 : rt->numSpeakers);
+    speakerGainCur_ = rt->speakerGain;
     runtime_.resetUnsafe(std::move(rt));
 }
 
@@ -140,6 +158,7 @@ void Engine::setConfig(EngineConfig cfg) {
     if (inputCopy_.empty()) return; // not prepared yet; prepare() builds it
     auto rt = buildRuntime(config_);
     numOutputChannels_.store(rt->headphones ? 2 : rt->numSpeakers);
+    pendingKey_.store(rt->structureKey, std::memory_order_release);
     runtime_.publish(std::move(rt));
 }
 
@@ -272,10 +291,32 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
     const float fadeStep = 1.0f / std::max(1.0f, static_cast<float>(0.01 * sampleRate_)); // 10 ms
 
     // ---- 1. layout handover with fade-out / fade-in ---------------------------
-    if (fade_ == Fade::Running && runtime_.hasPending()) fade_ = Fade::Out;
+    // A layout that only moved speakers or changed levels (e.g. dragging a speaker while
+    // playing) is taken over at once: the delay lines move over with their contents and every
+    // source ramps to its new pan. Only structural changes fade out and in.
+    if (fade_ == Fade::Running && runtime_.hasPending()) {
+        Runtime* old = runtime_.current();
+        if (old != nullptr && pendingKey_.load(std::memory_order_acquire) == old->structureKey) {
+            if (runtime_.acquire()) {
+                Runtime* next = runtime_.current();
+                if (next->structureKey == old->structureKey) {
+                    std::swap(next->delays, old->delays); // pointer swap, no allocation
+                    for (auto& st : state_) st.seenVersion = 0xffffffffu;
+                } else { // published again in between with another structure: hard switch
+                    resetSourceState();
+                    speakerGainCur_ = next->speakerGain;
+                    fadeGain_ = 0.0f;
+                    fade_ = Fade::In;
+                }
+            }
+        } else {
+            fade_ = Fade::Out;
+        }
+    }
     if ((fade_ == Fade::Out || fade_ == Fade::In) && fadeGain_ <= 0.0f && runtime_.hasPending()) {
         if (runtime_.acquire()) {
             resetSourceState();
+            speakerGainCur_ = runtime_.current()->speakerGain;
             fade_ = Fade::In;
         }
     }
@@ -569,8 +610,14 @@ void Engine::processChunk(const float* const* inputs, int numInputs, float* cons
         float* buf = mixPtr_[static_cast<size_t>(m)];
         rt->delays[static_cast<size_t>(m)].process(buf, n);
         const float g = rt->speakerGain[static_cast<size_t>(m)];
-        if (g != 1.0f)
+        float& gc = speakerGainCur_[static_cast<size_t>(m)];
+        if (std::fabs(g - gc) > 1.0e-7f) { // level changed: ramp over the chunk
+            const float step = (g - gc) * invN;
+            for (int i = 0; i < n; ++i) { gc += step; buf[i] *= gc; }
+            gc = g;
+        } else if (g != 1.0f) {
             for (int i = 0; i < n; ++i) buf[i] *= g;
+        }
     }
 
     // ---- 9. master gain, fade, limiter, sanitise ----------------------------------

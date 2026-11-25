@@ -480,6 +480,7 @@ rkui::PageContext MainComponent::pageContext() {
     c.calibrate = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->startCalibration(); }); };
     c.importSurvey = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->startPhoneIntro(); }); };
     c.rebuild = [this] { juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshSidebar(); } }); };
+    c.numOutputs = scene_.headphones ? 0 : juce::jmax(1, host_.numDeviceOutputs());
     return c;
 }
 
@@ -1949,6 +1950,13 @@ bool MainComponent::perform(const InvocationInfo& info) {
 
 void MainComponent::timerCallback() {
     const double now = juce::Time::getMillisecondCounterHiRes();
+    // A long gap between two ticks means the computer slept. macOS may have dropped the
+    // window contents then, and only animated parts would come back: redraw everything.
+    // Wall clock: the monotonic counter stands still while the Mac sleeps.
+    const double wall = (double)juce::Time::currentTimeMillis();
+    if (lastTick_ > 0.0 && std::abs(wall - lastTick_) > 1500.0)
+        if (auto* top = getTopLevelComponent()) top->repaint();
+    lastTick_ = wall;
     if (fading_) stepSnapshotFade(now);
     if (now - deviceSummaryAt_ > 1000.0) {
         deviceSummaryAt_ = now;

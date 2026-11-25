@@ -2,6 +2,12 @@
 
 ## Unveröffentlicht
 
+- **Lautsprecher verschieben ohne Artefakte**: Beim Ziehen eines Lautsprechers während der Wiedergabe blendet die Engine nicht mehr jedes Mal aus und ein, und die Verzögerungsleitungen der Lautsprecher bleiben gefüllt. Pegel, Laufzeit und Panning gleiten.
+- **Dichterer Hall**: Jede Rückkopplungsschleife des Nachhalls hat einen eigenen Allpass, und die Leitungen werden langsam moduliert. Die Fahne ist früher dicht und flattert bei leisen Signalanteilen nicht mehr.
+- **Ausgang beim Anlegen**: Im Schritt Lautsprecher lässt sich der Ausgang jedes Lautsprechers direkt unter dem Namen wählen.
+- **Hall organischer**: Die Hallteilchen ziehen auf gebogenen, gestreuten Bahnen zu den Lautsprechern statt in geraden Strahlen und bleiben beim Verschieben ruhig.
+- **Nach dem Ruhezustand**: Das Fenster zeichnet sich nach Standby und beim Zurückholen vollständig neu, statt mit hellem Hintergrund ohne Kopfzeile und Inspektor zu erscheinen.
+- **Update-Fenster**: installierte und neue Version nebeneinander, weicher Schein in der Statusfarbe, mehr Luft.
 - **Hall fließt**: Von jeder klingenden Quelle fließen Teilchen in der Hallfarbe zu den Lautsprechern, die sie nicht direkt spielen, dort hört man sie nur als Hall. Wie viel, folgt dem Hall-Send und dem Hallpegel.
 - **Raumklang Return**: Die Spuren in der Raumansicht bewegen sich nur noch, wenn wirklich Audio zurückkommt.
 - **Tooltips mit runden Ecken** wie die Menüs.

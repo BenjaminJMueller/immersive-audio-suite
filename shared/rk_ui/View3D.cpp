@@ -228,17 +228,18 @@ void View3D::paint(juce::Graphics& g) {
                     lines.push_back({project(scene_.layout.speakers[(size_t)m].position).p,
                                      gm * gm * std::sqrt(lvl), (uint32_t)(s * 131 + m + 1)});
                 }
-            // Reverb flowing to the speakers that do not play the source directly.
+            // Reverb drifting out to the speakers as a haze.
             const float flow = reverbFlowEnergy(src, lvl, scene_.reverbWetDb);
             if (flow > 0.0f) {
-                const double t = juce::Time::getMillisecondCounterHiRes() * 0.001;
+                std::vector<juce::Point<float>> targets;
                 for (int m = 0; m < nSpk; ++m) {
                     const auto& sp = scene_.layout.speakers[(size_t)m];
-                    if (!sp.enabled || sp.isSubwoofer || gains[(size_t)m] >= 0.04f) continue;
-                    drawSoundParticles(particles_, c.p, project(sp.position).p, reverbColour(), flow, (uint32_t)(s * 131 + m + 70001), t,
-                                       8.0f, 0.75f);
-                    animating_ = true;
+                    if (!sp.enabled || sp.isSubwoofer) continue; // reverb plays on every main speaker; a fixed set keeps the haze calm while moving
+                    targets.push_back(project(sp.position).p);
                 }
+                drawReverbFlow(particles_, c.p, targets, reverbColour(), flow, (uint32_t)(s * 131 + 70001),
+                               juce::Time::getMillisecondCounterHiRes() * 0.001, 0.75f);
+                animating_ = animating_ || !targets.empty();
             }
         }
         const juce::String name = src.name;

@@ -135,6 +135,27 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
             ctx.changed(false);
             ctx.commit();
         };
+        if (ctx.numOutputs > 0) {
+            // Which output of the audio interface plays this speaker (also under Output > Routing).
+            const int numSpk = (int)s.layout.speakers.size();
+            const int choices = juce::jlimit(1, rk::kMaxSpeakers, juce::jmax(ctx.numOutputs, numSpk));
+            juce::StringArray items;
+            for (int o = 0; o < choices; ++o)
+                items.add(tr("Ausgang") + " " + juce::String(o + 1) + (o >= ctx.numOutputs && ctx.numOutputs > 1 ? " (" + tr("fehlt") + ")" : juce::String()));
+            items.add(tr("Kein Ausgang"));
+            auto* out = page.add(std::make_unique<ChoiceRow>(tr("Ausgang"), items), 36);
+            const int o = s.layout.speakers[(size_t)sel].outputFor(sel);
+            out->box().setSelectedItemIndex(o < 0 ? choices : juce::jmin(o, choices - 1), juce::dontSendNotification);
+            out->setTooltip(tr("Ausgang des Audio-Interfaces für diesen Lautsprecher. Alle auf einen Blick unter Ausgabe, Routing."));
+            out->onChange = [ctx, sel, choices](int i) {
+                if (sel >= (int)ctx.scene->layout.speakers.size()) return;
+                ctx.scene->layout.speakers[(size_t)sel].output =
+                    i >= choices ? rk::Speaker::kOutputNone : (i == sel ? rk::Speaker::kOutputAuto : i);
+                ctx.changed(false);
+                ctx.commit();
+                ctx.rebuild();
+            };
+        }
         const rk::Polar pol = rk::toPolar(s.layout.speakers[(size_t)sel].position);
         auto setPolar = [ctx, sel, toCustom](int which, double v) {
             if (sel >= (int)ctx.scene->layout.speakers.size()) return;
@@ -213,6 +234,7 @@ void buildLayoutPage(FormPage& page, PageContext ctx, int sel, std::function<voi
             ctx.changed(true);
         };
         delay->onCommit = ctx.commit;
+
 
         auto* sub = page.add(std::make_unique<juce::ToggleButton>(tr("Subwoofer")), 28);
         sub->setToggleState(s.layout.speakers[(size_t)sel].isSubwoofer, juce::dontSendNotification);
