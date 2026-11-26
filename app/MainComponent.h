@@ -13,6 +13,7 @@
 #include <rk_ui/ReverbPanel.h>
 #include <rk_ui/RoomView.h>
 #include <rk_ui/Snapshots.h>
+#include <rk_ui/Sofa.h>
 #include <rk_ui/Strings.h>
 #include <rk_ui/Visuals.h>
 #include <rk_ui/Widgets.h>
@@ -55,6 +56,9 @@ private:
     double lastTick_ = 0.0; // to notice sleep (see timerCallback)
     void setStep(int step);
     void applyScene(bool structural);
+    /// Starts loading the scene's SOFA file in the background when headphones need it.
+    void ensureHrirs();
+    void chooseSofaFile(bool revertIfCancelled);
     /// Opens the interface inputs once something needs them (asks for microphone access on macOS once).
     void ensureInputs();
     bool micRequested_ = false;
@@ -148,6 +152,13 @@ private:
     double lastOrbitTime_ = 0.0;
     juce::File projectFile_;
     std::unique_ptr<juce::FileChooser> chooser_;
+    // Measured head responses for headphones (loaded from scene_.hrtfFile off the message thread).
+    std::shared_ptr<const rk::HrirSet> hrirs_;
+    juce::String hrirsPath_;     // file that hrirs_ / hrirsError_ belong to
+    juce::String hrirsSummary_;  // e.g. "710 Richtungen, 44,1 kHz"
+    juce::String hrirsError_;
+    juce::String hrirsLoading_;  // file being loaded right now
+    std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
     std::unique_ptr<juce::PropertiesFile> settings_;
 
     rkui::LookAndFeel lnf_;

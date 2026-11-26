@@ -75,6 +75,23 @@ SourceEditor::SourceEditor(SourceProcessor& p) : AudioProcessorEditor(p), proc_(
                        "When the Raumklang app runs, it plays this track without any routing."));
     addAndMakeVisible(help_);
 
+    auto toggle = [this](const char* id) {
+        if (auto* prm = proc_.params.getParameter(id)) {
+            prm->beginChangeGesture();
+            prm->setValueNotifyingHost(prm->getValue() >= 0.5f ? 0.0f : 1.0f);
+            prm->endChangeGesture();
+        }
+    };
+    mute_.onClick = [toggle] { toggle("mute"); };
+    solo_.onClick = [toggle] { toggle("solo"); };
+    mute_.setTooltip(L("Stumm. Die Stumm- und Solo-Tasten der DAW erreichen das Plugin nicht, deshalb hat die Spur hier eigene. "
+                       "Sie lassen sich automatisieren, und die App zeigt sie mit.",
+                       "Mute. The DAW's mute and solo buttons do not reach the plugin, so the track has its own here. "
+                       "They can be automated, and the app shows them too."));
+    solo_.setTooltip(L("Solo: Nur Spuren mit Solo klingen in der App.", "Solo: only tracks with solo play in the app."));
+    addAndMakeVisible(mute_);
+    addAndMakeVisible(solo_);
+
     buildPage();
     setResizable(true, true);
     setResizeLimits(820, 520, 2400, 1600);
@@ -250,20 +267,38 @@ void SourceEditor::refreshStage() {
         s = {};
         s.name = juce::String::fromUTF8(otherTracks_[i].name.c_str());
         s.position = rk::toCartesian({t.azimuthDeg, t.elevationDeg, t.distance});
+        s.mute = t.mute;
         colours.push_back(juce::Colours::transparentBlack);
     }
     // Redraw the room only when something in it moved, not 30 times a second.
     juce::String key = ownColour().toString();
     for (const auto& src : shown_.sources)
-        key << '|' << src.name << ':' << src.position.x << ',' << src.position.y << ',' << src.position.z << ',' << src.spread;
+        key << '|' << src.name << ':' << (int)src.mute << src.position.x << ',' << src.position.y << ',' << src.position.z << ',' << src.spread;
     if (!setupChanged && key == shownSourcesKey_) return;
     shownSourcesKey_ = key;
     room_.setSourceStyle(colours, 1, true);
     room_.setScene(shown_);
 }
 
+void SourceEditor::ToggleChip::paint(juce::Graphics& g) {
+    const auto& p = rkui::palette();
+    const auto b = getLocalBounds().toFloat().reduced(0.5f);
+    const juce::Colour c = solo_ ? p.accent : p.warn;
+    g.setColour(on_ ? c : p.field);
+    g.fillRoundedRectangle(b, 5.0f);
+    if (!on_) {
+        g.setColour(p.lineStrong);
+        g.drawRoundedRectangle(b, 5.0f, 1.0f);
+    }
+    g.setColour(on_ ? p.onAccent : p.text2);
+    g.setFont(rkui::uiFont(12.0f, true));
+    g.drawText(text_, getLocalBounds(), juce::Justification::centred, false);
+}
+
 void SourceEditor::timerCallback() {
     for (auto& b : bindings_) b->refresh();
+    mute_.setOn(proc_.params.getRawParameterValue("mute")->load() >= 0.5f);
+    solo_.setOn(proc_.params.getRawParameterValue("solo")->load() >= 0.5f);
     if (routeRow_ != nullptr && !routeRow_->box().isPopupActive()) {
         auto* prm = proc_.params.getParameter("route");
         const int i = juce::roundToInt(prm->convertFrom0to1(prm->getValue()));
@@ -317,13 +352,15 @@ void SourceEditor::paint(juce::Graphics& g) {
     g.drawText("Raumklang Quelle", juce::Rectangle<float>(px + 20.0f, 0.0f, 160.0f, (float)kBarHeight), juce::Justification::centredLeft);
 
     if (noticeKind_ != NoticeKind::None)
-        rkui::drawNoticePill(g, px + 200.0f, (float)help_.getX() - 10.0f, kBarHeight * 0.5f, noticeKind_ == NoticeKind::Warn, notice_);
+        rkui::drawNoticePill(g, px + 200.0f, (float)mute_.getX() - 10.0f, kBarHeight * 0.5f, noticeKind_ == NoticeKind::Warn, notice_);
 }
 
 void SourceEditor::resized() {
     auto r = getLocalBounds();
     auto bar = r.removeFromTop(kBarHeight);
     help_.setBounds(bar.removeFromRight(46).withSizeKeepingCentre(30, 28));
+    solo_.setBounds(bar.removeFromRight(30).withSizeKeepingCentre(24, 22));
+    mute_.setBounds(bar.removeFromRight(30).withSizeKeepingCentre(24, 22));
     name_.setBounds(36, 0, 260, kBarHeight);
     name_.setBorderSize(juce::BorderSize<int>(0, 0, 0, 0));
     page_.setBounds(r.removeFromRight(juce::jlimit(300, 380, getWidth() / 3)).reduced(0, 8));

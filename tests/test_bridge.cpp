@@ -253,6 +253,79 @@ TEST_CASE("bridge: the app changes mix values, the plugin takes only those, a ne
     CHECK_FALSE(rx.requestMix(kSlots, c));
 }
 
+TEST_CASE("bridge: mute and solo travel both ways and never stick to the next owner") {
+    Names nm;
+    Sender tx;
+    Receiver rx;
+    REQUIRE(tx.open(nm.name));
+    REQUIRE(rx.open(nm.name));
+    const int slot = tx.claim();
+    REQUIRE(slot >= 0);
+    tx.heartbeat("Bass");
+    std::vector<float> a(64, 0.1f);
+    const float* in[1] = {a.data()};
+    TrackParams p;
+    p.mute = true;
+    tx.write(in, 1, 64, 48000.0, p);
+    auto tracks = rx.scan();
+    REQUIRE(tracks.size() == 1);
+    CHECK(tracks[0].params.mute);
+    CHECK_FALSE(tracks[0].params.solo);
+    p.mute = false;
+    p.solo = true;
+    tx.write(in, 1, 64, 48000.0, p);
+    tracks = rx.scan();
+    CHECK_FALSE(tracks[0].params.mute);
+    CHECK(tracks[0].params.solo);
+
+    // The app's audio path sees the same flags and hands them to the engine.
+    rx.heartbeat(48000.0);
+    rx.beginBlock(48000.0);
+    std::vector<float> o0(64), o1(64);
+    float* out[2] = {o0.data(), o1.data()};
+    TrackParams got;
+    rx.read(slot, out, 64, got);
+    CHECK(got.solo);
+    rk::Engine engine;
+    engine.prepare(48000.0, 64);
+    rk::bridge::applyTrack(engine, 3, 0, 1, got, true);
+    CHECK(engine.source(3).solo.load());
+    CHECK_FALSE(engine.source(3).mute.load());
+
+    // App -> plugin: the new state arrives in the mix change, other values stay untouched.
+    MixChange c;
+    c.mask = MixChange::Mute;
+    c.mute = true;
+    REQUIRE(rx.requestMix(slot, c));
+    c.mask = MixChange::Solo;
+    c.solo = false;
+    REQUIRE(rx.requestMix(slot, c));
+    MixChange m;
+    REQUIRE(tx.takeMix(m));
+    CHECK(m.mask == (MixChange::Mute | MixChange::Solo));
+    CHECK(m.mute);
+    CHECK_FALSE(m.solo);
+    c.mask = MixChange::Mute;
+    c.mute = false;
+    REQUIRE(rx.requestMix(slot, c));
+    REQUIRE(tx.takeMix(m));
+    CHECK(m.mask == MixChange::Mute);
+    CHECK_FALSE(m.mute);
+
+    // A plugin that claims the slot next (here an old one that never writes flags) is not muted.
+    p.mute = true;
+    tx.write(in, 1, 64, 48000.0, p);
+    tx.release();
+    Sender next;
+    REQUIRE(next.open(nm.name));
+    REQUIRE(next.claim() == slot);
+    next.heartbeat("Neu");
+    tracks = rx.scan();
+    REQUIRE(tracks.size() == 1);
+    CHECK_FALSE(tracks[0].params.mute);
+    CHECK_FALSE(tracks[0].params.solo);
+}
+
 TEST_CASE("bridge: slots are limited and freed slots are reused") {
     Names nm;
     std::vector<std::unique_ptr<Sender>> senders;

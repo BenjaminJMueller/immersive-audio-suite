@@ -175,6 +175,7 @@ jobs:
         run: |
           VERSION="0.1.${{ github.run_number }}"
           mkdir -p pkg/Raumklang out
+          cp LICENSE.md THIRD_PARTY_NOTICES.md pkg/Raumklang/
           if [ "$RUNNER_OS" = "macOS" ]; then
             cp -R dist/Raumklang.app pkg/Raumklang/
             cp packaging/mac/* pkg/Raumklang/
@@ -240,7 +241,8 @@ jobs:
               if line.startswith("#"):
                   inside = "ändert" in line.lower() or "changes" in line.lower()
                   continue
-              m = re.match(r"\s*[-*] \*\*(.+?)\*\*", line)
+              # "- Title: details" (older pull requests: "- **Title**: details").
+              m = re.match(r"\s*[-*] \*\*(.+?)\*\*", line) or re.match(r"\s*[-*] ([^:]{2,80}?):\s", line)
               if inside and m:
                   points.append("- " + m.group(1).strip().rstrip(".:"))
           if not points:
@@ -263,8 +265,8 @@ jobs:
           cat out/latest.json
           NOTES="$(cat notes.txt)
 
-          **macOS**: $MAC.dmg öffnen und Raumklang.app in Programme ziehen. Die App installiert die Plugins beim ersten Start selbst. Sie ist noch nicht beglaubigt: beim ersten Start Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen.
-          **Windows**: $WIN.zip entpacken, Raumklang.exe starten und *Plugins installieren.bat* doppelklicken."
+          macOS: $MAC.dmg öffnen und Raumklang.app in Programme ziehen. Die App installiert die Plugins beim ersten Start selbst. Sie ist noch nicht beglaubigt: beim ersten Start Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen.
+          Windows: $WIN.zip entpacken, Raumklang.exe starten und *Plugins installieren.bat* doppelklicken."
           gh release create "$TAG" "out/$MAC.dmg" "out/$MAC.zip" "out/$WIN.zip" out/latest.json --target "$GITHUB_SHA" --title "$TITLE" --notes "$NOTES" --latest
 
   # "Raumklang Messen" for iPhone: geometry tests and a simulator build (no signing needed).

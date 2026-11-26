@@ -55,6 +55,10 @@ struct TrackParams {
     float reverbSendDb = -12.0f;
     float stereoWidthDeg = 60.0f; // angle between left and right of a stereo track
     float distanceAmount = 1.0f;  // 0..2
+    /// Mute and solo as set in the plugin. They travel in the control block, so the
+    /// audio block keeps its layout and older apps simply ignore them.
+    bool mute = false;
+    bool solo = false;
     /// Clamps every value into its range; non-finite values become the defaults.
     TrackParams sanitized() const noexcept;
 };
@@ -71,13 +75,19 @@ struct ControlShared;
 /// Mix values the user changed for a DAW track in the app (app -> plugin).
 /// Only the values whose bit is set in `mask` were changed.
 struct MixChange {
-    enum : uint32_t { Gain = 1u, Spread = 2u, ReverbSend = 4u, StereoWidth = 8u, DistanceAmount = 16u, All = 31u };
+    enum : uint32_t {
+        Gain = 1u, Spread = 2u, ReverbSend = 4u, StereoWidth = 8u, DistanceAmount = 16u,
+        Mute = 32u, Solo = 64u, // the new state is in `mute` / `solo`
+        All = 127u
+    };
     uint32_t mask = 0;
     float gainDb = 0.0f;
     float spread = 0.0f;          // 0..1
     float reverbSendDb = -12.0f;
     float stereoWidthDeg = 60.0f;
     float distanceAmount = 1.0f;  // 0..2
+    bool mute = false;
+    bool solo = false;
 };
 
 // App -> plugin mix changes live in a second, small block named "<bridge name>-ctl". A

@@ -290,6 +290,8 @@ juce::var sceneToVar(const Scene& s) {
     o->setProperty("compMakeupDb", s.compMakeupDb);
     o->setProperty("headphones", s.headphones);
     o->setProperty("binaural", s.binaural);
+    o->setProperty("hrtfMeasured", s.hrtfMeasured);
+    if (s.hrtfFile.isNotEmpty()) o->setProperty("hrtfFile", s.hrtfFile);
     juce::Array<juce::var> src;
     for (const auto& x : s.sources) src.add(sourceToVar(x));
     o->setProperty("sources", src);
@@ -334,6 +336,8 @@ Scene sceneFromVar(const juce::var& v) {
     s.compMakeupDb = getF(v, "compMakeupDb", 0.0f, 0.0f, 24.0f);
     s.headphones = getB(v, "headphones", false);
     s.binaural = getB(v, "binaural", false);
+    s.hrtfMeasured = getB(v, "hrtfMeasured", false);
+    s.hrtfFile = getS(v, "hrtfFile", {}, 2048);
     if (const auto* a = v.getProperty("sources", juce::var()).getArray()) {
         for (const auto& e : *a) {
             if (static_cast<int>(s.sources.size()) >= kMaxSceneSources) break;

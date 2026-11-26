@@ -312,7 +312,19 @@ MainComponent::MainComponent()
         else selectSource(row);
     };
     sidebar_.onToggle = [this](int row, int which) {
-        if (step_ != StepSources || row < 0 || row >= (int)scene_.sources.size()) return;
+        if (step_ != StepSources || row < 0) return;
+        if (row >= (int)scene_.sources.size()) { // a DAW track: the plugin owns mute and solo
+            const int j = row - (int)scene_.sources.size();
+            if (j >= (int)dawTracks_.size()) return;
+            auto& t = dawTracks_[(size_t)j];
+            rk::bridge::MixChange c;
+            if (which == 0) { c.mask = rk::bridge::MixChange::Mute; c.mute = t.params.mute = !t.params.mute; }
+            else { c.mask = rk::bridge::MixChange::Solo; c.solo = t.params.solo = !t.params.solo; }
+            host_.requestBridgeMix(t.slot, c);
+            refreshSidebar();
+            showStage();
+            return;
+        }
         auto& s = scene_.sources[(size_t)row];
         if (which == 0) s.mute = !s.mute;
         else s.solo = !s.solo;
@@ -452,6 +464,7 @@ MainComponent::MainComponent()
 }
 
 MainComponent::~MainComponent() {
+    alive_->store(false);
     stopTimer();
    #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu(nullptr);
@@ -509,7 +522,12 @@ void MainComponent::applyScene(bool structural) {
             juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->ensureInputs(); });
             break;
         }
-    if (structural) host_.engine.setConfig(scene_.engineConfig());
+    if (structural) {
+        ensureHrirs();
+        rk::EngineConfig cfg = scene_.engineConfig();
+        if (scene_.headphones && scene_.hrtfMeasured && hrirsPath_ == scene_.hrtfFile) cfg.hrirs = hrirs_;
+        host_.engine.setConfig(cfg);
+    }
     for (int i = 0; i < rkui::kMaxSceneSources; ++i) {
         auto& c = host_.engine.source(i);
         if (i < (int)scene_.sources.size()) {
@@ -552,6 +570,53 @@ void MainComponent::applyScene(bool structural) {
     host_.setRouting(routing);
     dirty_ = true;
     lastChange_ = juce::Time::getMillisecondCounterHiRes();
+}
+
+void MainComponent::ensureHrirs() {
+    if (!scene_.headphones || !scene_.hrtfMeasured || scene_.hrtfFile.isEmpty()) return;
+    const juce::String path = scene_.hrtfFile;
+    if (path == hrirsPath_ || path == hrirsLoading_) return;
+    hrirsLoading_ = path;
+    juce::Thread::launch([path, alive = alive_, sp = juce::Component::SafePointer<MainComponent>(this)] {
+        auto result = std::make_shared<rkui::SofaResult>(rkui::loadSofa(juce::File(path)));
+        juce::MessageManager::callAsync([path, result, alive, sp] {
+            if (!alive->load() || sp == nullptr) return;
+            auto& self = *sp;
+            if (self.hrirsLoading_ == path) self.hrirsLoading_.clear();
+            self.hrirsPath_ = path;
+            self.hrirs_ = result->set;
+            self.hrirsSummary_ = result->set != nullptr ? result->summary() : juce::String();
+            self.hrirsError_ = result->error;
+            if (self.scene_.hrtfFile == path) {
+                self.applyScene(true);
+                if (self.step_ == StepOutput) self.rebuildInspector();
+            }
+        });
+    });
+}
+
+void MainComponent::chooseSofaFile(bool revertIfCancelled) {
+    const juce::File start = scene_.hrtfFile.isNotEmpty() ? juce::File(scene_.hrtfFile).getParentDirectory()
+                                                          : juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("Downloads");
+    chooser_ = std::make_unique<juce::FileChooser>(tr("SOFA-Datei wählen"), start, "*.sofa");
+    chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [sp = juce::Component::SafePointer<MainComponent>(this), revertIfCancelled](const juce::FileChooser& fc) {
+                              if (sp == nullptr) return;
+                              const juce::File f = fc.getResult();
+                              if (f == juce::File()) {
+                                  if (revertIfCancelled) {
+                                      sp->scene_.hrtfMeasured = false;
+                                      sp->rebuildInspector();
+                                  }
+                                  return;
+                              }
+                              sp->scene_.hrtfFile = f.getFullPathName();
+                              sp->scene_.hrtfMeasured = true;
+                              sp->hrirsPath_.clear(); // load again, the file may have changed
+                              sp->applyScene(true);
+                              sp->commit();
+                              sp->rebuildInspector();
+                          });
 }
 
 void MainComponent::commit() {
@@ -648,7 +713,8 @@ rkui::Scene MainComponent::stageScene() const {
         const auto& mv = dawMoves_[(size_t)juce::jlimit(0, rk::bridge::kSlots - 1, t.slot)];
         if (juce::Time::getMillisecondCounterHiRes() < mv.until) info.position = mv.position;
         info.spread = juce::jlimit(0.0f, 1.0f, p.spread + (t.channels == 2 ? p.stereoWidthDeg / 360.0f : 0.0f));
-        info.mute = !t.sending || t.sampleRateMismatch;
+        info.mute = !t.sending || t.sampleRateMismatch || t.params.mute;
+        info.solo = t.params.solo;
         s.sources.push_back(info);
     }
     return s;
@@ -679,7 +745,7 @@ void MainComponent::scanDaw() {
     juce::String key;
     for (const auto& t : tracks)
         key << t.slot << ':' << juce::String::fromUTF8(t.name.c_str()) << ':' << t.channels << ':' << (int)t.sending << ':'
-            << (int)t.sampleRateMismatch << ';';
+            << (int)t.sampleRateMismatch << ':' << (int)t.params.mute << (int)t.params.solo << ';';
     if (key == dawKey_) return;
     const bool hadSelection = selSource_ >= (int)scene_.sources.size();
     int selectedSlot = -1;
@@ -820,7 +886,8 @@ void MainComponent::refreshSidebar() {
         sidebar_.setRows(rows);
         sidebar_.setSelected(match >= 0 ? match : (int)presets.size());
     } else {
-        const bool anySolo = std::any_of(scene_.sources.begin(), scene_.sources.end(), [](const rkui::SourceInfo& x) { return x.solo; });
+        const bool anySolo = std::any_of(scene_.sources.begin(), scene_.sources.end(), [](const rkui::SourceInfo& x) { return x.solo; }) ||
+                             std::any_of(dawTracks_.begin(), dawTracks_.end(), [](const rk::bridge::TrackInfo& t) { return t.params.solo; });
         for (int i = 0; i < (int)scene_.sources.size(); ++i) {
             const auto& s = scene_.sources[(size_t)i];
             rkui::SidebarList::Row r;
@@ -852,7 +919,10 @@ void MainComponent::refreshSidebar() {
             else if (!t.sending) r.subtitle = kind + ", " + tr("wartet auf Wiedergabe");
             else r.subtitle = kind + ", " + rkui::num(p.azimuthDeg, 0) + degree() + ", " + rkui::num(p.distance, 1) + " m";
             r.trailing = "DAW";
-            r.dim = !t.sending || t.sampleRateMismatch;
+            r.toggles = step_ == StepSources;
+            r.mute = t.params.mute;
+            r.solo = t.params.solo;
+            r.dim = !t.sending || t.sampleRateMismatch || t.params.mute || (anySolo && !t.params.solo);
             rows.push_back(r);
         }
         sidebar_.setRows(rows);
@@ -1376,6 +1446,46 @@ void MainComponent::buildOutputPage() {
         commit();
         juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) { sp->rebuildInspector(); sp->refreshAll(); } });
     };
+    if (scene_.headphones) {
+        inspector_.add(std::make_unique<rkui::SectionHeader>(tr("HRTF"),
+                                                             tr("Wie der Klang aus jeder Richtung an die Ohren kommt.\n\n"
+                                                                "Kopfmodell: ein eingebautes Strukturmodell (Brown und Duda) mit Laufzeitunterschied, Kopfschatten und Ohrmuschel. Ohne Messdaten, klingt bei allen ähnlich.\n\n"
+                                                                "Gemessen: Kopfübertragungsfunktionen aus einer SOFA-Datei (AES69), zum Beispiel von einem Kunstkopf oder dem eigenen Kopf. Freie Datensätze gibt es etwa auf sofaconventions.org. "
+                                                                "Die Faltung verzögert den Kopfhörer um gut 1 ms.")), 26);
+        auto* hrtf = inspector_.add(std::make_unique<rkui::OptionCards>(std::vector<rkui::OptionCards::Option>{
+                                        {tr("Kopfmodell"), tr("Eingebaut, ohne Messdaten")},
+                                        {tr("Gemessen (SOFA)"), scene_.hrtfFile.isNotEmpty() ? juce::File(scene_.hrtfFile).getFileName() : tr("SOFA-Datei wählen")}}),
+                                    2 * rkui::OptionCards::kRowHeight);
+        hrtf->setSelected(scene_.hrtfMeasured ? 1 : 0);
+        hrtf->onChange = [this](int m) {
+            const bool measured = m == 1;
+            if (measured && scene_.hrtfFile.isEmpty()) {
+                scene_.hrtfMeasured = true;
+                juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->chooseSofaFile(true); });
+                return;
+            }
+            scene_.hrtfMeasured = measured;
+            applyScene(true);
+            commit();
+            juce::MessageManager::callAsync([sp = juce::Component::SafePointer<MainComponent>(this)] { if (sp) sp->rebuildInspector(); });
+        };
+        if (scene_.hrtfMeasured && scene_.hrtfFile.isNotEmpty()) {
+            const bool loading = hrirsLoading_ == scene_.hrtfFile;
+            const bool failed = !loading && hrirsPath_ == scene_.hrtfFile && hrirs_ == nullptr;
+            if (failed) {
+                auto card = std::make_unique<rkui::StatusCard>();
+                card->set(rkui::StatusCard::Kind::Warn, tr("SOFA-Datei nicht nutzbar"),
+                          hrirsError_ + ". " + tr("Bis dahin spielt das Kopfmodell."));
+                const int cardH = card->idealHeight(juce::jmax(200, inspector_.getWidth() - 24));
+                inspector_.add(std::move(card), cardH);
+            }
+            const juce::String status = loading ? tr("Wird geladen …") : (hrirs_ != nullptr && hrirsPath_ == scene_.hrtfFile ? hrirsSummary_ : juce::String());
+            auto list = std::make_unique<rkui::ActionList>(std::vector<rkui::ActionList::Action>{
+                {tr("Andere SOFA-Datei wählen"), status, [this] { chooseSofaFile(false); }}});
+            const int h = list->idealHeight();
+            inspector_.add(std::move(list), h);
+        }
+    }
     if (!scene_.headphones && !scene_.layout.speakers.empty()) {
         inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Routing"), tr("Welcher Lautsprecher auf welchem Ausgang des Audio-Interfaces spielt. Ohne Änderung liegt Lautsprecher 1 auf Ausgang 1 und so weiter.\n\n"
                                                                               "Mehrere Lautsprecher auf einem Ausgang werden addiert. Kein Ausgang: Der Lautsprecher wird weiter berechnet und geht an das Return-Plugin, aber nicht an das Interface.")), 26);

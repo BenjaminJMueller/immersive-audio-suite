@@ -2,13 +2,13 @@
 
 Sprache: Deutsch, [English](README.en.md)
 
-Raumklang ist ein freies Werkzeug für räumlichen Klang auf macOS und Windows. Es verteilt Klangquellen frei im Raum auf beliebig viele Lautsprecher, vom Stereopaar über Ring, Kuppel und 7.1.4 bis zum *Donut*, bei dem sich zwei Lautsprecherringe gegenüberstehen. Dazu gibt es Hall, Kopfhörer-Wiedergabe (binaural) und zwei Plugins für die DAW. Ein Audio-Interface genügt: Die App spricht es direkt an, zusätzliche Programme für das Routing sind nicht nötig.
+Raumklang ist ein freies Werkzeug für räumlichen Klang auf macOS und Windows. Es verteilt Klangquellen frei im Raum auf beliebig viele Lautsprecher, vom Stereopaar über Ring, Kuppel und 7.1.4 bis zum *Donut*, bei dem sich zwei Lautsprecherringe gegenüberstehen. Dazu gibt es Hall, Kopfhörer-Wiedergabe (binaural, auch mit gemessenen HRTFs aus SOFA-Dateien) und zwei Plugins für die DAW. Ein Audio-Interface genügt: Die App spricht es direkt an, zusätzliche Programme für das Routing sind nicht nötig.
 
 ![Lautsprecher](docs/screenshots/01-lautsprecher.png)
 
-> **Frühe Version (0.1).** Raumklang ist neu. Die Klangberechnung ist ausführlich automatisch getestet, an echten Lautsprecheraufbauten aber noch kaum. Fehler und Lücken sind wahrscheinlich, siehe [Funktionsumfang und Grenzen](#funktionsumfang-und-grenzen). Raumklang ist [mit KI entwickelt](#mit-ki-entwickelt). Wenn es trotzdem jemandem bei einem eigenen Projekt weiterhilft, freue ich mich.
+> Raumklang ist eine frühe Version (0.1) und [mit KI entwickelt](#mit-ki-entwickelt). Im Einsatz erprobt ist es mit zwölf Lautsprechern im Ring. Fehler und Lücken sind möglich, siehe [Funktionsumfang und Grenzen](#funktionsumfang-und-grenzen). Wenn es jemandem bei einem eigenen Projekt weiterhilft, freue ich mich.
 
-**Herunterladen:** [neueste Version für macOS (.dmg) und Windows (.zip)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest), [Hinweise zur Installation](#installation)
+Herunterladen: [neueste Version für macOS (.dmg) und Windows (.zip)](https://github.com/BenjaminJMueller/immersive-audio-suite/releases/latest), dazu die [Hinweise zur Installation](#installation).
 
 ## Hintergrund
 
@@ -18,10 +18,11 @@ Eine Besonderheit ist der *Donut*: zwei Lautsprecherringe, die sich gegenüberst
 
 ## Ziele
 
-In der Lehre stellten sich vor allem zwei Hürden:
+In der Lehre stellten sich vor allem zwei Hürden.
 
-- **Routing über Zusatzprogramme.** Schickt die DAW ihren Ton über ein virtuelles Audiogerät an ein zweites Programm, kommt eine ganze Kette dazu: unter macOS etwa ein Loopback-Treiber, oft zusammen mit einem Gerät mit mehreren Ausgängen oder einem Aggregatgerät in *Audio-MIDI-Setup*, unter Windows zusätzlich ein Audio-Server oder ein Treiber-Wrapper, weil ein ASIO-Treiber nur von einem Programm zur Zeit geöffnet werden kann. Jedes dieser Glieder ist auf jedem Rechner neu einzurichten, und klingt es am Ende nicht, ist schwer herauszufinden, an welcher Stelle der Kette es hängt.
-- **Bedienung.** In Seminaren arbeiten Studierende auf ihren eigenen Rechnern, mit macOS und Windows, und meist ohne Vorerfahrung in Mehrkanal-Technik. Eine Sitzung soll mit Klang im Raum beginnen, nicht mit der Einrichtung von Treibern. Lautsprecher-Setup, Quellen und Verfahren sollen an einem Ort liegen, mit einer Rückmeldung, ob ein Aufbau passt.
+Die erste ist das Routing über Zusatzprogramme. Schickt die DAW ihren Ton über ein virtuelles Audiogerät an ein zweites Programm, kommt eine ganze Kette dazu: unter macOS etwa ein Loopback-Treiber, oft zusammen mit einem Gerät mit mehreren Ausgängen oder einem Aggregatgerät in *Audio-MIDI-Setup*, unter Windows zusätzlich ein Audio-Server oder ein Treiber-Wrapper, weil ein ASIO-Treiber nur von einem Programm zur Zeit geöffnet werden kann. Jedes dieser Glieder ist auf jedem Rechner neu einzurichten, und klingt es am Ende nicht, ist schwer herauszufinden, an welcher Stelle der Kette es hängt.
+
+Die zweite ist die Bedienung. In Seminaren arbeiten Studierende auf ihren eigenen Rechnern, mit macOS und Windows, und meist ohne Vorerfahrung in Mehrkanal-Technik. Eine Sitzung soll mit Klang im Raum beginnen, nicht mit der Einrichtung von Treibern. Lautsprecher-Setup, Quellen und Verfahren sollen an einem Ort liegen, mit einer Rückmeldung, ob ein Aufbau passt.
 
 Daraus ergaben sich die Anforderungen an dieses Werkzeug:
 
@@ -34,12 +35,27 @@ Daraus ergaben sich die Anforderungen an dieses Werkzeug:
 
 ## Arbeitsablauf
 
-1. **Lautsprecher.** Vorlage wählen (Stereo, Quadrofonie, 5.1, 7.1.4, Ring, Kuppel, Würfel, Donut) oder Lautsprecher frei setzen und ziehen. In der Seitenleiste lässt sich jeder Lautsprecher über ⋯ oder Rechtsklick umbenennen, duplizieren, als Subwoofer markieren, abschalten oder entfernen, *+ Lautsprecher hinzufügen* setzt einen weiteren auf den Kreis. Die 3D-Ansicht zeigt jeden Lautsprecher als Box, die in ihre Abstrahlrichtung zeigt. Raumklang prüft das Layout und sagt in Klartext, ob es passt und welches Verfahren es nimmt. *Laufzeit und Pegel ausgleichen* gleicht Laufzeit und Pegel an, wenn Lautsprecher unterschiedlich weit weg stehen.
-2. **Quellen.** Jede Quelle ist ein Eingang des Audio-Interfaces oder ein eingebautes Testsignal (rosa Rauschen, Sinuston, Klicks). Quellen werden in der Draufsicht gezogen oder über Azimut, Elevation und Abstand gesetzt, dazu Pegel, Breite, Hall-Send und Distanzeffekt. *Kreisbahn* bewegt eine Quelle von selbst um den Hörplatz.
-3. **Raum.** Hall mit Raumtypen (Studio, Chamber, Saal, Kirche, Plate), wählbar links in der Liste oder rechts unter *Raumtyp*. Die Nachhallzeit lässt sich getrennt für Tiefen, Mitten und Höhen direkt in der Kurve ziehen, dazu Raumgröße, Pre-Delay und die Anteile von frühen Reflexionen, Cluster und Nachhall. Der Zeitverlauf darunter zeigt, wie der Hall nach dem Direktschall aufgebaut ist.
-4. **Ausgabe.** Audiogerät, Abtastrate und Puffer wählen. Master-Pegel, Limiter und *Lautsprecher einzeln anspielen* zum Prüfen der Verkabelung. Unter *Hören über* stehen drei Wege: *Lautsprecher* gibt jedem Lautsprecher seinen Ausgang am Audio-Interface. *Kopfhörer, Anlage* rechnet die eingerichteten Lautsprecher binaural in den Kopfhörer, jeden aus seiner Richtung, etwa um einen Mix für die Anlage ohne Lautsprecher vorzubereiten. *Kopfhörer, frei* rechnet die Quellen direkt binaural um den Kopf, unabhängig vom Layout.
+Die App führt in vier Schritten von den Lautsprechern bis zur Ausgabe.
 
-Unter der Raumansicht liegt die Leiste *Szenen*: Sie speichert den ganzen Mix und ruft ihn mit Überblendzeit wieder ab, mit Pfeilen für die vorherige und nächste Szene. Jede Quelle hat in der Seitenleiste M (stumm) und S (solo), unten steht fest der Master mit Master-Pegel und Pegelanzeige.
+### 1 Lautsprecher
+
+Eine Vorlage wählen (Stereo, Quadrofonie, 5.1, 7.1.4, Ring, Kuppel, Würfel, Donut) oder Lautsprecher frei setzen und ziehen. Für jeden Lautsprecher lassen sich Name, Ausgang am Audio-Interface, Position, Ausrichtung und Pegel einstellen. In der Seitenleiste wird jeder Lautsprecher über ⋯ oder Rechtsklick umbenannt, dupliziert, als Subwoofer markiert, abgeschaltet oder entfernt, *+ Lautsprecher hinzufügen* setzt einen weiteren auf den Kreis. Die 3D-Ansicht zeigt jeden Lautsprecher als Box, die in ihre Abstrahlrichtung zeigt. Raumklang prüft das Layout und sagt in Klartext, ob es passt und welches Verfahren es nimmt. *Laufzeit und Pegel ausgleichen* gleicht Laufzeit und Pegel an, wenn Lautsprecher unterschiedlich weit weg stehen.
+
+### 2 Quellen
+
+Jede Quelle ist ein Eingang des Audio-Interfaces, eine Spur aus der DAW oder ein eingebautes Testsignal (rosa Rauschen, Sinuston, Klicks). Quellen werden in der Draufsicht gezogen oder über Azimut, Elevation und Abstand gesetzt, dazu Pegel, Breite, Hall-Send und Distanzeffekt. *Kreisbahn* bewegt eine Quelle von selbst um den Hörplatz. Jede Quelle hat in der Seitenleiste M (stumm) und S (solo).
+
+### 3 Raum
+
+Hall mit Raumtypen (Studio, Kammer, Saal, Kirche, Platte), wählbar links in der Liste oder rechts unter *Raumtyp*. Die Nachhallzeit lässt sich getrennt für Tiefen, Mitten und Höhen direkt in der Kurve ziehen, dazu Raumgröße, Pre-Delay und die Anteile von frühen Reflexionen, Cluster und Nachhall. Der Zeitverlauf darunter zeigt, wie der Hall nach dem Direktschall aufgebaut ist.
+
+### 4 Ausgabe
+
+Audiogerät, Abtastrate und Puffer, Master-Pegel, *Lautsprecher einzeln anspielen* zum Prüfen der Verkabelung und das Routing der Lautsprecher auf die Ausgänge. Vor dem Limiter liegt ein 3D-Kompressor: Er regelt alle Lautsprecher gemeinsam, damit die räumliche Abbildung erhalten bleibt.
+
+Unter *Hören über* stehen drei Wege. *Lautsprecher* gibt jedem Lautsprecher seinen Ausgang am Audio-Interface. *Kopfhörer, Anlage* rechnet die eingerichteten Lautsprecher binaural in den Kopfhörer, jeden aus seiner Richtung, etwa um einen Mix für die Anlage ohne Lautsprecher vorzubereiten. *Kopfhörer, frei* rechnet die Quellen direkt binaural um den Kopf, unabhängig vom Layout. Für beide Kopfhörer-Wege lässt sich unter *HRTF* das eingebaute Kopfmodell oder eine SOFA-Datei mit gemessenen Kopfübertragungsfunktionen wählen.
+
+Unter der Raumansicht liegt die Leiste *Szenen*: Sie speichert den ganzen Mix und ruft ihn mit Überblendzeit wieder ab, mit Pfeilen für die vorherige und nächste Szene. Unten in der Seitenleiste steht fest der Master mit Master-Pegel, Pegelanzeige und Gain Reduction.
 
 <p>
   <img src="docs/screenshots/02-quellen.png" width="49%" alt="Quellen">
@@ -52,7 +68,9 @@ Projekte werden automatisch gesichert, alle Schritte lassen sich rückgängig ma
 
 Wo die Lautsprecher wirklich hängen, lässt sich auf zwei Wegen messen. Beide enden in einer Vorschau: gestrichelt die bisherige Position, ausgefüllt die gemessene. *Übernehmen* schreibt sie ins Layout, und *Rückgängig* nimmt das wieder zurück.
 
-**Mit Mikrofon** (*Lautsprecher*, rechts unter *Einmessen*: *Mit Mikrofon einmessen*). Ein Messmikrofon steht auf Ohrhöhe. Jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. Aus der Laufzeit folgt der Abstand, aus dem Pegel die Lautstärke.
+### Mit Mikrofon
+
+Im Schritt *Lautsprecher* rechts unter *Einmessen* startet *Mit Mikrofon einmessen*. Ein Messmikrofon steht auf Ohrhöhe, jeder Lautsprecher spielt nacheinander einen kurzen Gleitton. Aus der Laufzeit folgt der Abstand, aus dem Pegel die Lautstärke. Es gibt zwei Arten:
 
 - *Schnell*: ein Messpunkt. Laufzeit und Pegel werden dort angeglichen.
 - *Mit Positionen*: 4 bis 12 Messpunkte (Standard 8), abwechselnd auf Ohrhöhe und 50 cm höher. Raumklang berechnet daraus die Position jedes Lautsprechers (Multilateration) und rechnet die Verzögerung des Audio-Interfaces von selbst heraus. Beim Donut sieht nicht jeder Punkt jeden Lautsprecher, deshalb beginnt die Messung dort mit 8 Punkten.
@@ -64,7 +82,9 @@ Raumklang zeigt, wo das Mikrofon als Nächstes hin muss. Ein fehlendes Mikrofon,
   <img src="docs/screenshots/05-einmessen-ergebnis.png" width="49%" alt="Ergebnis der Messung">
 </p>
 
-**Mit dem iPhone** (App *Raumklang Messen*, ein iPhone oder iPad mit LiDAR). Zuerst den Hörplatz antippen, dann die Richtung „vorne“, dann jeden Lautsprecher. Die App misst Position und Ausrichtung jedes Lautsprechers. Die Datei kommt per AirDrop, Mail oder Cloud auf den Rechner. In Raumklang lädt sie *iPhone-Messung laden*, oder sie wird einfach auf das Fenster gezogen.
+### Mit dem iPhone
+
+Die App *Raumklang Messen* läuft auf einem iPhone oder iPad mit LiDAR. Zuerst den Hörplatz antippen, dann die Richtung „vorne“, dann jeden Lautsprecher. Die App misst Position und Ausrichtung jedes Lautsprechers. Die Datei kommt per AirDrop, Mail oder Cloud auf den Rechner. In Raumklang lädt sie *iPhone-Messung laden*, oder sie wird einfach auf das Fenster gezogen.
 
 Eine Web-App kann das nicht: Safari auf dem iPhone bietet kein WebXR, eine Webseite kommt also weder an LiDAR noch an die Raumerfassung von ARKit. Deshalb ist *Raumklang Messen* eine kleine native App (`ios/RaumklangMessen`). Zum Installieren mit Xcode und einer kostenlosen Apple-ID auf das eigene Gerät spielen, siehe [ios/README.md](ios/README.md).
 
@@ -72,10 +92,13 @@ Am besten beide Wege zusammen: das iPhone für Position und Ausrichtung, danach 
 
 ## In der DAW
 
-Zwei Plugins (VST3, auf dem Mac zusätzlich AU für Logic Pro):
+Es gibt zwei Plugins, als VST3 und auf dem Mac zusätzlich als AU für Logic Pro.
 
-- **Raumklang Quelle** kommt auf jede Spur. Läuft die Raumklang-App, erscheint die Spur dort unter *Aus der DAW* und die App spielt sie über ihr Audio-Interface, ganz ohne Routing. Position, Breite, Pegel und Hall-Send sind in der DAW automatisierbar, die App zeigt die Spur mit und übernimmt jede Bewegung. Das Plugin zeigt den Raum von oben, von vorne oder in 3D, mit den anderen Spuren blass im Hintergrund. Ohne App gibt das Plugin einen Kanal pro Lautsprecher aus; die Spur braucht dann so viele Kanäle wie das Layout Lautsprecher.
-- **Raumklang Return** (der Rückweg) holt die Lautsprechersignale der App zurück in die DAW, zum Aufnehmen und für Bounces in Echtzeit. In Logic etwa auf einem Aux in 7.1.4 für zwölf Lautsprecher; bei mehr Lautsprechern übernehmen weitere Spuren den Rest.
+*Raumklang Quelle* kommt auf jede Spur. Läuft die Raumklang-App, erscheint die Spur dort unter *Aus der DAW*, und die App spielt sie über ihr Audio-Interface, ganz ohne Routing. Position, Breite, Pegel, Hall-Send, Stumm und Solo sind in der DAW automatisierbar, und was in der App an der Spur geändert wird, nimmt die DAW als Automation auf. Das Plugin zeigt den Raum von oben, von vorne oder in 3D, mit den anderen Spuren blass im Hintergrund. Ohne App gibt das Plugin einen Kanal pro Lautsprecher aus; die Spur braucht dann so viele Kanäle wie das Layout Lautsprecher.
+
+Die Stumm- und Solo-Tasten der DAW selbst erreichen ein Plugin nicht, weder als AU noch als VST3, und weil der Ton die Spur vor dem Kanalzug verlässt, wirken sie auf die App nicht. Deshalb hat *Raumklang Quelle* oben im Fenster eigene Tasten M und S. Sie gelten für die Spur in der App und lassen sich wie jeder andere Parameter automatisieren.
+
+*Raumklang Return* (der Rückweg) holt die Lautsprechersignale der App zurück in die DAW, zum Aufnehmen und für Bounces in Echtzeit. In Logic etwa auf einem Aux in 7.1.4 für zwölf Lautsprecher; bei mehr Lautsprechern übernehmen weitere Spuren den Rest.
 
 DAW und App müssen mit derselben Abtastrate laufen. Die Plugins sagen es, wenn nicht.
 
@@ -83,75 +106,95 @@ Das Lautsprecher-Setup teilen sich App und Plugins über eine Datei im Benutzero
 
 ## Technischer Ansatz
 
-**Verfahren.** Drei Panning-Verfahren mit automatischer Auswahl:
+### Verfahren
+
+Drei Panning-Verfahren mit automatischer Auswahl:
 
 - *VBAP* (Pulkki 1997) für Layouts, die den Hörplatz umschließen. 2D oder 3D wird selbst erkannt. Für unvollständige Kuppeln werden virtuelle Lautsprecher ergänzt, deren Anteil auf die Nachbarn verteilt wird. Breite über MDAP.
-- *DBAP* (Lossius 2009) für Layouts ohne zentralen Hörplatz, erweitert um die Ausrichtung der Lautsprecher. Ein Lautsprecher, der von der Quelle wegzeigt, trägt weniger bei. Damit funktioniert der **Donut**: Innenring nach außen, Außenring nach innen, das Publikum dazwischen.
+- *DBAP* (Lossius 2009) für Layouts ohne zentralen Hörplatz, erweitert um die Ausrichtung der Lautsprecher. Ein Lautsprecher, der von der Quelle wegzeigt, trägt weniger bei. Damit funktioniert der Donut: Innenring nach außen, Außenring nach innen, das Publikum dazwischen.
 - *Ambisonics* bis 3. Ordnung (ACN/SN3D) mit AllRAD-Decoder und max-rE-Gewichtung.
 
-**Hall.** Frühe Reflexionen (8 Abgriffe) und ein dichter Reflexions-Cluster (16 Abgriffe), danach ein Feedback Delay Network mit 16 Leitungen, Hadamard-Rückkopplung, Eingangsdiffusion und frequenzabhängiger Dämpfung (getrennte Nachhallzeit unterhalb von 250 Hz). Jeder Lautsprecher bekommt eine eigene, dekorrelierte Mischung.
+Wird ein Lautsprecher während der Wiedergabe verschoben, gleiten Pegel, Laufzeit und Panning auf die neuen Werte, ohne Blende und ohne die Verzögerungsleitungen zu leeren. Nur wenn sich der Aufbau selbst ändert (Zahl der Lautsprecher, Verfahren), blendet die Engine kurz um.
 
-**Kopfhörer.** Strukturmodell nach Brown und Duda: interauraler Laufzeitunterschied, Kopfschatten und Ohrmuschel-Echos, die von Richtung und Höhe abhängen, dazu eine sanfte Höhenabsenkung von hinten. Ohne gemessene HRTF-Daten. Im Modus *Kopfhörer, frei* laufen die Quellen über 19 virtuelle Richtungen um den Kopf.
+### Hall
 
-**Abstrahlverhalten.** Jede Quelle hat eine Richtwirkung und eine Ausrichtung. Zeigt sie vom Hörplatz weg, wird der Direktschall leiser (bis 12 dB) und dumpfer, der Hall-Send bleibt gleich.
+Frühe Reflexionen (8 Abgriffe) und ein dichter Reflexions-Cluster (16 Abgriffe), danach ein Feedback Delay Network mit 16 Leitungen, Hadamard-Rückkopplung, Eingangsdiffusion und frequenzabhängiger Dämpfung (getrennte Nachhallzeit unterhalb von 250 Hz). Jede Rückkopplungsschleife hat einen eigenen Allpass, und die Leitungen werden langsam moduliert, damit die Fahne früh dicht ist und auch bei leisen Signalanteilen nicht flattert. Jeder Lautsprecher bekommt eine eigene, dekorrelierte Mischung.
 
-**Doppler-Effekt.** Zuschaltbar je Quelle. Die Quelle wird um die Schalllaufzeit ihres Abstands verzögert, sodass sich bei Bewegung die Tonhöhe ändert, höchstens um 10 %.
+### Kopfhörer
 
-**Visualisierung.** Zwischen jeder klingenden Quelle und ihren Lautsprechern leuchten kleine Schallteilchen. Ihre Dichte zeigt, wie viel Energie jeder Lautsprecher von der Quelle bekommt, abhängig von Verstärkung und Pegel.
+Zwei Wege stehen zur Wahl. Das eingebaute Kopfmodell ist das Strukturmodell nach Brown und Duda: interauraler Laufzeitunterschied, Kopfschatten und Ohrmuschel-Echos, die von Richtung und Höhe abhängen, dazu eine sanfte Höhenabsenkung von hinten. Es braucht keine Messdaten.
 
-**Stabilität.** Der Audio-Thread reserviert keinen Speicher, sperrt nichts und wartet auf nichts. Layoutwechsel werden außerhalb des Audio-Threads vorbereitet und mit kurzer Blende übernommen. Alle Eingaben (auch NaN und Unendlich aus fehlerhaften Plugins) werden abgefangen, ein Limiter begrenzt jeden Ausgang auf −0,1 dBFS. Projektdateien werden atomar geschrieben und beim Laden vollständig geprüft.
+Mit einer SOFA-Datei (AES69, Konvention SimpleFreeFieldHRIR) rechnet Raumklang mit gemessenen Kopfübertragungsfunktionen, etwa eines Kunstkopfs oder des eigenen Kopfes. Jeder Lautsprecher, real oder virtuell, wird mit der Impulsantwort der nächstgelegenen gemessenen Richtung für beide Ohren gefaltet. Die Faltung arbeitet blockweise im Frequenzbereich (gleichmäßig partitioniert, Overlap-Save) und verzögert den Kopfhörer um 64 Samples. Andere Abtastraten der Datei werden beim Laden umgerechnet. Die Datei liest [libmysofa](https://github.com/hoene/libmysofa).
 
-**Tests.** Bei jedem Pull Request und jedem Stand auf `main` laufen in der CI:
+Im Modus *Kopfhörer, frei* laufen die Quellen über 19 virtuelle Richtungen um den Kopf.
 
-- Unit-Tests für Geometrie, alle Panning-Verfahren, Hall, Kopfhörer-Wiedergabe und Engine
+### Abstrahlverhalten und Doppler-Effekt
+
+Jede Quelle hat eine Richtwirkung und eine Ausrichtung. Zeigt sie vom Hörplatz weg, wird der Direktschall leiser (bis 12 dB) und dumpfer, der Hall-Send bleibt gleich. Der Doppler-Effekt ist je Quelle zuschaltbar: Die Quelle wird um die Schalllaufzeit ihres Abstands verzögert, sodass sich bei Bewegung die Tonhöhe ändert, höchstens um 10 %.
+
+### Ausgangsstufe
+
+Vor dem Limiter liegt ein 3D-Kompressor. Er misst den lautesten Ausgang und senkt alle Lautsprecher um denselben Betrag ab, so bleibt die räumliche Abbildung stehen. Danach begrenzt ein Limiter jeden Ausgang auf die eingestellte Ceiling.
+
+### Visualisierung
+
+Zwischen jeder klingenden Quelle und ihren Lautsprechern leuchten kleine Schallteilchen. Ihre Dichte zeigt, wie viel Energie jeder Lautsprecher von der Quelle bekommt, abhängig von Verstärkung und Pegel. Der Hall erscheint in eigener Farbe als weicher Schleier, der von den Quellen zu den Lautsprechern zieht.
+
+### Stabilität
+
+Der Audio-Thread reserviert keinen Speicher, sperrt nichts und wartet auf nichts. Layoutwechsel werden außerhalb des Audio-Threads vorbereitet und ohne Unterbrechung übernommen. Alle Eingaben (auch NaN und Unendlich aus fehlerhaften Plugins) werden abgefangen. Projektdateien werden atomar geschrieben und beim Laden vollständig geprüft. SOFA-Dateien werden außerhalb des Audio-Threads geladen und geprüft; eine unbrauchbare Datei ergibt eine Meldung, bis dahin spielt das Kopfmodell.
+
+### Tests
+
+Bei jedem Pull Request und jedem Stand auf `main` laufen in der CI:
+
+- Unit-Tests für Geometrie, alle Panning-Verfahren, Hall, Kopfhörer-Wiedergabe (Kopfmodell und Faltung mit gemessenen HRTFs) und Engine
 - ein Test, der beweist, dass der Audio-Thread nie Speicher reserviert oder freigibt
 - Stresstests mit gleichzeitigem Audio- und Bedien-Thread, zufälligen Layouts, Blockgrößen, Abtastraten und unsinnigen Werten
 - dieselben Tests unter AddressSanitizer, UndefinedBehaviorSanitizer und ThreadSanitizer
 - 5 Minuten Fuzzing der Engine mit libFuzzer
-- Tests der Projektdatei mit beschädigten und manipulierten Dateien
+- Tests der Projektdatei und von SOFA-Dateien mit beschädigten und manipulierten Daten
 - ein Host-Stresstest beider Plugins (Kanalzahlen, Automation aus einem zweiten Thread, beschädigte Zustände, Editoren)
 - [pluginval](https://github.com/Tracktion/pluginval) mit Strenge 10 auf macOS, Windows und Linux
+
+Dazu kommen Hörtests an echten Aufbauten, zuletzt mit zwölf Lautsprechern im Ring.
 
 ## Funktionsumfang und Grenzen
 
 | | |
 |---|---|
-| Lautsprecher | bis 128 in der App, bis 64 je Plugin-Spur, frei platzierbar, Ausrichtung, Pegel, Verzögerung, Subwoofer (Tiefpass 100 Hz) |
+| Lautsprecher | bis 128 in der App, bis 64 je Plugin-Spur, frei platzierbar, Ausrichtung, Pegel, Verzögerung, Ausgang, Subwoofer (Tiefpass 100 Hz) |
 | Vorlagen | Stereo, Quadrofonie, 5.1, 7.1.4, Ring (2 bis 64), Kuppel, Würfel, Donut (Innen-/Außenring frei) |
-| Quellen | bis 64 in der App, Eingänge des Audio-Interfaces oder Testsignale, mono oder stereo im Plugin |
+| Quellen | bis 64 in der App, Eingänge des Audio-Interfaces, DAW-Spuren oder Testsignale, mono oder stereo im Plugin |
 | Verfahren | VBAP (2D/3D), DBAP mit Richtwirkung, Ambisonics 3. Ordnung |
 | Hall | ein gemeinsamer Raum, FDN, Vorlagen und Regler |
-| Ausgabe | direkt auf das Audiogerät (Core Audio, WASAPI, ASIO wenn mit SDK gebaut), Kopfhörer und Binaural, Lautsprechertest, Limiter |
+| Kopfhörer | Strukturmodell oder gemessene HRTFs aus SOFA-Dateien |
+| Ausgabe | direkt auf das Audiogerät (Core Audio, WASAPI, ASIO wenn mit SDK gebaut), Routing, 3D-Kompressor, Limiter, Lautsprechertest |
 | Sprachen | Deutsch (Standard), Englisch |
 | Systeme | macOS 11 oder neuer (Apple Silicon und Intel), Windows 10/11 64 Bit, Linux |
 
 Bekannte Grenzen:
 
-- Noch nicht an echten Mehrkanal-Aufbauten erprobt, nur in Tests und Simulation.
 - Ohne laufende App rechnen die Plugins in der DAW. DAWs ohne Mehrkanal-Spuren (z. B. Ableton Live, Logic außerhalb von Surround) können die Lautsprecherkanäle dann nicht weiterreichen. Mit laufender App spielt die App die Spuren direkt, das geht in jeder DAW.
-- Bei Layoutwechseln während der Wiedergabe gibt es eine kurze Blende (20 ms). Beim Ziehen von Lautsprechern während der Wiedergabe ist das hörbar.
-- Kopfhörer ohne individuelle HRTF: Vorne, hinten und Höhe sind über ein Modell angedeutet, nicht gemessen.
+- Stumm und Solo der DAW wirken nicht auf Spuren, die die App spielt, dafür hat das Plugin eigene Tasten (siehe [In der DAW](#in-der-daw)).
+- Die gemessenen HRTFs werden ohne Interpolation verwendet: Jeder Lautsprecher bekommt die nächstgelegene gemessene Richtung. Head-Tracking gibt es nicht.
 - Keine OSC-Fernsteuerung, keine Ambisonics-Eingänge, keine Entzerrung (EQ) beim Einmessen (siehe Roadmap).
 - Das Einmessen mit Mikrofon misst Position, Laufzeit und Pegel, nicht die Ausrichtung. Die Genauigkeit hängt von Zahl und Abstand der Messpunkte ab. In der Simulation eines Rings mit 3 m Radius liegen 8 Messpunkte im Mittel 4 cm daneben, höchstens etwa 15 cm, mit 5 Punkten etwa doppelt so viel. Ein gemessener Abstand (Zollstock, Laser) macht es genauer. Raumklang zeigt die Genauigkeit je Lautsprecher an. Die iPhone-App ist noch nicht auf einem echten Gerät erprobt.
-- Mac-App und Plugins sind nicht von Apple signiert. Beim ersten Start *Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen*, oder im Terminal `xattr -dr com.apple.quarantine "/Applications/Raumklang.app"`. Unter Windows bei SmartScreen *Weitere Informationen → Trotzdem ausführen*.
+- Mac-App und Plugins sind nicht von Apple beglaubigt. Beim ersten Start *Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen*, oder im Terminal `xattr -dr com.apple.quarantine "/Applications/Raumklang.app"`. Unter Windows bei SmartScreen *Weitere Informationen → Trotzdem ausführen*.
 
 ## Installation
 
-- **macOS (ab 11, Apple Silicon und Intel):** `Raumklang-<Version>-mac.dmg` öffnen und *Raumklang.app* in *Programme* ziehen. Beim ersten Start installiert die App die Plugins selbst (AU für Logic und GarageBand, VST3, in den Benutzerordner), neu installieren geht über *Hilfe → Plugins installieren*. Die App ist noch nicht von Apple beglaubigt: Beim ersten Start *Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen* (bis macOS 14: Rechtsklick → Öffnen).
-- **Windows (ab 10):** `Raumklang-<Version>-Windows.zip` entpacken, *Raumklang.exe* starten und *Plugins installieren.bat* doppelklicken (fragt nach Administratorrechten, die VST3-Plugins kommen nach `C:\Program Files\Common Files\VST3`). Meldet SmartScreen „Der Computer wurde durch Windows geschützt“: *Weitere Informationen → Trotzdem ausführen*.
+Auf macOS (ab 11, Apple Silicon und Intel) `Raumklang-<Version>-mac.dmg` öffnen und *Raumklang.app* in *Programme* ziehen. Beim ersten Start installiert die App die Plugins selbst (AU für Logic und GarageBand, VST3, in den Benutzerordner), neu installieren geht über *Hilfe → Plugins installieren*. Die App ist noch nicht von Apple beglaubigt: Beim ersten Start *Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen* (bis macOS 14: Rechtsklick → Öffnen).
+
+Auf Windows (ab 10) `Raumklang-<Version>-Windows.zip` entpacken, *Raumklang.exe* starten und *Plugins installieren.bat* doppelklicken (fragt nach Administratorrechten, die VST3-Plugins kommen nach `C:\Program Files\Common Files\VST3`). Meldet SmartScreen „Der Computer wurde durch Windows geschützt“: *Weitere Informationen → Trotzdem ausführen*.
 
 DAW und App müssen mit derselben Abtastrate laufen. Jeder Stand auf `main` ersetzt den Download durch die neueste Version. Die App sucht einmal am Tag selbst nach einer neuen Version und aktualisiert sich samt Plugins nach Rückfrage (*Hilfe → Nach Updates suchen*). Download und Update funktionieren nur, solange das Repository öffentlich ist.
 
 ## Mit KI entwickelt
 
-Raumklang ist mit künstlicher Intelligenz entstanden. Programmcode, Tests und Dokumentation hat [Claude Code](https://claude.com/claude-code) geschrieben, ein KI-Programmierwerkzeug von Anthropic. Von mir kommen die Idee, die Anforderungen aus der Lehre und die Gestaltung der Bedienung: Ich habe beschrieben, was das Werkzeug können soll, Zwischenstände ausprobiert und Änderungen angefordert.
+Raumklang ist mit künstlicher Intelligenz entstanden. Programmcode, Tests und Dokumentation hat [Claude Code](https://claude.com/claude-code) geschrieben, ein KI-Programmierwerkzeug von Anthropic. Von mir kommen die Idee, die Anforderungen aus der Lehre, die Vorgaben zur technischen Umsetzung und die Gestaltung der Bedienung. Ich habe beschrieben, was das Werkzeug können soll und wie es umgesetzt werden soll, Zwischenstände ausprobiert, Hörtests an echten Lautsprecheraufbauten gemacht und Änderungen angefordert.
 
-Was das bedeutet:
-
-- **Geprüft durch Tests, nicht durch Praxis.** Jede Änderung läuft durch dieselben automatischen Tests (siehe [Technischer Ansatz](#technischer-ansatz)), auf macOS, Windows und Linux. Die Tests prüfen Rechenregeln und Stabilität, ersetzen aber keinen Einsatz an echten Lautsprechern.
-- **Verfahren aus der Fachliteratur.** Panning, Hall und Kopfhörer-Wiedergabe folgen veröffentlichten Verfahren (siehe [Literatur](#literatur)). Die Umsetzung hat bisher keine Fachperson Zeile für Zeile geprüft.
-- **Nachvollziehbar.** Änderungen der KI sind in der Versionsgeschichte als Co-Autor gekennzeichnet.
-- **Rückmeldungen willkommen.** Wer einen Fehler findet oder eine Formel anders kennt, schreibt am besten ein [Issue](https://github.com/BenjaminJMueller/immersive-audio-suite/issues).
+Jede Änderung läuft durch dieselben automatischen Tests (siehe [Technischer Ansatz](#technischer-ansatz)), auf macOS, Windows und Linux, und neue Stände werden an echten Aufbauten gehört, zuletzt mit zwölf Lautsprechern im Ring. Panning, Hall und Kopfhörer-Wiedergabe folgen veröffentlichten Verfahren (siehe [Literatur](#literatur)). Änderungen der KI sind in der Versionsgeschichte als Co-Autor gekennzeichnet. Wer einen Fehler findet oder eine Formel anders kennt, schreibt am besten ein [Issue](https://github.com/BenjaminJMueller/immersive-audio-suite/issues).
 
 ## Literatur
 
@@ -162,10 +205,11 @@ Was das bedeutet:
 - J. Daniel: *Représentation de champs acoustiques, application à la transmission et à la reproduction de scènes sonores complexes dans un contexte multimédia*. Dissertation, Université Paris 6, 2001 (max-rE)
 - J.-M. Jot, A. Chaigne: *Digital Delay Networks for Designing Artificial Reverberators*. 90th AES Convention, 1991 (FDN)
 - C. P. Brown, R. O. Duda: *A Structural Model for Binaural Sound Synthesis*. IEEE Trans. Speech and Audio Processing 6(5), 1998
+- AES69-2022: *AES standard for file exchange, Spatial acoustic data file format* (SOFA)
 
 ## Selbst bauen
 
-Voraussetzungen: CMake 3.22 oder neuer, ein C++20-Compiler (Xcode 15, Visual Studio 2022, GCC 12 oder Clang 15). JUCE wird beim Konfigurieren automatisch geladen.
+Voraussetzungen: CMake 3.22 oder neuer, ein C++20-Compiler (Xcode 15, Visual Studio 2022, GCC 12 oder Clang 15). JUCE und libmysofa werden beim Konfigurieren automatisch geladen.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

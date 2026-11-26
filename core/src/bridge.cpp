@@ -83,7 +83,9 @@ struct ReturnShared {
 struct MixSlot {
     std::atomic<uint64_t> owner;
     std::atomic<uint32_t> mask;
-    std::atomic<uint32_t> reserved;
+    // Plugin -> app: mute (bit 0) and solo (bit 1) of the track, plus bits 8..31 of the
+    // writer's owner token, so flags left behind by an earlier owner of the slot never count.
+    std::atomic<uint32_t> trackFlags;
     std::atomic<float> vals[5]; // gain dB, spread 0..1, reverb send dB, stereo width deg, distance amount
 };
 
@@ -136,6 +138,8 @@ TrackParams TrackParams::sanitized() const noexcept {
     r.reverbSendDb = safeClamp(reverbSendDb, -80.0f, 6.0f, d.reverbSendDb);
     r.stereoWidthDeg = safeClamp(stereoWidthDeg, 0.0f, 180.0f, d.stereoWidthDeg);
     r.distanceAmount = safeClamp(distanceAmount, 0.0f, 2.0f, d.distanceAmount);
+    r.mute = mute;
+    r.solo = solo;
     return r;
 }
 
@@ -160,6 +164,8 @@ void applyTrack(Engine& engine, int first, int inputBase, int channels, const Tr
         s.spread = p.spread;
         s.reverbSendDb = p.reverbSendDb;
         s.distanceAmount = p.distanceAmount;
+        s.mute = p.mute;
+        s.solo = p.solo;
         const float a = p.azimuthDeg + (ch == 0 ? half : -half);
         const Vec3 pos = toCartesian({wrapDegrees(a), p.elevationDeg, p.distance});
         if (pos.x != s.x.load() || pos.y != s.y.load() || pos.z != s.z.load()) s.setPosition(pos);
@@ -337,6 +343,23 @@ TrackParams loadParams(const Slot& s) noexcept {
     return p.sanitized();
 }
 
+constexpr uint32_t kMixMuteOn = 128u, kMixSoloOn = 256u;
+constexpr uint32_t kFlagMute = 1u, kFlagSolo = 2u, kFlagTokenMask = 0xffffff00u;
+
+uint32_t packFlags(uint64_t token, bool mute, bool solo) noexcept {
+    return ((uint32_t)token & kFlagTokenMask) | (mute ? kFlagMute : 0u) | (solo ? kFlagSolo : 0u);
+}
+
+/// Mute and solo of the track in a slot, if the flags were written by its current owner.
+void loadFlags(const ControlShared* control, int slot, uint64_t owner, TrackParams& p) noexcept {
+    p.mute = p.solo = false;
+    if (control == nullptr || owner == 0) return;
+    const uint32_t f = control->slots[slot].trackFlags.load(std::memory_order_relaxed);
+    if ((f & kFlagTokenMask) != ((uint32_t)owner & kFlagTokenMask)) return;
+    p.mute = (f & kFlagMute) != 0;
+    p.solo = (f & kFlagSolo) != 0;
+}
+
 } // namespace
 
 // ---- sender -------------------------------------------------------------------
@@ -423,6 +446,8 @@ void Sender::write(const float* const* channels, int numChannels, int numFrames,
     const float vals[kNumParams] = {p.azimuthDeg, p.elevationDeg, p.distance, p.spread,
                                     p.gainDb, p.reverbSendDb, p.stereoWidthDeg, p.distanceAmount};
     for (int k = 0; k < kNumParams; ++k) s.params[k].store(vals[k], std::memory_order_relaxed);
+    if (control_ != nullptr)
+        control_->slots[i].trackFlags.store(packFlags(token_, p.mute, p.solo), std::memory_order_relaxed);
 
     uint64_t w = s.writePos.load(std::memory_order_relaxed);
     int done = 0;
@@ -588,7 +613,8 @@ bool Sender::takeMix(MixChange& out) noexcept {
     if (control_ == nullptr || i < 0) return false;
     MixSlot& m = control_->slots[i];
     if (m.mask.load(std::memory_order_relaxed) == 0) return false;
-    const uint32_t mask = m.mask.exchange(0, std::memory_order_acq_rel) & MixChange::All;
+    const uint32_t raw = m.mask.exchange(0, std::memory_order_acq_rel);
+    const uint32_t mask = raw & MixChange::All;
     if (mask == 0 || m.owner.load(std::memory_order_relaxed) != token_) return false;
     TrackParams p;
     p.gainDb = m.vals[0].load(std::memory_order_relaxed);
@@ -603,6 +629,8 @@ bool Sender::takeMix(MixChange& out) noexcept {
     out.reverbSendDb = p.reverbSendDb;
     out.stereoWidthDeg = p.stereoWidthDeg;
     out.distanceAmount = p.distanceAmount;
+    out.mute = (raw & kMixMuteOn) != 0;
+    out.solo = (raw & kMixSoloOn) != 0;
     return true;
 }
 
@@ -621,7 +649,15 @@ bool Receiver::requestMix(int slot, const MixChange& c) noexcept {
     if (mask & MixChange::ReverbSend) m.vals[2].store(c.reverbSendDb, std::memory_order_relaxed);
     if (mask & MixChange::StereoWidth) m.vals[3].store(c.stereoWidthDeg, std::memory_order_relaxed);
     if (mask & MixChange::DistanceAmount) m.vals[4].store(c.distanceAmount, std::memory_order_relaxed);
-    m.mask.fetch_or(mask, std::memory_order_release);
+    // Mute and solo carry their new state in the mask itself (the value slots are all taken
+    // and the block must keep its size for older peers).
+    uint32_t cur = m.mask.load(std::memory_order_relaxed);
+    uint32_t next;
+    do {
+        next = cur | mask;
+        if (mask & MixChange::Mute) next = c.mute ? (next | kMixMuteOn) : (next & ~kMixMuteOn);
+        if (mask & MixChange::Solo) next = c.solo ? (next | kMixSoloOn) : (next & ~kMixSoloOn);
+    } while (!m.mask.compare_exchange_weak(cur, next, std::memory_order_release, std::memory_order_relaxed));
     return true;
 }
 
@@ -638,6 +674,7 @@ std::vector<TrackInfo> Receiver::scan() const {
         t.name = readName(s);
         t.channels = std::clamp((int)s.channels.load(), 1, kMaxChannels);
         t.params = loadParams(s);
+        loadFlags(control_, i, s.owner.load(), t.params);
         t.sending = now - s.lastWriteMs.load() < 500;
         t.sampleRate = s.sampleRate.load();
         t.sampleRateMismatch = t.sending && appRate != 0 && s.sampleRate.load() != appRate;
@@ -677,6 +714,7 @@ int Receiver::read(int slot, float* const* out, int numFrames, TrackParams& para
         return 0;
     }
     params = loadParams(s);
+    loadFlags(control_, slot, owner, params);
     const int channels = std::clamp((int)s.channels.load(std::memory_order_relaxed), 1, kMaxChannels);
     const uint64_t w = s.writePos.load(std::memory_order_acquire);
     const int block = std::clamp((int)s.blockSize.load(std::memory_order_relaxed), 1, kRingFrames / 4);

@@ -86,6 +86,10 @@ struct Scene {
     /// With headphones: true renders the sources binaurally around the head, independent of
     /// the speaker setup; false lets you listen to the speaker setup itself.
     bool binaural = false;
+    /// With headphones: measured head responses from a SOFA file (full path) instead of the
+    /// built-in head model. The app loads the file; the scene only remembers which one.
+    bool hrtfMeasured = false;
+    juce::String hrtfFile;
     std::vector<SourceInfo> sources;
     std::vector<Snapshot> snapshots;
 

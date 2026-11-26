@@ -106,6 +106,8 @@ private:
     std::atomic<float>* width_ = nullptr;
     std::atomic<float>* distAmt_ = nullptr;
     std::atomic<float>* route_ = nullptr;
+    std::atomic<float>* mute_ = nullptr;
+    std::atomic<float>* solo_ = nullptr;
 
     // Plugin -> app bridge (no routing software needed).
     rk::bridge::Sender sender_;

@@ -73,7 +73,7 @@ std::unique_ptr<Engine::Runtime> Engine::buildRuntime(const EngineConfig& cfg) c
     rt->refRadius = radiusCount > 0 ? std::max(0.5f, radiusSum / static_cast<float>(radiusCount)) : 2.0f;
     rt->maxRadius = std::max(rt->maxRadius, 0.5f);
     rt->headphones = cfg.outputMode == OutputMode::Headphones;
-    if (rt->headphones) rt->fold.prepare(cfg.layout, sampleRate_);
+    if (rt->headphones) rt->fold.prepare(cfg.layout, sampleRate_, cfg.hrirs.get());
     // FNV-1a over what makes a switch audible. Headphones always fade (the binaural fold
     // depends on every speaker position), as does a change of the panner kind.
     uint64_t h = 1469598103934665603ull;

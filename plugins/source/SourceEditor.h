@@ -37,6 +37,20 @@ private:
     rkui::FormPage page_;
     juce::Label name_;
     rkui::IconButton help_{rkui::Icon::Help, {}};
+    /// M and S in the top bar, drawn like in the app's sidebar. They switch the plugin's
+    /// own mute and solo parameters (the DAW's buttons are not visible to plugins).
+    class ToggleChip : public juce::Component, public juce::SettableTooltipClient {
+    public:
+        ToggleChip(juce::String text, bool solo) : text_(std::move(text)), solo_(solo) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
+        void setOn(bool on) { if (on != on_) { on_ = on; repaint(); } }
+        std::function<void()> onClick;
+        void paint(juce::Graphics& g) override;
+        void mouseUp(const juce::MouseEvent& e) override { if (contains(e.getPosition()) && onClick) onClick(); }
+    private:
+        juce::String text_;
+        bool solo_ = false, on_ = false;
+    };
+    ToggleChip mute_{"M", false}, solo_{"S", true};
     rkui::ChoiceRow* routeRow_ = nullptr; // owned by page_, only while "Erweitert" is open
     bool advancedOpen_ = false;
     // Declared after page_ so the bindings go first (they point at sliders in the page).
