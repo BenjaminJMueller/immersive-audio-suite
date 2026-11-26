@@ -539,3 +539,68 @@ TEST_CASE("compressor: engine turns all speakers down together, before the limit
     for (int c = 0; c < 4; ++c)
         if (before[(size_t)c] > 1.0e-3f) CHECK(std::fabs(r.out[(size_t)c][4000]) / before[(size_t)c] == doctest::Approx(g).epsilon(0.01));
 }
+
+TEST_CASE("engine: dragging a speaker while playing neither fades out nor clicks") {
+    Rig r(1, 8, 256);
+    auto layout = presets::ring(8, 2.0f);
+    r.setLayout(layout, PannerKind::VBAP);
+    r.noReverb();
+    auto& s = r.engine.source(0);
+    s.active = true;
+    s.setPosition(toCartesian({10.0f, 0, 2.0f}));
+    long long ph = 0;
+    r.resize(256);
+    for (int i = 0; i < 30; ++i) {
+        fillSine(r.in[0], 220.0f, 0.3f, 48000.0, ph);
+        r.run(256);
+        r.engine.collectGarbage();
+    }
+    // Sum of all speakers: the source stays audible the whole time.
+    auto total = [&r] {
+        double e = 0;
+        for (int c = 0; c < 8; ++c)
+            for (int i = 0; i < 256; ++i) e += (double)r.out[(size_t)c][(size_t)i] * r.out[(size_t)c][(size_t)i];
+        return std::sqrt(e / 256.0);
+    };
+    const double steady = total();
+    REQUIRE(steady > 0.05);
+    double lowest = 1.0e9, maxStep = 0.0;
+    float last[8] = {};
+    for (int c = 0; c < 8; ++c) last[c] = r.out[(size_t)c][255];
+    for (int block = 0; block < 120; ++block) {
+        // Speaker 1 moves a little every block, as while dragging it in the app.
+        auto pol = toPolar(layout.speakers[0].position);
+        pol.azimuthDeg += 0.5f;
+        layout.speakers[0].position = toCartesian(pol);
+        rk::EngineConfig c;
+        c.layout = layout;
+        c.panner = PannerKind::VBAP;
+        r.engine.setConfig(c);
+        fillSine(r.in[0], 220.0f, 0.3f, 48000.0, ph);
+        r.run(256);
+        r.engine.collectGarbage();
+        lowest = std::min(lowest, total());
+        for (int ch = 0; ch < 8; ++ch) {
+            maxStep = std::max(maxStep, (double)std::fabs(r.out[(size_t)ch][0] - last[ch]));
+            for (int i = 1; i < 256; ++i)
+                maxStep = std::max(maxStep, (double)std::fabs(r.out[(size_t)ch][(size_t)i] - r.out[(size_t)ch][(size_t)i - 1]));
+            last[ch] = r.out[(size_t)ch][255];
+        }
+    }
+    CHECK(lowest > 0.7 * steady);
+    // A 220 Hz sine at 0.3 changes by at most about 0.009 per sample; a click would jump far more.
+    CHECK(maxStep < 0.02);
+
+    // A structural change (another speaker count) still fades cleanly.
+    layout.speakers.pop_back();
+    rk::EngineConfig c;
+    c.layout = layout;
+    c.panner = PannerKind::VBAP;
+    r.engine.setConfig(c);
+    for (int i = 0; i < 10; ++i) {
+        fillSine(r.in[0], 220.0f, 0.3f, 48000.0, ph);
+        r.run(256);
+        r.engine.collectGarbage();
+    }
+    CHECK(r.engine.numOutputChannels() == 7);
+}

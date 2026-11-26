@@ -393,16 +393,18 @@ void StageView::paint(juce::Graphics& g) {
             // Where the energy lands: a small cloud around the speaker.
             particles += drawSoundCloud(particles_, b, col, energy, 12.0f, 18.0f, (uint32_t)(s * 131 + m + 5000), now);
         }
-        // Reverb: the source also flows, wider and in the reverb colour, to the speakers that
-        // do not play it directly. There it is heard only as reverb.
+        // Reverb: the source also drifts, as a haze in the reverb colour, out to the speakers,
+        // which all play the reverb.
         const float flow = reverbFlowEnergy(src, lvl, scene_.reverbWetDb);
-        if (flow > 0.0f)
+        if (flow > 0.0f) {
+            reverbTargets_.clear();
             for (int m = 0; m < nSpk; ++m) {
                 const auto& sp = scene_.layout.speakers[(size_t)m];
-                if (!sp.enabled || sp.isSubwoofer || gains[(size_t)m] >= 0.04f) continue;
-                particles += drawSoundParticles(particles_, a, toScreen(sp.position), reverbColour(), flow,
-                                                (uint32_t)(s * 131 + m + 70001), now, 10.0f, 0.8f);
+                if (!sp.enabled || sp.isSubwoofer) continue; // reverb plays on every main speaker; a fixed set keeps the haze calm while moving
+                reverbTargets_.push_back(toScreen(sp.position));
             }
+            particles += drawReverbFlow(particles_, a, reverbTargets_, reverbColour(), flow, (uint32_t)(s * 131 + 70001), now, 0.85f);
+        }
     }
     // Reverb: the engine plays it on every main speaker (each a different, decorrelated
     // mix), so a soft cloud in the reverb colour around each of them, fading with the tail.

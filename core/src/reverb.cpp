@@ -12,6 +12,16 @@ namespace {
 constexpr float kLineMs[FdnReverb::kLines] = {29.7f, 37.1f, 41.1f, 43.7f, 53.1f, 59.3f, 61.7f, 67.1f,
                                               71.9f, 79.3f, 83.9f, 89.7f, 97.1f, 101.3f, 107.9f, 113.7f};
 constexpr float kDiffuserMs[4] = {4.77f, 3.59f, 12.73f, 9.30f};
+// Allpass in each feedback loop (not scaled with the size), mutually prime-ish.
+constexpr float kLineDiffMs[FdnReverb::kLines] = {3.13f, 4.07f, 5.11f, 5.93f, 6.71f, 7.37f, 8.17f, 8.93f,
+                                                  9.71f, 10.37f, 11.13f, 11.87f, 12.61f, 13.39f, 14.17f, 14.93f};
+constexpr float kLineDiffGain = 0.62f;
+constexpr float kModDepthMs = 0.3f;
+float meanLineDiffMs() {
+    float m = 0.0f;
+    for (float ms : kLineDiffMs) m += ms;
+    return m / static_cast<float>(FdnReverb::kLines);
+}
 constexpr float kMaxSize = 2.0f;
 constexpr float kMaxPreDelayMs = 250.0f;
 
@@ -74,7 +84,8 @@ float rt60At(const ReverbParams& raw, float hz, double sr) noexcept {
     double meanMs = 0;
     for (float ms : kLineMs) meanMs += ms;
     meanMs /= FdnReverb::kLines;
-    const double len = meanMs * p.size * 0.001 * sr;
+    // The allpass in each loop adds its delay to every round trip.
+    const double len = (meanMs * p.size + meanLineDiffMs()) * 0.001 * sr;
     const double gMid = std::pow(10.0, -3.0 * len / (p.decaySec * sr));
     const double gLow = std::pow(10.0, -3.0 * len / (p.decaySec * p.lowRatio * sr));
     const double loop = gMid * onePoleMag(onePoleCoef(p.dampingHz, sr), w) *
@@ -109,6 +120,17 @@ void FdnReverb::prepare(double sampleRate) {
     const auto samples = [this](float ms) { return static_cast<int>(std::ceil(ms * 0.001 * sampleRate_)) + 2; };
     pre_.buf.assign(static_cast<size_t>(samples(kMaxPreDelayMs)), 0.0f);
     for (int i = 0; i < 4; ++i) diffusers_[static_cast<size_t>(i)].buf.assign(static_cast<size_t>(samples(kDiffuserMs[i])), 0.0f);
+    for (int j = 0; j < kLines; ++j) {
+        auto& ap = lineDiffusers_[static_cast<size_t>(j)];
+        ap.buf.assign(static_cast<size_t>(std::max(1, static_cast<int>(std::lround(kLineDiffMs[j] * 0.001 * sampleRate_)))), 0.0f);
+        ap.g = kLineDiffGain;
+        // 0.3 to 1.1 Hz, a different rate and start phase per line.
+        const double hz = 0.3 + 0.8 * j / (kLines - 1.0);
+        const double w = kTwoPi * hz / sampleRate_;
+        modCos_[static_cast<size_t>(j)] = static_cast<float>(std::cos(w));
+        modSin_[static_cast<size_t>(j)] = static_cast<float>(std::sin(w));
+    }
+    modDepth_ = static_cast<float>(kModDepthMs * 0.001 * sampleRate_);
     for (int j = 0; j < kLines; ++j) lines_[static_cast<size_t>(j)].buf.assign(static_cast<size_t>(samples(kLineMs[j] * kMaxSize)), 0.0f);
     early_.buf.assign(static_cast<size_t>(samples(kEarlyMs[kEarlyTaps - 1] * kMaxSize)), 0.0f);
     cluster_.buf.assign(static_cast<size_t>(samples(kClusterMs[kClusterTaps - 1] * kMaxSize)), 0.0f);
@@ -123,6 +145,12 @@ void FdnReverb::reset() noexcept {
     clear(pre_.buf);
     pre_.pos = 0;
     for (auto& d : diffusers_) { clear(d.buf); d.pos = 0; }
+    for (auto& d : lineDiffusers_) { clear(d.buf); d.pos = 0; }
+    for (int j = 0; j < kLines; ++j) {
+        const double ph = kTwoPi * j * 0.618034;
+        modRe_[static_cast<size_t>(j)] = static_cast<float>(std::cos(ph));
+        modIm_[static_cast<size_t>(j)] = static_cast<float>(std::sin(ph));
+    }
     for (auto& l : lines_) { clear(l.buf); l.pos = 0; }
     clear(early_.buf);
     early_.pos = 0;
@@ -143,9 +171,10 @@ void FdnReverb::setParams(const ReverbParams& raw) noexcept {
     for (int j = 0; j < kLines; ++j) {
         auto& l = lines_[static_cast<size_t>(j)];
         l.length = std::clamp(static_cast<int>(kLineMs[j] * params_.size * 0.001 * sr), 1, static_cast<int>(l.buf.size()) - 2);
-        feedback_[static_cast<size_t>(j)] = static_cast<float>(std::pow(10.0, -3.0 * l.length / (params_.decaySec * sr)));
+        const double loop = l.length + kLineDiffMs[j] * 0.001 * sr; // samples per round trip
+        feedback_[static_cast<size_t>(j)] = static_cast<float>(std::pow(10.0, -3.0 * loop / (params_.decaySec * sr)));
         lowFeedback_[static_cast<size_t>(j)] =
-            static_cast<float>(std::pow(10.0, -3.0 * l.length / (params_.decaySec * params_.lowRatio * sr)));
+            static_cast<float>(std::pow(10.0, -3.0 * loop / (params_.decaySec * params_.lowRatio * sr)));
     }
     lpCoef_ = static_cast<float>(onePoleCoef(params_.dampingHz, sr));
     lowCoef_ = static_cast<float>(onePoleCoef(kLowCrossoverHz, sr));
@@ -259,7 +288,11 @@ void FdnReverb::process(const float* input, float* const* out, int numOut, int n
         }
 
         for (int j = 0; j < kLines; ++j) {
-            y[j] = lines_[static_cast<size_t>(j)].readGliding(kGlide);
+            const size_t jj = static_cast<size_t>(j);
+            const float re = modRe_[jj] * modCos_[jj] - modIm_[jj] * modSin_[jj];
+            modIm_[jj] = modRe_[jj] * modSin_[jj] + modIm_[jj] * modCos_[jj];
+            modRe_[jj] = re;
+            y[j] = lineDiffusers_[jj].process(lines_[jj].readGliding(kGlide, modDepth_ * modIm_[jj]));
             float& lp = lpState_[static_cast<size_t>(j)];
             lp += lpCoef_ * (y[j] - lp);
             lp = sanitizeSample(lp);
@@ -277,6 +310,13 @@ void FdnReverb::process(const float* input, float* const* out, int numOut, int n
         if (gain != 0.0f && tailLevel_ > 0.0f)
             for (int c = 0; c < numOut; ++c)
                 out[c][i] += sgn[c][0] * y[idx[c][0]] + sgn[c][1] * y[idx[c][1]] + sgn[c][2] * y[idx[c][2]] + sgn[c][3] * y[idx[c][3]];
+    }
+    // Keeps the modulation phasors on the unit circle (rounding would let them drift).
+    for (int j = 0; j < kLines; ++j) {
+        const size_t jj = static_cast<size_t>(j);
+        const float r = std::sqrt(modRe_[jj] * modRe_[jj] + modIm_[jj] * modIm_[jj]);
+        if (r > 1.0e-3f && std::isfinite(r)) { modRe_[jj] /= r; modIm_[jj] /= r; }
+        else { modRe_[jj] = 1.0f; modIm_[jj] = 0.0f; }
     }
 }
 

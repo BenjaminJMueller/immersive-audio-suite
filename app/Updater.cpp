@@ -73,6 +73,7 @@ public:
 
     void set(Kind kind, const juce::String& title, const juce::String& text, const juce::StringArray& points = {}) {
         kind_ = kind;
+        if (kind_ == Kind::Done || kind_ == Kind::Error) fromVersion_ = toVersion_ = {};
         title_ = title;
         text_ = text;
         points_ = points;
@@ -92,6 +93,14 @@ public:
         resized();
     }
 
+    /// Shown as "installed -> new" chips under the title (empty: none).
+    void setVersions(const juce::String& from, const juce::String& to) {
+        fromVersion_ = from;
+        toVersion_ = to;
+        resized();
+        repaint();
+    }
+
     /// Progress 0..1 (negative: unknown) and the line under the bar, read while Kind::Progress is shown.
     std::function<double()> progress;
     std::function<juce::String()> progressText;
@@ -108,6 +117,17 @@ public:
         g.fillRoundedRectangle(c.translated(0, 10).expanded(4), 16.0f);
         g.setColour(p.bar);
         g.fillRoundedRectangle(c, 14.0f);
+        {
+            // A soft glow of the state colour behind the icon, like the particles of the room view.
+            const juce::Colour glow = kind_ == Kind::Error ? p.bad : kind_ == Kind::Done ? p.ok : p.accent;
+            juce::Graphics::ScopedSaveState ss(g);
+            juce::Path clip;
+            clip.addRoundedRectangle(c, 14.0f);
+            g.reduceClipRegion(clip);
+            const juce::Point<float> o(c.getX() + kPad + 20.0f, c.getY() + kPad + 20.0f);
+            g.setGradientFill(juce::ColourGradient(glow.withAlpha(0.22f), o, glow.withAlpha(0.0f), o.translated(260.0f, 90.0f), true));
+            g.fillRect(c);
+        }
         g.setColour(p.lineStrong);
         g.drawRoundedRectangle(c.reduced(0.25f), 14.0f, 0.75f);
 
@@ -125,6 +145,33 @@ public:
         g.setFont(rkui::uiFont(18.0f, true));
         g.drawText(title_, head, juce::Justification::centredLeft, true);
         r.removeFromTop(14.0f);
+        if (toVersion_.isNotEmpty()) {
+            // Installed version -> new version as two chips.
+            auto row = r.removeFromTop(kChips);
+            const auto chip = [&](const juce::String& label, const juce::String& v, bool isNew) {
+                const juce::String t = label + " " + v;
+                const float cw = juce::GlyphArrangement::getStringWidth(rkui::uiFont(12.5f, isNew), t) + 22.0f;
+                auto b = row.removeFromLeft(cw).withSizeKeepingCentre(cw, 24.0f);
+                g.setColour(isNew ? p.accent.withAlpha(0.18f) : p.group);
+                g.fillRoundedRectangle(b, 12.0f);
+                g.setColour(isNew ? p.accent : p.text2);
+                g.setFont(rkui::uiFont(12.5f, isNew));
+                g.drawText(t, b, juce::Justification::centred, false);
+            };
+            chip(tr("Installiert"), fromVersion_, false);
+            auto arrow = row.removeFromLeft(30.0f);
+            juce::Path a;
+            const float cx = arrow.getCentreX(), cy = arrow.getCentreY();
+            a.startNewSubPath(cx - 6.0f, cy);
+            a.lineTo(cx + 5.0f, cy);
+            a.startNewSubPath(cx + 1.0f, cy - 4.0f);
+            a.lineTo(cx + 5.0f, cy);
+            a.lineTo(cx + 1.0f, cy + 4.0f);
+            g.setColour(p.text3);
+            g.strokePath(a, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            chip(tr("Neu"), toVersion_, true);
+            r.removeFromTop(14.0f);
+        }
 
         const float w = r.getWidth();
         auto text = layout(text_, 14.0f, p.text2, w);
@@ -186,7 +233,7 @@ public:
     void mouseDown(const juce::MouseEvent&) override {} // blocks clicks to the window below
 
 private:
-    static constexpr float kPad = 26.0f, kFooter = 60.0f, kWidth = 480.0f;
+    static constexpr float kPad = 28.0f, kFooter = 64.0f, kWidth = 500.0f, kChips = 26.0f;
 
     static juce::TextLayout layout(const juce::String& s, float size, juce::Colour c, float width) {
         juce::AttributedString a;
@@ -201,6 +248,7 @@ private:
         const auto& p = rkui::palette();
         const float w = kWidth - 2 * kPad;
         float h = 40.0f + 14.0f + layout(text_, 14.0f, p.text2, w).getHeight();
+        if (toVersion_.isNotEmpty()) h += kChips + 14.0f;
         if (!points_.isEmpty()) {
             h += 12.0f;
             for (const auto& pt : points_) h += layout(pt, 13.5f, p.text, w - 18.0f).getHeight() + 6.0f;
@@ -244,6 +292,7 @@ private:
 
     Kind kind_ = Kind::Download;
     juce::String title_, text_;
+    juce::String fromVersion_, toVersion_;
     juce::StringArray points_;
     std::unique_ptr<juce::TextButton> primary_, secondary_;
     std::function<void()> onPrimary, onSecondary;
@@ -392,11 +441,11 @@ void Updater::run() {
         }
         info_ = got;
         showSheet();
-        juce::String msg = tr("Installiert ist") + " " + juce::String(JUCE_APPLICATION_VERSION_STRING) + ". " +
-                           tr("Raumklang lädt das Update, beendet sich und startet neu. Das Projekt ist gesichert.");
+        juce::String msg = tr("Raumklang lädt das Update, beendet sich und startet neu. Das Projekt ist gesichert.");
+        sheet_->setVersions(juce::String(JUCE_APPLICATION_VERSION_STRING), got.version);
         const juce::StringArray points = notePoints(got.notes);
         if (!points.isEmpty()) msg << "\n\n" << tr("Neu in dieser Version:");
-        sheet_->set(UpdateSheet::Kind::Download, "Raumklang " + got.version + " " + tr("ist verfügbar"), msg, points);
+        sheet_->set(UpdateSheet::Kind::Download, tr("Neue Version verfügbar"), msg, points);
         sheet_->setButtons(tr("Jetzt aktualisieren"), [this] { startDownload(); }, tr("Später"), [this] { closeSheet(); });
     });
 }

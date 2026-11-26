@@ -52,6 +52,7 @@ private:
     enum Step { StepSpeakers = 0, StepSources = 1, StepRoom = 2, StepOutput = 3 };
 
     void timerCallback() override;
+    double lastTick_ = 0.0; // to notice sleep (see timerCallback)
     void setStep(int step);
     void applyScene(bool structural);
     /// Opens the interface inputs once something needs them (asks for microphone access on macOS once).

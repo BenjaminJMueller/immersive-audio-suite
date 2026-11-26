@@ -22,6 +22,8 @@ struct PageContext {
     /// Optional (app only): measure the speakers with a microphone / load a phone measurement.
     std::function<void()> calibrate;
     std::function<void()> importSurvey;
+    /// Optional (app only): outputs of the audio interface; > 0 shows the output choice per speaker.
+    int numOutputs = 0;
 };
 
 /// Preset, analysis card, panning method and the selected speaker.

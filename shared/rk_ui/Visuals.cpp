@@ -170,6 +170,39 @@ int drawSoundCloud(ParticleBatch& g, juce::Point<float> centre, juce::Colour col
     return n;
 }
 
+int drawReverbFlow(ParticleBatch& g, juce::Point<float> from, const std::vector<juce::Point<float>>& to, juce::Colour colour,
+                   float energy, uint32_t seed, double timeSec, float sizeScale) {
+    energy = juce::jlimit(0.0f, 1.0f, energy);
+    if (energy < 0.002f || to.empty()) return 0;
+    // Unlike the direct sound (dots resting along straight paths), reverb particles drift
+    // outwards during their life on bent, wandering paths towards a random speaker: a
+    // spreading haze rather than a star of rays.
+    const float slots = std::min(420.0f, slotsFor(energy, 150.0f * std::sqrt((float)to.size())));
+    const float bright = 0.25f + 0.5f * std::sqrt(energy);
+    int n = 0;
+    for (int k = 0; k < (int)std::ceil(slots); ++k) {
+        Life L;
+        if (!lifeOf(seed, k, timeSec * 0.6, L)) continue; // slower lives than the direct sound
+        const float edge = juce::jlimit(0.0f, 1.0f, slots - (float)k);
+        const auto target = to[(size_t)(L.rng.r % (uint32_t)to.size())];
+        const auto d = target - from;
+        const float len = d.getDistanceFromOrigin();
+        if (len < 4.0f) continue;
+        const juce::Point<float> dir = d / len, nrm{-dir.y, dir.x};
+        const float u = L.rng.next(), bendR = L.rng.next() - 0.5f, a = L.rng.next() * juce::MathConstants<float>::twoPi;
+        const float r1 = L.rng.next(), r2 = L.rng.next(), r3 = L.rng.next();
+        // Travels outwards while it lives, from a random start, never quite reaching the speaker.
+        const float t = juce::jlimit(0.0f, 0.95f, 0.08f + 0.35f * u + 0.5f * L.life);
+        const float bend = bendR * 0.9f * len * std::sin(juce::MathConstants<float>::pi * t);
+        const float scatter = (4.0f + 0.16f * len * t) * (r1 + r2 + r3 - 1.5f) * 1.3f;
+        const auto pt = from + dir * (t * len) + nrm * (bend + scatter) +
+                        juce::Point<float>(std::cos(a), std::sin(a)) * (6.0f * L.life);
+        emit(g, pt, colour, juce::jlimit(0.0f, 1.0f, bright * L.fade * edge * (1.0f - 0.45f * t)), L.size, sizeScale);
+        ++n;
+    }
+    return n;
+}
+
 void ParticleBatch::add(juce::Point<float> pt, float size, float glowRadius, juce::Colour core, juce::Colour glow, float alpha) {
     if (alpha <= 0.003f) return;
     items_.push_back({pt, size, glowRadius, core, glow, alpha});
@@ -268,7 +301,7 @@ float reverbFlowEnergy(const SourceInfo& source, float level, float reverbWetDb)
     // -40 dB send and below shows nothing, 0 dB the full flow; the wet level scales it as well.
     const float send = juce::jlimit(0.0f, 1.0f, (source.reverbSendDb + 40.0f) / 40.0f);
     const float wet = juce::jlimit(0.0f, 1.0f, (reverbWetDb + 40.0f) / 40.0f);
-    return 0.12f * std::sqrt(level) * send * wet;
+    return 0.3f * std::sqrt(level) * send * wet;
 }
 
 } // namespace rkui

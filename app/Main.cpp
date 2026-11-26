@@ -14,6 +14,12 @@ public:
         setVisible(true);
     }
     void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
+    // After sleep or a display change macOS can drop what the window showed; only the parts
+    // that animate would be drawn again. Coming back to the front redraws everything.
+    void activeWindowStatusChanged() override {
+        DocumentWindow::activeWindowStatusChanged();
+        repaint();
+    }
 };
 
 class RaumklangApplication : public juce::JUCEApplication {
@@ -25,6 +31,9 @@ public:
     void initialise(const juce::String&) override { window_ = std::make_unique<MainWindow>("Raumklang"); }
 
     void shutdown() override { window_.reset(); }
+    void resumed() override {
+        if (window_ != nullptr) window_->repaint();
+    }
 
     void systemRequestedQuit() override {
         if (window_ != nullptr)

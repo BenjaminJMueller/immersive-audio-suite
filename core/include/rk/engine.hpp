@@ -140,6 +140,11 @@ private:
     EngineConfig config_;
     RtSwap<Runtime> runtime_;
     std::atomic<int> numOutputChannels_{0};
+    /// Structure of the runtime published last (see Runtime::structureKey). When it matches
+    /// the current one, the audio thread switches without the fade.
+    std::atomic<uint64_t> pendingKey_{0};
+    std::array<float, kMaxSpeakers> speakerGainCur_{}; // ramps to Runtime::speakerGain
+    mutable uint64_t keySerial_ = 0; // makes every headphone runtime unique (config mutex held)
 
     std::array<SourceControl, kMaxSources> sources_;
 

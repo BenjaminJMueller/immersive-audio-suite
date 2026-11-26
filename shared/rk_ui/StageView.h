@@ -119,6 +119,7 @@ private:
     juce::Point<float> centre_;
     std::vector<float> speakerLevels_, sourceLevels_;
     float reverbLevel_ = 0.0f;
+    std::vector<juce::Point<float>> reverbTargets_; // scratch, reused every frame
     float ambience_ = 0.0f;
     std::vector<juce::Colour> sourceColours_;
     int dimFrom_ = 1 << 30;

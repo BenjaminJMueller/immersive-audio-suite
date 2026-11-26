@@ -59,6 +59,11 @@ int drawSoundParticles(ParticleBatch& g, juce::Point<float> from, juce::Point<fl
 int drawSoundCloud(ParticleBatch& g, juce::Point<float> centre, juce::Colour colour, float energy, float innerPx,
                    float radiusPx, uint32_t seed, double timeSec, float sizeScale = 1.0f);
 
+/// The reverb share of a source: particles drifting outwards from `from` on bent paths
+/// towards the speakers in `to`, as a haze rather than straight rays.
+int drawReverbFlow(ParticleBatch& g, juce::Point<float> from, const std::vector<juce::Point<float>>& to, juce::Colour colour,
+                   float energy, uint32_t seed, double timeSec, float sizeScale = 1.0f);
+
 /// How strongly a sounding source flows into the reverb (0..1): its level and reverb send.
 /// Zero when the send is at its minimum or the source is silent.
 float reverbFlowEnergy(const SourceInfo& source, float level, float reverbWetDb);
