@@ -175,6 +175,7 @@ jobs:
         run: |
           VERSION="0.1.${{ github.run_number }}"
           mkdir -p pkg/Raumklang out
+          cp LICENSE.md THIRD_PARTY_NOTICES.md pkg/Raumklang/
           if [ "$RUNNER_OS" = "macOS" ]; then
             cp -R dist/Raumklang.app pkg/Raumklang/
             cp packaging/mac/* pkg/Raumklang/

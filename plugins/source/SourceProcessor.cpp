@@ -21,6 +21,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout makeLayout() {
     p.push_back(std::make_unique<P>(juce::ParameterID{"distanceAmount", 1}, "Distanzeffekt", juce::NormalisableRange<float>(0.0f, 200.0f, 1.0f), 100.0f, A().withLabel("%")));
     p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"route", 1}, "Ausgabe",
                                                              juce::StringArray{"Automatisch", "An die App", "In der DAW"}, 0));
+    // Plugins cannot see the DAW's own mute and solo buttons (the audio leaves the track
+    // before the channel fader), so the track gets its own, which the app follows.
+    p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"mute", 1}, "Stumm", false));
+    p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"solo", 1}, "Solo", false));
     return {p.begin(), p.end()};
 }
 
@@ -40,6 +44,8 @@ SourceProcessor::SourceProcessor()
     width_ = params.getRawParameterValue("stereoWidth");
     distAmt_ = params.getRawParameterValue("distanceAmount");
     route_ = params.getRawParameterValue("route");
+    mute_ = params.getRawParameterValue("mute");
+    solo_ = params.getRawParameterValue("solo");
     reloadSetup(true);
     housekeeping(); // connect to the app right away
     startTimer(40);
@@ -198,6 +204,8 @@ void SourceProcessor::timerCallback() {
         if (mix.mask & M::Spread) applyFromApp("spread", mix.spread * 100.0f, now);
         if (mix.mask & M::ReverbSend) applyFromApp("reverbSend", mix.reverbSendDb, now);
         if (mix.mask & M::StereoWidth) applyFromApp("stereoWidth", mix.stereoWidthDeg, now);
+        if (mix.mask & M::Mute) applyFromApp("mute", mix.mute ? 1.0f : 0.0f, now);
+        if (mix.mask & M::Solo) applyFromApp("solo", mix.solo ? 1.0f : 0.0f, now);
         if (mix.mask & M::DistanceAmount) applyFromApp("distanceAmount", mix.distanceAmount * 100.0f, now);
     }
     endAppGestures(now, false);
@@ -250,6 +258,8 @@ void SourceProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
         tp.reverbSendDb = send_->load();
         tp.stereoWidthDeg = width_->load();
         tp.distanceAmount = distAmt_->load() * 0.01f;
+        tp.mute = mute_->load() >= 0.5f;
+        tp.solo = solo_->load() >= 0.5f;
         sender_.write(buffer.getArrayOfReadPointers(), juce::jmax(1, numIn), n, getSampleRate(), tp);
         buffer.clear();
         sending_.store(true, std::memory_order_relaxed);
@@ -271,6 +281,7 @@ void SourceProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     tp.reverbSendDb = send_->load();
     tp.stereoWidthDeg = width_->load();
     tp.distanceAmount = distAmt_->load() * 0.01f;
+    tp.mute = mute_->load() >= 0.5f; // solo needs the other tracks: only the app can do it
     rk::bridge::applyTrack(engine, 0, 0, juce::jmax(1, numIn), tp, numIn > 0);
     engine.process(buffer.getArrayOfReadPointers(), numIn, buffer.getArrayOfWritePointers(), numOut, n);
 }

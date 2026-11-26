@@ -15,7 +15,7 @@ Die DAW soll ihren Ton ohne virtuelle Audiogeräte oder Audio-Server an die App 
 
 - Erledigt: direkte Verbindung vom Plugin *Quelle* zur App über Shared Memory: Jede Spur bleibt Mono oder Stereo, die App rechnet und spielt auf das Audiogerät. Funktioniert damit auch in Ableton Live und Logic, ohne virtuelle Audiogeräte.
 - Erledigt: Positionen aus der DAW-Automation erscheinen live in der App, Spuren lassen sich in der App verschieben.
-- Weiche Layoutwechsel ohne hörbare Blende (Überblendung zwischen altem und neuem Layout).
+- Erledigt: Lautsprecher lassen sich während der Wiedergabe ohne hörbare Blende verschieben.
 
 ## Phase 3: Mehr Funktionen (0.3)
 
@@ -26,7 +26,7 @@ Die DAW soll ihren Ton ohne virtuelle Audiogeräte oder Audio-Server an die App 
 - Verfahren je Quelle wählbar (z. B. ein Teil der Quellen über DBAP, der Rest über VBAP)
 - Stereo-Mischung als eigene Ausgabe
 - Lautsprechergruppen im Layout, gemeinsam verschieben und drehen
-- Kopfhörer-Vorschau mit gemessenen HRTF (SOFA-Dateien)
+- Erledigt: Kopfhörer-Wiedergabe mit gemessenen HRTFs aus SOFA-Dateien. Offen: Interpolation zwischen Messrichtungen, Head-Tracking
 - bis 256 Lautsprecher und Quellen
 - Ambisonics-Eingänge (1. bis 3. Ordnung) und Ambisonics-Ausgang bzw. -Aufnahme
 - Bahnen für Quellen (Kreis, Ellipse, Spirale, Pendel, Zufall) zusätzlich zu *Kreisbahn*

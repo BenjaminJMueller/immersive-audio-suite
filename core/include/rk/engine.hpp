@@ -58,6 +58,8 @@ struct EngineConfig {
     DbapPanner::Params dbap;
     int ambiOrder = 3;
     OutputMode outputMode = OutputMode::Speakers;
+    /// Measured head responses for headphones; null = head model. Shared and immutable.
+    std::shared_ptr<const HrirSet> hrirs;
 };
 
 class Engine {

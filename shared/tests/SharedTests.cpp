@@ -1,6 +1,7 @@
 // Tests for the document model: round trips and robustness against broken files.
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <rk_ui/Scene.h>
+#include <rk_ui/Sofa.h>
 #include <rk_ui/Pages.h>
 #include <rk_ui/StageView.h>
 #include <rk_ui/Strings.h>
@@ -472,6 +473,54 @@ void snapshots() {
     }
 }
 
+void sofaFiles() {
+    // A real SOFA file (MIT KEMAR, from libmysofa's sources): 710 directions at 44.1 kHz.
+    const juce::File f(RK_TEST_SOFA);
+    EXPECT(f.existsAsFile());
+    const auto r = rkui::loadSofa(f);
+    EXPECT(r.set != nullptr);
+    if (r.set != nullptr) {
+        const auto& s = *r.set;
+        EXPECT(s.valid());
+        EXPECT(s.directions.size() == 710);
+        EXPECT(std::abs(s.sampleRate - 44100.0) < 0.5);
+        EXPECT(r.summary().contains("710"));
+        // Left source: the left ear is louder and earlier.
+        const int d = s.nearest(rk::toCartesian({90.0f, 0.0f, 1.0f}));
+        double el = 0, er = 0;
+        int ol = -1, orr = -1;
+        float pl = 0, pr = 0;
+        for (int k = 0; k < s.length; ++k) {
+            const float a = s.left[(size_t)d * (size_t)s.length + (size_t)k], b = s.right[(size_t)d * (size_t)s.length + (size_t)k];
+            el += (double)a * a;
+            er += (double)b * b;
+            pl = std::max(pl, std::abs(a));
+            pr = std::max(pr, std::abs(b));
+        }
+        for (int k = 0; k < s.length && (ol < 0 || orr < 0); ++k) {
+            if (ol < 0 && std::abs(s.left[(size_t)d * (size_t)s.length + (size_t)k]) > 0.3f * pl) ol = k;
+            if (orr < 0 && std::abs(s.right[(size_t)d * (size_t)s.length + (size_t)k]) > 0.3f * pr) orr = k;
+        }
+        EXPECT(el > 4.0 * er);
+        EXPECT(ol >= 0 && orr > ol + 10); // about 0.6 ms at 44.1 kHz
+    }
+    // Garbage, truncated files and a missing file give an error, never a crash.
+    EXPECT(rkui::loadSofa(juce::File("/nonexistent/x.sofa")).set == nullptr);
+    juce::MemoryBlock data;
+    EXPECT(f.loadFileAsData(data));
+    juce::Random rnd(7);
+    for (int i = 0; i < 40; ++i) {
+        juce::MemoryBlock m(data);
+        if (i % 2 == 0) m.setSize((size_t)rnd.nextInt((int)juce::jmin<size_t>(m.getSize(), 200000)) + 1);
+        else
+            for (int k = 0; k < 200; ++k) static_cast<char*>(m.getData())[rnd.nextInt((int)m.getSize())] = (char)rnd.nextInt(256);
+        const auto bad = rkui::loadSofa(m.getData(), m.getSize(), "x");
+        EXPECT(bad.set == nullptr || bad.set->valid());
+    }
+    const char junk[] = "not a sofa file at all";
+    EXPECT(rkui::loadSofa(junk, sizeof(junk), "x").set == nullptr);
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     roundTrip();
@@ -485,6 +534,7 @@ int main() {
     visuals();
     surveys();
     snapshots();
+    sofaFiles();
     std::printf("%s (%d failures)\n", failures == 0 ? "ALL SHARED TESTS PASSED" : "SHARED TESTS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

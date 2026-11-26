@@ -2,6 +2,9 @@
 
 ## Unveröffentlicht
 
+- **Kopfhörer mit gemessenen HRTFs**: Unter Ausgabe lässt sich für beide Kopfhörer-Wege statt des Kopfmodells eine SOFA-Datei (AES69) wählen. Raumklang faltet jeden Lautsprecher mit den gemessenen Impulsantworten der nächstgelegenen Richtung, andere Abtastraten werden beim Laden umgerechnet.
+- **Stumm und Solo im Quelle-Plugin**: Die Stumm- und Solo-Tasten der DAW erreichen kein Plugin. Raumklang Quelle hat deshalb eigene Tasten M und S, automatisierbar, und die App zeigt und schaltet sie in der Seitenleiste mit.
+- **README**: Praxistest mit zwölf Lautsprechern, Kopfhörer mit SOFA, neue Gliederung ohne fette Stichwörter.
 - **Lautsprecher verschieben ohne Artefakte**: Beim Ziehen eines Lautsprechers während der Wiedergabe blendet die Engine nicht mehr jedes Mal aus und ein, und die Verzögerungsleitungen der Lautsprecher bleiben gefüllt. Pegel, Laufzeit und Panning gleiten.
 - **Dichterer Hall**: Jede Rückkopplungsschleife des Nachhalls hat einen eigenen Allpass, und die Leitungen werden langsam moduliert. Die Fahne ist früher dicht und flattert bei leisen Signalanteilen nicht mehr.
 - **Ausgang beim Anlegen**: Im Schritt Lautsprecher lässt sich der Ausgang jedes Lautsprechers direkt unter dem Namen wählen.
