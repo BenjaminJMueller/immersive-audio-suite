@@ -304,4 +304,12 @@ float reverbFlowEnergy(const SourceInfo& source, float level, float reverbWetDb)
     return 0.3f * std::sqrt(level) * send * wet;
 }
 
+namespace {
+bool (*gOnScreen)(const juce::Component&) = nullptr;
+}
+
+void setOnScreenCheck(bool (*check)(const juce::Component&)) { gOnScreen = check; }
+
+bool isOnScreen(const juce::Component& c) { return gOnScreen == nullptr || gOnScreen(c); }
+
 } // namespace rkui

@@ -68,4 +68,10 @@ int drawReverbFlow(ParticleBatch& g, juce::Point<float> from, const std::vector<
 /// Zero when the send is at its minimum or the source is silent.
 float reverbFlowEnergy(const SourceInfo& source, float level, float reverbWetDb);
 
+/// Whether a view's window can be seen at all. The app installs a check that knows about
+/// macOS Spaces and covered windows; without one, every shown view counts as visible.
+/// Animated views skip their redraws while this is false.
+void setOnScreenCheck(bool (*check)(const juce::Component&));
+bool isOnScreen(const juce::Component& c);
+
 } // namespace rkui

@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "PluginInstaller.h"
+#include "MacSystem.h"
 #include "MicPermission.h"
 
 using rkui::tr;
@@ -460,6 +461,8 @@ MainComponent::MainComponent()
         juce::MenuBarModel::setMacMainMenu(this, &appleExtras);
     }
    #endif
+    rkapp::keepAudioResponsive();
+    rkui::setOnScreenCheck(&rkapp::windowOnScreen);
     startTimerHz(30);
 }
 
@@ -2132,7 +2135,8 @@ void MainComponent::timerCallback() {
     }
     std::vector<float> spkView(spk.begin(), spk.begin() + juce::jmax(0, scene_.headphones ? 0 : nOut));
     stage_.setSpeakerLevels(spkView);
-    if (reverbPanel_.isVisible()) {
+    // Hidden window (another Space, covered): no spectrum, it would only cost time.
+    if (reverbPanel_.isVisible() && rkui::isOnScreen(*this)) {
         reverbPanel_.setParams(scene_.reverb, scene_.reverbWetDb);
         std::array<float, rkui::SpectrumAnalyzer::kSize> buf;
         host_.readScope(buf.data(), (int)buf.size());

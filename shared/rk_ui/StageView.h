@@ -110,8 +110,10 @@ private:
     ParticleBatch particles_;
     bool animating_ = false; // sound particles are visible: keep them twinkling
     void timerCallback() override {
-        if (animating_ && isShowing()) repaint();
-        else stopTimer();
+        // While the window is hidden (another Space, covered) the timer keeps ticking
+        // but nothing is drawn, so the particles come back as soon as it is visible again.
+        if (!animating_ || !isShowing()) stopTimer();
+        else if (isOnScreen(*this)) repaint();
     }
     bool panningBuilt_ = false, panningStale_ = false;
     float scale_ = 40.0f; // pixels per metre
