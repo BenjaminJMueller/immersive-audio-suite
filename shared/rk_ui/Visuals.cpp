@@ -171,18 +171,22 @@ int drawSoundCloud(ParticleBatch& g, juce::Point<float> centre, juce::Colour col
 }
 
 int drawReverbFlow(ParticleBatch& g, juce::Point<float> from, const std::vector<juce::Point<float>>& to, juce::Colour colour,
-                   float energy, uint32_t seed, double timeSec, float sizeScale) {
+                   float energy, uint32_t seed, double timeSec, float sizeScale, float decaySec) {
     energy = juce::jlimit(0.0f, 1.0f, energy);
     if (energy < 0.002f || to.empty()) return 0;
+    const float density = reverbDensity(decaySec);
     // Unlike the direct sound (dots resting along straight paths), reverb particles drift
     // outwards during their life on bent, wandering paths towards a random speaker: a
     // spreading haze rather than a star of rays.
-    const float slots = std::min(420.0f, slotsFor(energy, 150.0f * std::sqrt((float)to.size())));
+    // The count grows with the reverb time: a church is full of drifting particles, a studio
+    // shows only a few. Long tails also move slower, short ones flicker past.
+    const float slots = std::min(420.0f * density, slotsFor(energy, 150.0f * std::sqrt((float)to.size())) * density);
+    const double pace = 0.6 * juce::jlimit(0.55, 1.6, std::sqrt(1.5 / (double)juce::jmax(0.2f, decaySec)));
     const float bright = 0.25f + 0.5f * std::sqrt(energy);
     int n = 0;
     for (int k = 0; k < (int)std::ceil(slots); ++k) {
         Life L;
-        if (!lifeOf(seed, k, timeSec * 0.6, L)) continue; // slower lives than the direct sound
+        if (!lifeOf(seed, k, timeSec * pace, L)) continue; // slower lives than the direct sound
         const float edge = juce::jlimit(0.0f, 1.0f, slots - (float)k);
         const auto target = to[(size_t)(L.rng.r % (uint32_t)to.size())];
         const auto d = target - from;
@@ -294,6 +298,11 @@ void ParticleBatch::draw(juce::Graphics& g, juce::Rectangle<int> area, float glo
         g.fillEllipse(p.pt.x - p.size * 0.5f, p.pt.y - p.size * 0.5f, p.size, p.size);
     }
     items_.clear();
+}
+
+float reverbDensity(float decaySec) {
+    if (!std::isfinite(decaySec)) return 1.0f;
+    return juce::jlimit(0.25f, 3.0f, decaySec / 1.5f);
 }
 
 float reverbFlowEnergy(const SourceInfo& source, float level, float reverbWetDb) {

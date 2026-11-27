@@ -238,7 +238,7 @@ void View3D::paint(juce::Graphics& g) {
                     targets.push_back(project(sp.position).p);
                 }
                 drawReverbFlow(particles_, c.p, targets, reverbColour(), flow, (uint32_t)(s * 131 + 70001),
-                               juce::Time::getMillisecondCounterHiRes() * 0.001, 0.75f);
+                               juce::Time::getMillisecondCounterHiRes() * 0.001, 0.75f, scene_.reverb.decaySec);
                 animating_ = animating_ || !targets.empty();
             }
         }
@@ -293,7 +293,7 @@ void View3D::paint(juce::Graphics& g) {
         for (int m = 0; m < nSpk; ++m) {
             const auto& sp = scene_.layout.speakers[(size_t)m];
             if (!sp.enabled || sp.isSubwoofer) continue;
-            drawSoundCloud(particles_, project(sp.position).p, reverbColour(), 0.6f * reverbLevel_, 8.0f, 26.0f, (uint32_t)(90001 + m * 37), now, 0.8f);
+            drawSoundCloud(particles_, project(sp.position).p, reverbColour(), juce::jmin(1.0f, 0.6f * reverbLevel_ * reverbDensity(scene_.reverb.decaySec)), 8.0f, 26.0f, (uint32_t)(90001 + m * 37), now, 0.8f);
         }
         animating_ = true;
     }
