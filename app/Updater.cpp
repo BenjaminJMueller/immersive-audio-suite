@@ -554,77 +554,90 @@ void Updater::download() {
 
 #if JUCE_MAC
     const juce::File app = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
-    // Can the app be replaced at all? Not from a disk image, and macOS may block changes to apps
-    // ("App-Verwaltung"). Better to say so now than to quit and leave the old version running.
+    // The app swaps its own bundle while it still runs (macOS allows a running app to be renamed;
+    // the process keeps its files open). Done here and not in a script after quitting: an app may
+    // change itself, but a script started by it is a different process, which App Management
+    // ("App-Verwaltung", macOS 13 and later) may block. That left the old version in place.
+    auto manualCopy = [this, folder, app](const juce::String& why) {
+        log(why);
+        const juce::File copy = juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("Downloads").getChildFile("Raumklang-Update");
+        copy.deleteRecursively();
+        juce::ChildProcess cp;
+        const bool copied = cp.start(juce::StringArray{"/usr/bin/ditto", folder.getFullPathName(), copy.getFullPathName()}) &&
+                            cp.waitForProcessToFinish(60000) && cp.getExitCode() == 0;
+        juce::MessageManager::callAsync([this, copied, copy, app] {
+            downloading_ = false;
+            if (tmp_.exists()) tmp_.deleteRecursively();
+            showSheet();
+            juce::String text = tr("Raumklang darf sich an diesem Ort nicht selbst ersetzen") + " (" + app.getParentDirectory().getFullPathName() + ").";
+            if (copied)
+                text << "\n\n" << tr("Die neue Version liegt jetzt im Ordner „Downloads/Raumklang-Update“. Raumklang beenden, "
+                                     "Raumklang.app von dort in den Programme-Ordner ziehen und ersetzen. Die Plugins installiert Raumklang beim nächsten Start selbst.");
+            sheet_->set(UpdateSheet::Kind::Error, tr("Update nicht installiert"), text);
+            sheet_->setButtons(copied ? tr("Im Finder zeigen") : tr("Download-Seite öffnen"),
+                               [this, copied, copy] {
+                                   if (copied) copy.getChildFile("Raumklang.app").revealToUser();
+                                   else juce::URL(kPage).launchInDefaultBrowser();
+                                   closeSheet();
+                               },
+                               tr("Schließen"), [this] { closeSheet(); });
+        });
+    };
+    if (app.getFullPathName().startsWith("/Volumes/")) {
+        manualCopy("App läuft aus einem Disk-Image: " + app.getFullPathName());
+        return;
+    }
+    const juce::File alt = app.getParentDirectory().getChildFile(app.getFileName() + ".alt");
+    alt.deleteRecursively();
+    if (!app.moveFileTo(alt)) {
+        manualCopy("Alte App ließ sich nicht umbenennen: " + app.getFullPathName());
+        return;
+    }
     {
-        const juce::File probe = app.getChildFile("Contents").getChildFile(".raumklang-update-test");
-        const bool writable = probe.replaceWithText("test") && probe.deleteFile();
-        if (!writable) {
-            log("App-Ordner nicht beschreibbar: " + app.getFullPathName());
-            const juce::File copy = juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("Downloads").getChildFile("Raumklang-Update");
-            copy.deleteRecursively();
-            juce::ChildProcess cp;
-            const bool copied = cp.start(juce::StringArray{"/usr/bin/ditto", folder.getFullPathName(), copy.getFullPathName()}) &&
-                                cp.waitForProcessToFinish(60000) && cp.getExitCode() == 0;
-            juce::MessageManager::callAsync([this, copied, copy, app] {
-                downloading_ = false;
-                if (tmp_.exists()) tmp_.deleteRecursively();
-                showSheet();
-                juce::String text = tr("Raumklang darf sich an diesem Ort nicht selbst ersetzen") + " (" + app.getParentDirectory().getFullPathName() + ").";
-                if (copied)
-                    text << "\n\n" << tr("Die neue Version liegt jetzt im Ordner „Downloads/Raumklang-Update“. Raumklang beenden, "
-                                         "Raumklang.app von dort in den Programme-Ordner ziehen und ersetzen. Die Plugins installiert Raumklang beim nächsten Start selbst.");
-                sheet_->set(UpdateSheet::Kind::Error, tr("Update nicht installiert"), text);
-                sheet_->setButtons(copied ? tr("Im Finder zeigen") : tr("Download-Seite öffnen"),
-                                   [this, copied, copy] {
-                                       if (copied) copy.getChildFile("Raumklang.app").revealToUser();
-                                       else juce::URL(kPage).launchInDefaultBrowser();
-                                       closeSheet();
-                                   },
-                                   tr("Schließen"), [this] { closeSheet(); });
-            });
+        juce::ChildProcess cp;
+        const bool ok = cp.start(juce::StringArray{"/usr/bin/ditto", folder.getChildFile("Raumklang.app").getFullPathName(), app.getFullPathName()}) &&
+                        cp.waitForProcessToFinish(120000) && cp.getExitCode() == 0 &&
+                        app.getChildFile("Contents/MacOS").isDirectory();
+        if (!ok) {
+            app.deleteRecursively();
+            alt.moveFileTo(app);
+            manualCopy("Kopieren der neuen App fehlgeschlagen, alte App bleibt");
             return;
         }
     }
+    log("Neue App liegt an ihrem Platz: " + app.getFullPathName());
+    statusFile().replaceWithText("ok\n");
 
-    // After quitting: swap the bundle (keep the old one on failure), install the plugins, start again.
-    // Everything goes to Update.log; Update-Status.txt tells the next start how it went.
+    // After quitting: remove the old bundle, install the plugins, start the new version.
     const juce::File script = tmp_.getChildFile("update.sh");
     script.replaceWithText(
         "#!/bin/sh\n"
-        "APP=\"$1\"; NEW=\"$2\"; PID=\"$3\"; TMP=\"$4\"; LOG=\"$5\"; STATUS=\"$6\"\n"
+        "APP=\"$1\"; NEW=\"$2\"; PID=\"$3\"; TMP=\"$4\"; LOG=\"$5\"\n"
         "exec >>\"$LOG\" 2>&1\n"
         "echo \"$(date '+%F %T')  Skript: warte auf das Ende von Raumklang ($PID)\"\n"
-        "while kill -0 \"$PID\" 2>/dev/null; do sleep 0.3; done\n"
+        "N=0; while kill -0 \"$PID\" 2>/dev/null && [ $N -lt 100 ]; do sleep 0.3; N=$((N+1)); done\n"
         "rm -rf \"$APP.alt\"\n"
-        "OK=0\n"
-        "if mv \"$APP\" \"$APP.alt\"; then\n"
-        "  if /usr/bin/ditto \"$NEW/Raumklang.app\" \"$APP\"; then rm -rf \"$APP.alt\"; OK=1\n"
-        "  else echo 'Kopieren der neuen App fehlgeschlagen, alte App bleibt'; rm -rf \"$APP\"; mv \"$APP.alt\" \"$APP\"; fi\n"
-        "else echo 'Alte App liess sich nicht verschieben (App-Verwaltung?)'; fi\n"
         "AU=\"$HOME/Library/Audio/Plug-Ins/Components\"; VST=\"$HOME/Library/Audio/Plug-Ins/VST3\"\n"
         "mkdir -p \"$AU\" \"$VST\"\n"
         "for p in \"$NEW\"/Plugins/*.component; do [ -e \"$p\" ] && rm -rf \"$AU/$(basename \"$p\")\" && /usr/bin/ditto \"$p\" \"$AU/$(basename \"$p\")\"; done\n"
         "for p in \"$NEW\"/Plugins/*.vst3; do [ -e \"$p\" ] && rm -rf \"$VST/$(basename \"$p\")\" && /usr/bin/ditto \"$p\" \"$VST/$(basename \"$p\")\"; done\n"
         "/usr/bin/xattr -dr com.apple.quarantine \"$APP\" \"$AU\"/Raumklang*.component \"$VST\"/Raumklang*.vst3 2>/dev/null\n"
         "killall -9 AudioComponentRegistrar 2>/dev/null\n"
-        "if [ \"$OK\" = 1 ]; then\n"
-        "  echo ok > \"$STATUS\"; echo \"$(date '+%F %T')  Skript: fertig, starte die neue Version\"\n"
-        "else\n"
-        "  COPY=\"$HOME/Downloads/Raumklang-Update\"; rm -rf \"$COPY\"; /usr/bin/ditto \"$NEW\" \"$COPY\"\n"
-        "  printf 'failed\\n%s\\n' \"$COPY/Raumklang.app\" > \"$STATUS\"\n"
-        "fi\n"
+        "echo \"$(date '+%F %T')  Skript: fertig, starte die neue Version\"\n"
         "/usr/bin/open \"$APP\"\n"
         "rm -rf \"$TMP\"\n");
     juce::ChildProcess chmod;
     chmod.start(juce::StringArray{"/bin/chmod", "755", script.getFullPathName()});
     chmod.waitForProcessToFinish(5000);
-    // Detached: survives the app quitting.
+    // Detached: survives the app quitting. If it does not start, the new version is in place
+    // anyway and starts with the next click on the icon.
     juce::ChildProcess launcher;
-    const bool started = launcher.start(juce::StringArray{"/bin/sh", "-c", "nohup \"$0\" \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" \"$6\" >/dev/null 2>&1 &",
-                                                          script.getFullPathName(), app.getFullPathName(), folder.getFullPathName(), pid,
-                                                          tmp_.getFullPathName(), logFile().getFullPathName(), statusFile().getFullPathName()}) &&
-                         launcher.waitForProcessToFinish(5000);
+    const bool launched = launcher.start(juce::StringArray{"/bin/sh", "-c", "nohup \"$0\" \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" >/dev/null 2>&1 &",
+                                                           script.getFullPathName(), app.getFullPathName(), folder.getFullPathName(), pid,
+                                                           tmp_.getFullPathName(), logFile().getFullPathName()}) &&
+                          launcher.waitForProcessToFinish(5000);
+    if (!launched) log("Neustart-Skript ließ sich nicht starten, die neue Version startet beim nächsten Öffnen");
+    const bool started = true;
 #elif JUCE_WINDOWS
     // After quitting: replace the exe, install the VST3 plugins (asks for administrator rights), start again.
     const juce::File exe = juce::File::getSpecialLocation(juce::File::currentExecutableFile);

@@ -481,7 +481,14 @@ bool driftRead(DriftState& st, uint64_t w, int block, int numFrames, double samp
         for (int ch = 0; ch < outChannels; ++ch)
             if (out[ch] != nullptr) std::fill(out[ch], out[ch] + numFrames, 0.0f);
     };
-    const double target = std::clamp(2.0 * block + numFrames + 64.0, 256.0, kRingFrames / 2.0);
+    // Two of the writer's blocks, one of the reader's and about 4 ms for scheduling jitter,
+    // plus whatever reserve earlier underruns asked for.
+    const double jitter = std::max(64.0, 0.004 * sampleRate);
+    const double target = std::clamp(2.0 * block + numFrames + jitter + st.reserve, 256.0, kRingFrames / 2.0);
+    auto underrun = [&] {
+        dropouts.fetch_add(1, std::memory_order_relaxed);
+        st.reserve = std::min(st.reserve + std::max((double)block, 0.005 * sampleRate), std::min(0.08 * sampleRate, kRingFrames / 4.0));
+    };
     if (!st.running) {
         if (w < st.resumeFrom) st.resumeFrom = 0; // the writer started over (new owner)
         if ((double)(w - st.resumeFrom) < target) {
@@ -496,7 +503,8 @@ bool driftRead(DriftState& st, uint64_t w, int block, int numFrames, double samp
     double fill = (double)w - st.readPos;
     // The writer jumped (new owner, stall, garbage): start again at the target distance.
     if (fill < 0.0 || fill > kRingFrames - (double)block - 2.0) {
-        dropouts.fetch_add(1, std::memory_order_relaxed);
+        if (fill < 0.0) underrun();
+        else dropouts.fetch_add(1, std::memory_order_relaxed);
         st.readPos = (double)w - target;
         st.smoothedError = 0.0;
         fill = target;
@@ -513,7 +521,7 @@ bool driftRead(DriftState& st, uint64_t w, int block, int numFrames, double samp
     st.idle = w == st.lastWrite ? st.idle + 1 : 0;
     const bool stalled = st.idle >= 2 && fill < needed + 2.0 * numFrames * ratio;
     const bool dry = fill < needed;
-    if (dry && w != st.lastWrite) dropouts.fetch_add(1, std::memory_order_relaxed);
+    if (dry && w != st.lastWrite) underrun();
     st.lastWrite = w;
     const int avail = (int)std::clamp(std::floor((fill - 2.0) / ratio), 0.0, (double)kRingFrames);
     const int frames = dry ? std::min(numFrames, avail) : numFrames;

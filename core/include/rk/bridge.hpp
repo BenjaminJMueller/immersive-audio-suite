@@ -104,6 +104,9 @@ struct DriftState {
     uint64_t resumeFrom = 0;
     int idle = 0;      // callbacks in a row without new audio
     float fade = 0.0f;
+    /// Extra frames kept in reserve. Grows after each underrun (the writer or the reader was
+    /// late, e.g. while the system is busy with window animations), so it does not happen again.
+    double reserve = 0.0;
 };
 
 /// A named block of memory shared between processes (POSIX shm or a Windows file mapping).

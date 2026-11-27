@@ -127,6 +127,47 @@ TEST_CASE("bridge: clock drift between DAW and app causes no dropouts") {
     }
 }
 
+TEST_CASE("bridge: a busy system (late callbacks) causes a few dropouts at most, then the reserve grows") {
+    Names nm;
+    Sender tx;
+    Receiver rx;
+    REQUIRE(tx.open(nm.name));
+    REQUIRE(rx.open(nm.name));
+    REQUIRE(tx.claim() >= 0);
+    rx.beginBlock(48000.0);
+    std::vector<float> block(128);
+    const float* in[1] = {block.data()};
+    double phase = 0.0;
+    Out out(512);
+    TrackParams p;
+    std::mt19937 rng(3);
+    uint32_t early = 0, late = 0;
+    // 120 seconds: the DAW writes 128 frames per tick, the app reads 512 every 4 ticks. Now and
+    // then the DAW is up to 15 ms late and then catches up at once (as while the window server
+    // animates, or the DAW renders tracks ahead).
+    int pending = 0, hold = 0;
+    for (int tick = 0; tick < 48000 * 120 / 128; ++tick) {
+        ++pending;
+        if (hold == 0 && std::uniform_int_distribution<int>(0, 400)(rng) == 0) hold = 6; // late by 6 blocks
+        if (hold > 0) {
+            --hold; // nothing written now, all of it comes afterwards at once
+        } else {
+            for (; pending > 0; --pending) {
+                for (int k = 0; k < 128; ++k) {
+                    block[(size_t)k] = 0.5f * (float)std::sin(phase);
+                    phase += 0.05;
+                }
+                tx.write(in, 1, 128, 48000.0, p);
+            }
+        }
+        if (tick % 4 == 3) rx.read(tx.slot(), out.ptr, 512, p);
+        if (tick == 48000 * 20 / 128) early = rx.takeDropouts();
+    }
+    late = rx.takeDropouts();
+    CHECK(early <= 6);  // the first hiccups may still cost a dropout each
+    CHECK(late == 0);   // afterwards the reserve covers them
+}
+
 TEST_CASE("bridge: names, parameters, channel count and release are visible to the app") {
     Names nm;
     Sender tx;
