@@ -156,7 +156,8 @@ juce::var sourceToVar(const SourceInfo& x) {
     so->setProperty("doppler", x.doppler);
     so->setProperty("mute", x.mute);
     so->setProperty("solo", x.solo);
-    so->setProperty("orbit", x.orbit);
+    so->setProperty("motion", (int)x.motion);
+    so->setProperty("orbit", x.motion == Motion::Circle); // read by versions before the motion list
     so->setProperty("orbitSpeed", x.orbitSpeed);
     return juce::var(so);
 }
@@ -176,7 +177,9 @@ SourceInfo sourceFromVar(const juce::var& e, int index) {
     x.doppler = getB(e, "doppler", false);
     x.mute = getB(e, "mute", false);
     x.solo = getB(e, "solo", false);
-    x.orbit = getB(e, "orbit", false);
+    // Older files only know the circle ("orbit").
+    const int legacy = getB(e, "orbit", false) ? (int)Motion::Circle : (int)Motion::Off;
+    x.motion = static_cast<Motion>(getI(e, "motion", legacy, 0, kNumMotions - 1));
     x.orbitSpeed = getF(e, "orbitSpeed", 0.1f, -2.0f, 2.0f);
     return x;
 }
@@ -457,6 +460,38 @@ bool readSharedSetup(Scene& s) {
     s.reverb = loaded.reverb;
     s.reverbWetDb = loaded.reverbWetDb;
     return true;
+}
+
+rk::Vec3 motionPosition(Motion m, rk::Vec3 anchor, double phase) {
+    if (!std::isfinite(phase)) phase = 0.0;
+    const auto a = rk::toPolar(anchor);
+    const float th = (float)phase;
+    const float R = a.distance;
+    auto polar = [](float az, float el, float d) { return rk::toCartesian({std::remainder(az, 360.0f), juce::jlimit(-90.0f, 90.0f, el), d}); };
+    switch (m) {
+    case Motion::Figure8: {
+        // A lying eight around the start, bent along the circle round the listener: the
+        // source sweeps 70 degrees to either side and comes closer and further away on the
+        // way, crossing at the start. It never comes nearer than 65 % of its distance.
+        const float Rh = std::sqrt(anchor.x * anchor.x + anchor.y * anchor.y);
+        const rk::Vec3 p = rk::toCartesian({a.azimuthDeg + 70.0f * std::sin(th), 0.0f, Rh * (1.0f + 0.35f * std::sin(2.0f * th))});
+        return {p.x, p.y, anchor.z};
+    }
+    case Motion::Pendulum: // swings 60 degrees to either side
+        return polar(a.azimuthDeg + 60.0f * std::sin(th), a.elevationDeg, a.distance);
+    case Motion::Spiral: // circles and comes closer, to 40 % of the distance, every fourth turn
+        return polar(a.azimuthDeg + juce::radiansToDegrees(th), a.elevationDeg,
+                     R * (0.7f + 0.3f * std::cos(th * 0.25f)));
+    case Motion::UpDown: // rises to 60 degrees above the start and comes back down
+        return polar(a.azimuthDeg, a.elevationDeg + 30.0f * (1.0f - std::cos(th)), a.distance);
+    case Motion::Wander: // slow drift: sines whose periods never line up, so it never repeats exactly
+        return polar(a.azimuthDeg + 70.0f * std::sin(0.73f * th) + 35.0f * std::sin(1.37f * th),
+                     a.elevationDeg + 12.0f * std::sin(0.53f * th) * std::sin(0.53f * th),
+                     R * (1.0f + 0.25f * std::sin(0.91f * th)));
+    case Motion::Circle:
+    case Motion::Off:
+    default: return anchor;
+    }
 }
 
 } // namespace rkui

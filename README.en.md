@@ -43,7 +43,7 @@ Pick a preset (stereo, quad, 5.1, 7.1.4, ring, dome, cube, donut) or place and d
 
 ### 2 Sources
 
-Each source is an input of the audio interface, a track from the DAW or a built-in test signal (pink noise, sine, clicks). Sources are dragged in the top view or set with azimuth, elevation and distance, plus level, width, reverb send and distance effect. *Orbit* moves a source around the listening spot by itself. Every source has M (mute) and S (solo) in the sidebar.
+Each source is an input of the audio interface, a track from the DAW or a built-in test signal (pink noise, sine, clicks). Sources are dragged in the top view or set with azimuth, elevation and distance, plus level, width, reverb send and distance effect. Under *Motion* a source can move by itself: orbit, figure eight, pendulum, spiral, up and down or random, at an adjustable tempo. Every pattern starts at the current position. Every source has M (mute) and S (solo) in the sidebar.
 
 ### 3 Room
 
@@ -97,6 +97,8 @@ There are two plugins, as VST3 and on the Mac also as AU for Logic Pro.
 *Raumklang Quelle* (source) goes on every track. When the Raumklang app runs, the track appears there under *From the DAW*, and the app plays it through its audio interface, without any routing. Position, width, level, reverb send, mute and solo can be automated in the DAW, and whatever is changed on the track in the app is recorded by the DAW as automation. The plugin shows the room from above, from the front or in 3D, with the other tracks dimmed in the background. Without the app, the plugin outputs one channel per speaker; the track then needs as many channels as the layout has speakers.
 
 The DAW's own mute and solo buttons do not reach a plugin, neither as AU nor as VST3, and since the audio leaves the track before the channel strip, they have no effect on the app. That is why *Raumklang Quelle* has its own M and S buttons at the top of its window. They apply to the track in the app and can be automated like any other parameter.
+
+Logic Pro offers a second way: under *Settings → Audio → General*, set *Track Mute/Solo* to *CPU-saving (slow response)*. Logic then does not play muted tracks at all, and the app receives no signal from them. With the default setting, Logic mutes audio tracks only after the plugins. Software instrument tracks still go silent, because the instrument itself no longer receives notes.
 
 *Raumklang Return* brings the app's speaker signals back into the DAW, for recording and real-time bounces. In Logic for example on an aux in 7.1.4 for twelve speakers; with more speakers, further tracks take the rest.
 

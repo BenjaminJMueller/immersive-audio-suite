@@ -12,6 +12,11 @@ namespace rkui {
 
 enum class TestSignal { Off = 0, Pink = 1, Sine = 2, Clicks = 3 };
 
+/// Automatic movement of a source. Every pattern starts at the source's own position and
+/// comes back to it after one cycle; the tempo sets the cycles per minute.
+enum class Motion { Off = 0, Circle = 1, Figure8 = 2, Pendulum = 3, Spiral = 4, UpDown = 5, Wander = 6 };
+constexpr int kNumMotions = 7;
+
 struct SourceInfo {
     juce::String name;
     int inputChannel = 0;           // device input (0-based)
@@ -26,9 +31,15 @@ struct SourceInfo {
     bool doppler = false;
     bool mute = false;
     bool solo = false;
-    bool orbit = false;
-    float orbitSpeed = 0.1f;        // revolutions per second
+    Motion motion = Motion::Off;
+    float orbitSpeed = 0.1f;        // cycles per second (revolutions for the circle)
 };
+
+/// Where a moving source is at `phase` (radians, one cycle = 2 pi), starting from `anchor`.
+/// At phase 0 every pattern is exactly at the anchor, so switching a motion on never jumps.
+/// The circle is not handled here: it turns the current position, so the azimuth slider
+/// and dragging keep working while it runs.
+rk::Vec3 motionPosition(Motion m, rk::Vec3 anchor, double phase);
 
 /// Position of a DAW track as stored in a snapshot (tracks are matched by name).
 struct DawTrackState {

@@ -12,10 +12,10 @@ juce_add_gui_app(RaumklangApp
     HARDENED_RUNTIME_ENABLED TRUE
     HARDENED_RUNTIME_OPTIONS com.apple.security.device.audio-input)
 
-target_sources(RaumklangApp PRIVATE Main.cpp MainComponent.cpp AudioHost.cpp Calibration.cpp MicPermission.cpp Updater.cpp PluginInstaller.cpp)
+target_sources(RaumklangApp PRIVATE Main.cpp MainComponent.cpp AudioHost.cpp Calibration.cpp MicPermission.cpp MacSystem.cpp Updater.cpp PluginInstaller.cpp)
 if(APPLE)
-    target_sources(RaumklangApp PRIVATE MicPermission.mm)
-    target_link_libraries(RaumklangApp PRIVATE "-framework AVFoundation")
+    target_sources(RaumklangApp PRIVATE MicPermission.mm MacSystem.mm)
+    target_link_libraries(RaumklangApp PRIVATE "-framework AVFoundation" "-framework AppKit")
 endif()
 target_compile_definitions(RaumklangApp PRIVATE
     RK_BUILD_NUMBER=${RK_BUILD_NUMBER}

@@ -70,7 +70,7 @@ void blendSnapshot(Scene& out, const Scene& from, const Snapshot& to, float t) {
             o.doppler = b.doppler;
             o.mute = b.mute;
             o.solo = b.solo;
-            o.orbit = b.orbit;
+            o.motion = b.motion;
             o.orbitSpeed = b.orbitSpeed;
             o.inputChannel = b.inputChannel;
             o.test = b.test;

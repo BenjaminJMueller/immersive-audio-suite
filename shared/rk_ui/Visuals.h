@@ -61,11 +61,23 @@ int drawSoundCloud(ParticleBatch& g, juce::Point<float> centre, juce::Colour col
 
 /// The reverb share of a source: particles drifting outwards from `from` on bent paths
 /// towards the speakers in `to`, as a haze rather than straight rays.
+/// `decaySec` is the room's reverb time: a long tail fills the room with many more, slower
+/// particles than a short, dry one.
 int drawReverbFlow(ParticleBatch& g, juce::Point<float> from, const std::vector<juce::Point<float>>& to, juce::Colour colour,
-                   float energy, uint32_t seed, double timeSec, float sizeScale = 1.0f);
+                   float energy, uint32_t seed, double timeSec, float sizeScale = 1.0f, float decaySec = 1.5f);
+
+/// How many reverb particles a reverb time shows, relative to 1.5 s: about 0.3 for a
+/// studio (0.5 s), 1 for a hall of 1.5 s and 3 for a church (4.5 s and longer).
+float reverbDensity(float decaySec);
 
 /// How strongly a sounding source flows into the reverb (0..1): its level and reverb send.
 /// Zero when the send is at its minimum or the source is silent.
 float reverbFlowEnergy(const SourceInfo& source, float level, float reverbWetDb);
+
+/// Whether a view's window can be seen at all. The app installs a check that knows about
+/// macOS Spaces and covered windows; without one, every shown view counts as visible.
+/// Animated views skip their redraws while this is false.
+void setOnScreenCheck(bool (*check)(const juce::Component&));
+bool isOnScreen(const juce::Component& c);
 
 } // namespace rkui

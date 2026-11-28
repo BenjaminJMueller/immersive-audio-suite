@@ -403,13 +403,14 @@ void StageView::paint(juce::Graphics& g) {
                 if (!sp.enabled || sp.isSubwoofer) continue; // reverb plays on every main speaker; a fixed set keeps the haze calm while moving
                 reverbTargets_.push_back(toScreen(sp.position));
             }
-            particles += drawReverbFlow(particles_, a, reverbTargets_, reverbColour(), flow, (uint32_t)(s * 131 + 70001), now, 0.85f);
+            particles += drawReverbFlow(particles_, a, reverbTargets_, reverbColour(), flow, (uint32_t)(s * 131 + 70001), now, 0.85f,
+                                        scene_.reverb.decaySec);
         }
     }
     // Reverb: the engine plays it on every main speaker (each a different, decorrelated
     // mix), so a soft cloud in the reverb colour around each of them, fading with the tail.
     if (reverbLevel_ > 0.02f) {
-        const float energy = 0.6f * reverbLevel_;
+        const float energy = juce::jmin(1.0f, 0.6f * reverbLevel_ * reverbDensity(scene_.reverb.decaySec));
         for (int m = 0; m < nSpk; ++m) {
             const auto& sp = scene_.layout.speakers[(size_t)m];
             if (!sp.enabled || sp.isSubwoofer) continue;

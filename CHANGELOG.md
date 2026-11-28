@@ -2,6 +2,12 @@
 
 ## Unveröffentlicht
 
+- Update auf dem Mac: Die App ersetzt sich jetzt selbst, bevor sie sich beendet, Die alte Version bleibt als Sicherung liegen, bis der Austausch fertig ist. Scheitert das Ersetzen, liegt die neue Version in *Downloads/Raumklang-Update*.
+- Spuren aus der DAW ohne Aussetzer: Kommen die Audioblöcke aus der DAW unregelmäßig an (Last beim Verschieben, Wechsel der Schreibtische auf dem Mac), vergrößert die App ihren Puffer für die Spur selbst, statt hörbar auszusetzen.
+- Weniger Last im Hintergrund: Auf dem Mac nimmt App Nap der App keine Rechenzeit mehr, und ist das Fenster verdeckt oder auf einem anderen Schreibtisch, ruhen die Animationen.
+- Hall-Teilchen nach Hallzeit: Ein langer Nachhall zeigt deutlich mehr und langsamere Teilchen als ein kurzer, eine Kirche ist voll davon, ein Studio zeigt nur wenige.
+- Bewegungsmuster: Unter Bewegung gibt es neben der Kreisbahn jetzt Acht, Pendel, Spirale, Auf und ab und Zufällig. Jedes Muster beginnt an der aktuellen Position, das Tempo gilt in Durchläufen pro Minute.
+- README: Hinweis auf die Logic-Einstellung „CPU-sparend“ für Stumm und Solo.
 - Kopfhörer mit gemessenen HRTFs: Unter Ausgabe lässt sich für beide Kopfhörer-Wege statt des Kopfmodells eine SOFA-Datei (AES69) wählen. Raumklang faltet jeden Lautsprecher mit den gemessenen Impulsantworten der nächstgelegenen Richtung, andere Abtastraten werden beim Laden umgerechnet.
 - Stumm und Solo im Quelle-Plugin: Die Stumm- und Solo-Tasten der DAW erreichen kein Plugin. Raumklang Quelle hat deshalb eigene Tasten M und S, automatisierbar, und die App zeigt und schaltet sie in der Seitenleiste mit.
 - README: Praxistest mit zwölf Lautsprechern, Kopfhörer mit SOFA, neue Gliederung ohne fette Stichwörter.
