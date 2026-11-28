@@ -40,7 +40,7 @@ void roundTrip() {
         src.name = "Q" + juce::String(i);
         src.position = {float(i), 2.0f, 0.5f};
         src.test = rkui::TestSignal::Clicks;
-        src.orbit = i % 2 == 0;
+        src.motion = static_cast<rkui::Motion>(i % rkui::kNumMotions);
         s.sources.push_back(src);
     }
     s.sources[1].yawDeg = 135.0f;
@@ -72,6 +72,7 @@ void roundTrip() {
     EXPECT(std::abs(back.sources[1].yawDeg - 135.0f) < 1e-4f);
     EXPECT(std::abs(back.sources[1].directivity - 0.8f) < 1e-4f);
     EXPECT(back.sources[1].doppler && !back.sources[0].doppler);
+    for (int i = 0; i < 5; ++i) EXPECT(back.sources[(size_t)i].motion == s.sources[(size_t)i].motion);
     EXPECT(rkui::sceneToJson(back) == rkui::sceneToJson(s));
     EXPECT(back.effectivePanner() == rk::PannerKind::DBAP);
     // Binaural: the engine gets the virtual layout around the head, the scene keeps its speakers.
@@ -521,6 +522,48 @@ void sofaFiles() {
     EXPECT(rkui::loadSofa(junk, sizeof(junk), "x").set == nullptr);
 }
 
+void motions() {
+    // Files from before the motion list: "orbit" means the circle.
+    {
+        auto v = juce::JSON::parse(R"({"format":"raumklang","version":1,"sources":[{"orbit":true},{"orbit":false},{"motion":99}]})");
+        const auto s = rkui::sceneFromVar(v);
+        EXPECT(s.sources.size() == 3);
+        EXPECT(s.sources[0].motion == rkui::Motion::Circle);
+        EXPECT(s.sources[1].motion == rkui::Motion::Off);
+        EXPECT((int)s.sources[2].motion < rkui::kNumMotions);
+    }
+    const rk::Vec3 anchors[] = {{0.0f, 2.0f, 0.0f}, {-1.5f, -1.0f, 0.8f}, {3.0f, 0.5f, -0.4f}, {0.0f, 0.1f, 0.0f}};
+    for (int m = 2; m < rkui::kNumMotions; ++m) {
+        const auto kind = static_cast<rkui::Motion>(m);
+        for (const auto& a : anchors) {
+            // Switching a pattern on never jumps: phase 0 is the anchor.
+            EXPECT(rk::length(rkui::motionPosition(kind, a, 0.0) - a) < 1.0e-3f);
+            // Smooth and finite all the way, and it really moves.
+            rk::Vec3 prev = a;
+            float farthest = 0.0f;
+            for (int k = 1; k <= 2000; ++k) {
+                const double ph = k * 0.01;
+                const auto p = rkui::motionPosition(kind, a, ph);
+                EXPECT(rk::isFinite(p));
+                EXPECT(rk::length(p - prev) < 0.25f);
+                farthest = std::max(farthest, rk::length(p - a));
+                prev = p;
+            }
+            if (rk::length(a) > 1.0f) EXPECT(farthest > 0.3f);
+        }
+    }
+    // The eight never passes through the listening spot.
+    for (int k = 0; k < 1000; ++k) {
+        const auto p = rkui::motionPosition(rkui::Motion::Figure8, {0.0f, 2.5f, 0.0f}, k * 0.00628);
+        EXPECT(std::sqrt(p.x * p.x + p.y * p.y) >= 0.64f * 2.5f);
+    }
+    // A full cycle of the pendulum and the up-and-down returns to the start.
+    for (auto kind : {rkui::Motion::Pendulum, rkui::Motion::UpDown}) {
+        const rk::Vec3 a{1.0f, 2.0f, 0.3f};
+        EXPECT(rk::length(rkui::motionPosition(kind, a, juce::MathConstants<double>::twoPi) - a) < 1.0e-3f);
+    }
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     roundTrip();
@@ -535,6 +578,7 @@ int main() {
     surveys();
     snapshots();
     sofaFiles();
+    motions();
     std::printf("%s (%d failures)\n", failures == 0 ? "ALL SHARED TESTS PASSED" : "SHARED TESTS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

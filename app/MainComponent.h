@@ -150,6 +150,10 @@ private:
     int speakerTestIndex_ = 0;
     double speakerTestNext_ = 0.0;
     double lastOrbitTime_ = 0.0;
+    // Running motions (not the circle): where each started, how far it is, and the position it
+    // set last. A source moved by hand starts its pattern again from there.
+    struct MotionRun { rkui::Motion kind = rkui::Motion::Off; rk::Vec3 anchor, last; double phase = 0.0; };
+    std::vector<MotionRun> motionRuns_;
     juce::File projectFile_;
     std::unique_ptr<juce::FileChooser> chooser_;
     // Measured head responses for headphones (loaded from scene_.hrtfFile off the message thread).

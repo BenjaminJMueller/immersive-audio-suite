@@ -898,7 +898,7 @@ void MainComponent::refreshSidebar() {
             r.colour = rkui::itemColour(i);
             r.title = s.name;
             r.subtitle = sourceSubtitle(i);
-            r.trailing = s.orbit ? u8("\xe2\x9f\xb3") : juce::String();
+            r.trailing = s.motion != rkui::Motion::Off ? u8("\xe2\x9f\xb3") : juce::String();
             r.toggles = step_ == StepSources;
             r.mute = s.mute;
             r.solo = s.solo;
@@ -1257,16 +1257,18 @@ void MainComponent::buildSourcesPage() {
     yaw->setTooltip(tr("0° schaut zum Hörplatz, 180° abgewandt. Wirkt nur mit Richtwirkung."));
 
     inspector_.add(std::make_unique<rkui::SectionHeader>(tr("Bewegung")), 26);
-    auto* motion = inspector_.add(std::make_unique<rkui::Segmented>(juce::StringArray{tr("Aus"), tr("Kreisbahn")}, false), 32);
-    motion->setSelected(s.orbit ? 1 : 0);
+    auto* motion = inspector_.add(std::make_unique<rkui::ChoiceRow>(tr("Muster"),
+        juce::StringArray{tr("Aus"), tr("Kreisbahn"), tr("Acht"), tr("Pendel"), tr("Spirale"), tr("Auf und ab"), tr("Zufällig")}), 36);
+    motion->box().setSelectedItemIndex((int)s.motion, juce::dontSendNotification);
+    motion->setTooltip(tr("Bewegt die Quelle von selbst. Jedes Muster beginnt an der aktuellen Position, wer die Quelle verschiebt, setzt den Startpunkt neu."));
     motion->onChange = [this, i](int m) {
         if (i >= (int)scene_.sources.size()) return;
-        scene_.sources[(size_t)i].orbit = m == 1;
+        scene_.sources[(size_t)i].motion = static_cast<rkui::Motion>(juce::jlimit(0, rkui::kNumMotions - 1, m));
         commit();
         refreshSidebar();
     };
-    auto* speed = addParam(tr("Tempo"), -30, 30, 0.5, "U/min", 1, 0, s.orbitSpeed * 60.0, [](rkui::SourceInfo& x, double v) { x.orbitSpeed = (float)v / 60.0f; });
-    speed->setTooltip(tr("Umdrehungen pro Minute, negativ = im Uhrzeigersinn"));
+    auto* speed = addParam(tr("Tempo"), -30, 30, 0.5, "/min", 1, 0, s.orbitSpeed * 60.0, [](rkui::SourceInfo& x, double v) { x.orbitSpeed = (float)v / 60.0f; });
+    speed->setTooltip(tr("Durchläufe pro Minute, bei der Kreisbahn Umdrehungen. Negativ = andere Richtung."));
     auto* dop = inspector_.add(std::make_unique<juce::ToggleButton>(tr("Doppler-Effekt")), 28);
     dop->setToggleState(s.doppler, juce::dontSendNotification);
     dop->setTooltip(tr("Verzögert die Quelle um die Schalllaufzeit ihres Abstands (2,9 ms pro Meter). Bewegt sich die Quelle, ändert sich dadurch die Tonhöhe, höchstens um 10 %."));
@@ -1301,7 +1303,7 @@ void MainComponent::buildSourcesPage() {
     rm->getProperties().set("danger", true);
     rm->onClick = [this, i] { removeSource(i); };
     inspector_.addDetails(tr("Pegel, Breite und Hall-Send lassen sich mit einem Doppelklick auf den Regler zurücksetzen, ein Doppelklick auf den Wert erlaubt die Eingabe von Zahlen.\n\n"
-                             "„Kreisbahn“ bewegt die Quelle von selbst um den Hörplatz, gut zum Prüfen eines Aufbaus.\n\n"
+                             "Unter Bewegung lässt sich ein Muster einschalten: Kreisbahn, Acht, Pendel, Spirale, Auf und ab oder Zufällig. Die Quelle bewegt sich dann von selbst, gut zum Prüfen eines Aufbaus.\n\n"
                              "Aus der DAW kommen Spuren über das Plugin „Raumklang Quelle“ dazu, ohne zusätzliche Programme für das Routing."));
 }
 
@@ -1765,7 +1767,7 @@ void MainComponent::startDemo() {
         src.name = tr(d.name);
         src.test = d.t;
         src.position = rk::toCartesian({d.az, 0.0f, 2.4f});
-        src.orbit = d.speed != 0.0f;
+        src.motion = d.speed != 0.0f ? rkui::Motion::Circle : rkui::Motion::Off;
         src.orbitSpeed = d.speed;
         src.gainDb = d.t == rkui::TestSignal::Pink ? -8.0f : -3.0f;
         s.sources.push_back(src);
@@ -2080,16 +2082,32 @@ void MainComponent::timerCallback() {
         }
     }
 
-    // Moving sources ("Kreisbahn").
+    // Moving sources: the circle turns the current position, every other pattern runs
+    // from an anchor (where it started or where the source was last put by hand).
     const double dt = lastOrbitTime_ > 0.0 ? juce::jlimit(0.0, 0.2, (now - lastOrbitTime_) * 0.001) : 0.0;
     lastOrbitTime_ = now;
     bool moved = false;
+    motionRuns_.resize(scene_.sources.size());
     for (int i = 0; i < (int)scene_.sources.size(); ++i) {
         auto& s = scene_.sources[(size_t)i];
-        if (!s.orbit || s.orbitSpeed == 0.0f) continue;
-        const float a = (float)(s.orbitSpeed * dt * juce::MathConstants<double>::twoPi);
-        const float c = std::cos(a), sn = std::sin(a);
-        s.position = {s.position.x * c - s.position.y * sn, s.position.x * sn + s.position.y * c, s.position.z};
+        auto& run = motionRuns_[(size_t)i];
+        if (s.motion == rkui::Motion::Off || s.orbitSpeed == 0.0f) { run.kind = rkui::Motion::Off; continue; }
+        const double step = (double)s.orbitSpeed * dt * juce::MathConstants<double>::twoPi;
+        if (s.motion == rkui::Motion::Circle) {
+            run.kind = rkui::Motion::Circle;
+            const float c = std::cos((float)step), sn = std::sin((float)step);
+            s.position = {s.position.x * c - s.position.y * sn, s.position.x * sn + s.position.y * c, s.position.z};
+        } else {
+            const bool movedByHand = rk::length(s.position - run.last) > 1.0e-4f;
+            if (run.kind != s.motion || movedByHand) {
+                run.kind = s.motion;
+                run.anchor = s.position;
+                run.phase = 0.0;
+            }
+            run.phase = std::fmod(run.phase + step, 1.0e4 * juce::MathConstants<double>::twoPi);
+            s.position = rkui::motionPosition(s.motion, run.anchor, run.phase);
+            run.last = s.position;
+        }
         host_.engine.source(i).setPosition(s.position);
         moved = true;
     }
@@ -2110,8 +2128,13 @@ void MainComponent::timerCallback() {
     }
     if (moved) showStage();
     if (moved && (step_ == StepSources || step_ == StepRoom)) refreshSidebar();
-    if (moved && posSliders_[0] != nullptr && selSource_ >= 0 && selSource_ < (int)scene_.sources.size() && scene_.sources[(size_t)selSource_].orbit)
-        posSliders_[0]->setValue(rk::toPolar(scene_.sources[(size_t)selSource_].position).azimuthDeg);
+    if (moved && posSliders_[0] != nullptr && selSource_ >= 0 && selSource_ < (int)scene_.sources.size() &&
+        scene_.sources[(size_t)selSource_].motion != rkui::Motion::Off) {
+        const auto p = rk::toPolar(scene_.sources[(size_t)selSource_].position);
+        posSliders_[0]->setValue(p.azimuthDeg);
+        if (posSliders_[1] != nullptr) posSliders_[1]->setValue(p.elevationDeg);
+        if (posSliders_[2] != nullptr) posSliders_[2]->setValue(p.distance);
+    }
     refreshDawValues();
 
     // Meters.

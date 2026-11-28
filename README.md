@@ -43,7 +43,7 @@ Eine Vorlage wählen (Stereo, Quadrofonie, 5.1, 7.1.4, Ring, Kuppel, Würfel, Do
 
 ### 2 Quellen
 
-Jede Quelle ist ein Eingang des Audio-Interfaces, eine Spur aus der DAW oder ein eingebautes Testsignal (rosa Rauschen, Sinuston, Klicks). Quellen werden in der Draufsicht gezogen oder über Azimut, Elevation und Abstand gesetzt, dazu Pegel, Breite, Hall-Send und Distanzeffekt. *Kreisbahn* bewegt eine Quelle von selbst um den Hörplatz. Jede Quelle hat in der Seitenleiste M (stumm) und S (solo).
+Jede Quelle ist ein Eingang des Audio-Interfaces, eine Spur aus der DAW oder ein eingebautes Testsignal (rosa Rauschen, Sinuston, Klicks). Quellen werden in der Draufsicht gezogen oder über Azimut, Elevation und Abstand gesetzt, dazu Pegel, Breite, Hall-Send und Distanzeffekt. Unter *Bewegung* läuft eine Quelle auf Wunsch von selbst: Kreisbahn, Acht, Pendel, Spirale, Auf und ab oder Zufällig, mit einstellbarem Tempo. Jedes Muster beginnt an der aktuellen Position. Jede Quelle hat in der Seitenleiste M (stumm) und S (solo).
 
 ### 3 Raum
 
@@ -97,6 +97,8 @@ Es gibt zwei Plugins, als VST3 und auf dem Mac zusätzlich als AU für Logic Pro
 *Raumklang Quelle* kommt auf jede Spur. Läuft die Raumklang-App, erscheint die Spur dort unter *Aus der DAW*, und die App spielt sie über ihr Audio-Interface, ganz ohne Routing. Position, Breite, Pegel, Hall-Send, Stumm und Solo sind in der DAW automatisierbar, und was in der App an der Spur geändert wird, nimmt die DAW als Automation auf. Das Plugin zeigt den Raum von oben, von vorne oder in 3D, mit den anderen Spuren blass im Hintergrund. Ohne App gibt das Plugin einen Kanal pro Lautsprecher aus; die Spur braucht dann so viele Kanäle wie das Layout Lautsprecher.
 
 Die Stumm- und Solo-Tasten der DAW selbst erreichen ein Plugin nicht, weder als AU noch als VST3, und weil der Ton die Spur vor dem Kanalzug verlässt, wirken sie auf die App nicht. Deshalb hat *Raumklang Quelle* oben im Fenster eigene Tasten M und S. Sie gelten für die Spur in der App und lassen sich wie jeder andere Parameter automatisieren.
+
+In Logic Pro gibt es noch einen zweiten Weg: Unter *Einstellungen → Audio → Allgemein* lässt sich die Option für Stumm und Solo der Spuren auf *CPU-sparend (langsame Reaktion)* stellen. Dann spielt Logic stummgeschaltete Spuren gar nicht erst ab, und die App bekommt von ihnen kein Signal. In der Standardeinstellung schaltet Logic Audiospuren erst hinter den Plugins stumm. Spuren mit Software-Instrumenten wirken trotzdem stumm, weil dort schon das Instrument keine Noten mehr bekommt.
 
 *Raumklang Return* (der Rückweg) holt die Lautsprechersignale der App zurück in die DAW, zum Aufnehmen und für Bounces in Echtzeit. In Logic etwa auf einem Aux in 7.1.4 für zwölf Lautsprecher; bei mehr Lautsprechern übernehmen weitere Spuren den Rest.
 
